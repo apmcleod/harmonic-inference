@@ -1,13 +1,16 @@
-"""A package for working with harmonic inference data."""
+"""A package for working with harmonic inference data. This contains Dataset objects for creating
+music data -> chord label datasets from various data formats, as well as functions for
+transforming the input data into various vector representations."""
 
 import torch
 from torch.utils.data import Dataset
 
 
-class HarmonicInferenceDataset(Dataset):
-    """Harmonic inference dataset. Musical notes -> chord symbols."""
+class MusicScoreDataset(Dataset):
+    """Harmonic inference dataset, parsed from tsvs created from MuseScore files."""
     
-    def __init__(self, chords_tsv, notes_tsv, get_chord_vector, get_note_vector, transform=None):
+    def __init__(self, chords_tsv, notes_tsv, get_chord_vector=get_chord_vector,
+                 get_note_vector=get_note_vector, transform=None):
         """
         Initialize the dataset.
         
@@ -18,6 +21,12 @@ class HarmonicInferenceDataset(Dataset):
             
         notes_tsv : string
             The path of the notes tsv file.
+            
+        get_chord_vector : function
+            A function to get a chord label vector from a chord pandas entry.
+            
+        get_note_vector : function
+            A function to get a note vector from a note pandas entry.
             
         transform : function
             A transform to apply to each returned data point.
@@ -51,3 +60,36 @@ class HarmonicInferenceDataset(Dataset):
             
         return sample
     
+    
+def get_note_vector(note):
+    """
+    Get the vector representation of a given note.
+    
+    Parameters
+    ----------
+    note : dict
+        The pandas row of a musical note.
+        
+    Returns
+    -------
+    vector : np.array
+        The vector representation of the given note.
+    """
+    pass
+
+
+def get_chord_vector(chord):
+    """
+    Get the vector representation of a given chord.
+    
+    Parameters
+    ----------
+    chord : pd.Series
+        The pandas row of a chord.
+        
+    Returns
+    -------
+    vector : np.array
+        The vector representation of the given chord.
+    """
+    pass
