@@ -2,8 +2,12 @@
 music data -> chord label datasets from various data formats, as well as functions for
 transforming the input data into various vector representations."""
 
+import pandas as pd
+from fractions import Fraction as frac
 import torch
 from torch.utils.data import Dataset
+
+import corpus_utils
 
 
 class MusicScoreDataset(Dataset):
@@ -75,7 +79,10 @@ def get_note_vector(note):
     vector : np.array
         The vector representation of the given note.
     """
-    pass
+    midi_pitch = note.midi
+    note_onset = note.onset
+    note_duration = note.duration
+    note_offset = get_note_offset()
 
 
 def get_chord_vector(chord):
