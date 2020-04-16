@@ -1,7 +1,18 @@
 """Utilities for parsing corpus tsv files into pandas DataFrames."""
 
 import pandas as pd
-from fractions import Fraction as frac
+from fractions import Fraction
+
+
+
+# Helper functions to be used as converters, handlling empty strings
+parse_lists_of_int = lambda l: [int(mc) for mc in l.strip('[]').split(', ') if mc != '']
+parse_tuples = lambda t: tuple(i.strip("\',") for i in t.strip("() ").split(", ") if i != '')
+parse_lists_of_str_tuples = lambda l: [tuple(t.split(',')) for t in re.findall(r'\((.+?)\)', l)]
+parse_lists_of_int_tuples = lambda l: [tuple(int(i) for i in t.split(',')) for t in re.findall(r'\((.+?)\)', l)]
+frac_or_empty = lambda val: '' if val == '' else Fraction(val)
+
+
 
 # Data types for the different columns in the tsvs
 DTYPES = {'bass_step': 'string',
@@ -42,24 +53,6 @@ DTYPES = {'bass_step': 'string',
           'voices': 'Int64',
           'volta': 'Int64'}
 
-
-def frac_or_empty(val):
-    """
-    Helper function to convert Fractional data types into Fractions while handling Nans
-    and empty strings.
-    
-    Parameters
-    ----------
-    val : string
-        A String to convert into a fraction (if it is not empty).
-        
-    Returns
-    -------
-    fraction : Fraction or string
-        The empty string, if the input is the empty string. Or, a Fraction parsed from
-        the input.
-    """
-    return '' if val == '' else frac(val)
 
 # Converters for different data types
 CONVERTERS = {'act_dur': frac_or_empty,
