@@ -1,5 +1,6 @@
 """Utility functions for working with the corpus data."""
 
+import warnings
 import pandas as pd
 import numpy as np
 from fractions import Fraction
@@ -52,29 +53,44 @@ def get_offsets(notes, measures):
     """
     # Index measures in the order of notes
     note_measures = measures.loc[pd.MultiIndex.from_arrays((notes.index.get_level_values('id'), notes.mc))]
-    last_measures = note_measures.next.apply(len) == 0
+    
+    # Find the last measures of each piece
+    next_lengths = measures.next.apply(len)
+    last_measures = next_lengths == 0 # Default case
+    
+    # Check for multi-valued next lists
+    if next_lengths.max() > 1:
+        warnings.warn("Repeats have not been unrolled or removed. Calculating offsets as if they "
+                      "were removed (by using only the last 'next' pointer for each measure).")
+        last_measures |= (np.roll(measures.index.get_level_values('id').to_numpy(), -1) !=
+                          measures.index.get_level_values('id'))
+        
+    # Get last_measures for each of our notes
+    note_last_measures = last_measures.loc[note_measures.index]
     
     # Simple offset position calculation
     offset_mc = notes.mc.to_numpy()
     offset_beat = (notes.onset + notes.duration).to_numpy()
     
     # Fix offsets which go beyond the end of their current measure, (if that isn't the last measure)
-    new_measures = ((offset_beat >= note_measures.act_dur) & ~last_measures).to_numpy()
+    new_measures = ((offset_beat >= note_measures.act_dur) & ~note_last_measures).to_numpy()
+    to_change_note_measures = note_measures.loc[new_measures]
     while new_measures.any():
         # Update offset position (and save indexed list for speed later)
-        # First 3 lines of code: save indexed lists for faster computation
-        note_measures = note_measures.loc[new_measures]
-        new_offset_beats = (offset_beat[new_measures] - note_measures.act_dur).to_numpy()
-        new_offset_mcs = [mc[-1] for mc in note_measures.next] # Get the last value in each 'next' list
-        offset_beat[new_measures] = new_offset_beats
-        offset_mc[new_measures] = new_offset_mcs
+        # First 3 lines of code: save indexed lists of only the updated values for faster computation
+        changed_offset_beats = (offset_beat[new_measures] - to_change_note_measures.act_dur).to_numpy()
+        changed_offset_mcs = [mc[-1] for mc in to_change_note_measures.next] # Get the last value in each 'next' list
+        offset_beat[new_measures] = changed_offset_beats
+        offset_mc[new_measures] = changed_offset_mcs
         
         # Update indexed measure info with new values based on new note 'mc's
-        note_measures = measures.loc[pd.MultiIndex.from_arrays((note_measures.index.get_level_values('id'),
-                                                                new_offset_mcs), names=['id', 'mc'])]
-        last_measures = note_measures.next.apply(len) == 0
+        changed_note_measures = measures.loc[pd.MultiIndex.from_arrays((to_change_note_measures.index.get_level_values('id'),
+                                                                        changed_offset_mcs), names=['id', 'mc'])]
+        note_last_measures = last_measures.loc[changed_note_measures.index]
         
         # Check for any notes which still go beyond the end of a measure
-        new_measures[new_measures] = ((new_offset_beats >= note_measures.act_dur) & ~last_measures).to_numpy()
+        changed_new_measures = ((changed_offset_beats >= changed_note_measures.act_dur) & ~note_last_measures).to_numpy()
+        new_measures[new_measures] = changed_new_measures
+        to_change_note_measures = changed_note_measures.loc[changed_new_measures]
     
     return offset_mc, offset_beat
