@@ -101,10 +101,68 @@ def get_offsets(notes, measures):
 
 
 
-def find_matching_tie(note, tied_in_notes):
+def find_matching_tie(note, tied_in_notes, prefiltered=False):
     """
-    NOTE: tied_in_notes should already be filtered by id and section.
+    Find the note which a given note is tied to. The matching note must have an onset beat
+    and mc equal to the given note's offset_beat and offset_mc, as well as equal midi pitch.
+    If multiple matching notes are found, they are disambiguated by using the notes' voice.
+    
+    By default, the matching note must also match the given note's id and section (the first
+    two values of its multi-index tuple). If prefiltered is given as True, the given
+    tied_in_notes DataFrame is assumed to be already filtered by id and section, and this
+    requirement is not checked.
+    
+    Parameters
+    ----------
+    note : pd.Series
+        A note that is tied out of. The function will return the note which this note is
+        tied into. The series must have at least the columns:
+            'midi' (int): The MIDI pitch of the note.
+            'voice' (int): The voice of the note. Used to disambiguate ties when multiple
+                notes of the same pitch have the same onset time (and might potentially be
+                the resulting tied note).
+            'offset_beat' (Fraction): The offset beat of the note (see get_offsets).
+            'offset_mc' (int): The offset 'mc' of the note (see get_offsets).
+        Additionally, if prefiltered is False, the note's name attribute must be a tuple
+        where the first and second values correspond to the note's id and section values.
+    
+    tied_in_notes : pd.DataFrame
+        A DataFrame in which to search for the matching tied note of the given note.
+        It must have at least the following columns:
+            'midi' (int): The MIDI pitch of each note.
+            'voice' (int): The voice of each note. Used to disambiguate ties when multiple
+                notes of the same pitch have the same onset time (and might potentially be
+                the resulting tied note).
+            'mc' (int): The 'measure count' index of the onset of each note.
+            'onset' (Fraction): The onset time of each note, in whole notes, relative to the
+                beginning of the given mc.
+        Additionally, if prefiltered is False, its first two index columns must be:
+            'id' (index, int): The piece id from which each note comes; and
+            'section' (index, int): The section of the piece from which each note comes.
+            
+    prefiltered : boolean
+        False if the given tied_in_notes DataFrame has not yet been filtered by id and section.
+        In this case, the note's name attribute must be a tuple whose first two values
+        correspond to its id and section, and tied_in_notes must use a MultiIndex whose first
+        two values correspond to its id and section. If True, the id and section values
+        are not checked, and are not even required to be present.
+        
+    Returns
+    -------
+    matched_note : pd.Series
+        The matching tied note to the given one, or None, if none was found. It's name attribute
+        will correspond to the MultiIndex columns that are in the given tied_in_notes DataFrame.
+        
+        If multiple matches are found in the basic search (across midi pitch, onset/offset beat
+        and measure, as well as id and section if prefiltered is False), the matches are then
+        filtered by voice. If one remains, it is returned as the match. If multiple remain,
+        the first one (in the order of the given tied_in_notes DataFrame) is returned as the match.
+        If none remain, the first one returned by the basic search is returned.
     """
+    if not prefiltered:
+        unfiltered_tied_in_notes = tied_in_notes
+        tied_in_notes = tied_in_notes.loc[(note.name[0], note.name[1])]
+        
     matching_notes_mask = (
         (tied_in_notes.mc == note.offset_mc) &
         (tied_in_notes.onset == note.offset_beat) &
@@ -122,6 +180,8 @@ def find_matching_tie(note, tied_in_notes):
     
     # Error -- no match found
     if len(matching_notes) == 0:
+        warnings.warn(f"No matching tied note ({matching_notes.index}) found for note index "
+                      f"{note.name} and duration {note.duration}. Returning the first one.")
         return None
     
     # Error -- multiple matches found
@@ -130,7 +190,10 @@ def find_matching_tie(note, tied_in_notes):
                       f"{note.name} and duration {note.duration}. Returning the first one.")
         
     # Return the first note on success or matches > 1
-    return matching_notes.iloc[0]
+    if prefiltered:
+        return matching_notes.iloc[0]
+    else:
+        return unfiltered_tied_in_notes.loc[(note.name[0], note.name[1], matching_notes.iloc[0].name)]
 
 
 
@@ -138,14 +201,16 @@ def merge_ties(notes, measures=None):
     """
     Return a new notes DataFrame, with tied notes removed and replaced by a single note with
     longer duration. If 'offset_beat' and 'offset_mc' columns are not in the given notes DataFrame,
-    they will be calculated, so measure must be given.
+    they will be calculated, so measure must be given. Grace notes are ignored during ties and
+    are just returned as is.
     
     Parameters
     ----------
     notes : pd.DataFrame
         A pandas DataFrame containing the notes to be merged together. This should include at least
         the following columns:
-            'id' (index, int): The piece id from which this note comes.
+            'id' (index, int): The piece id from which each note comes.
+            'section' (index, int): The section of the piece from which each note comes.
             'mc' (int): The 'measure count' index of the onset of each note.
             'onset' (Fraction): The onset time of each note, in whole notes, relative to the
                 beginning of the given mc.
@@ -155,6 +220,9 @@ def merge_ties(notes, measures=None):
             'midi' (int): The MIDI pitch of each note.
             'voice' (int): The voice of each note. Used to disambiguate ties when multiple
                 notes of the same pitch have the same onset time.
+            'gracenote' (string): What type of grace-note each note is, or pd.NA if it is not a
+                gracenote. This is used because we ignore grace notes and simply return them as is
+                during note merging.
             'tied' (int): The tied status of each note:
                 pd.nan if the note is not tied.
                 1 if the note is tied out of (i.e., it is an onset).
@@ -185,26 +253,42 @@ def merge_ties(notes, measures=None):
     
     # Tied in and out notes
     tied_out_mask = notes.tied == 1
-    tied_out_notes = notes.loc[tied_out_mask]
-    tied_in_notes = notes.loc[notes.tied.isin([-1, 0])]
+    tied_out_notes = notes.loc[tied_out_mask & notes.gracenote.isna()]
+    tied_in_notes = notes.loc[notes.tied.isin([-1, 0]) & notes.gracenote.isna()]
+    
+    # For all initial gracenote ties, add the notes they are tied into to the tied_out_notes
+    to_add = [] # Add to tied_out_notes
+    to_remove = [] # Remove from tied_in_notes
+    for idx, note in notes.loc[tied_out_mask & ~notes.gracenote.isna()].iterrows():
+        tied_note = find_matching_tie(note, tied_in_notes)
+        
+        if tied_note is not None:
+            to_remove.append(tied_note.name)
+            if tied_note.tied == 0:
+                to_add.append(tied_note.name)
+    
+    # Move found notes from tied_in to tied_out
+    tied_out_notes = tied_out_notes.append(notes.loc[to_add])
+    tied_in_notes = tied_in_notes.drop(index=to_remove)
     
     # This is all of the notes that will be returned
-    merged_notes = pd.DataFrame(notes.loc[notes.tied.isna() | tied_out_mask])
+    merged_notes = pd.DataFrame(notes.loc[notes.tied.isna() | (notes.index.isin(tied_out_notes.index))])
     
     # Loop through and fix the duration and offset every tied out note
+    prev_idx = -1
+    max_index = tied_out_notes.index.get_level_values('id').max()
     for idx, _ in tied_out_notes.iterrows():
-        print(idx)
-        tied_in_notes_filtered = tied_in_notes.loc[(idx[0], idx[1])]
+        if prev_idx != idx[0]:
+            prev_idx = idx[0]
+            print(f"Index {idx[0]} / {max_index}")
+            tied_in_notes_filtered = tied_in_notes.loc[(idx[0])]
         
         # Add new notes until an end tie is reached (where tied == -1)
         while True:
-            print(merged_notes.loc[idx].duration)
-            tied_note = find_matching_tie(merged_notes.loc[idx], tied_in_notes_filtered)
+            tied_note = find_matching_tie(merged_notes.loc[idx], tied_in_notes_filtered, prefiltered=True)
             
             # Error -- no matching tie found.
             if tied_note is None:
-                warnings.warn(f"No tied_in note found for tied out note with id {idx} after "
-                              f"duration {merged_notes.loc[idx, 'duration']}. Skipping that note.")
                 break
                 
             # Update duration and break if the tie has ended
