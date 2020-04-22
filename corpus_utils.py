@@ -101,7 +101,7 @@ def get_offsets(notes, measures):
 
 
 
-def find_matching_tie(note, tied_in_notes, prefiltered=False):
+def find_matching_tie(note, tied_in_notes, prefiltered=False, midi_masks=None):
     """
     Find the note which a given note is tied to. The matching note must have an onset beat
     and mc equal to the given note's offset_beat and offset_mc, as well as equal midi pitch.
@@ -147,6 +147,13 @@ def find_matching_tie(note, tied_in_notes, prefiltered=False):
         two values correspond to its id and section. If True, the id and section values
         are not checked, and are not even required to be present.
         
+    midi_masks : np.ndarray
+        An nd-array of precomputed midi pitch masks for the filtered tied_in_notes DataFrame.
+        midi_masks[p] should be the mask for tied_in_notes.midi == p. This can be None, in which
+        case this mask is calculated in this function. If the mask is not None, but the value
+        in the pitch of the given note is None, the calculated mask is saved in the given
+        midi_masks array.
+        
     Returns
     -------
     matched_note : pd.Series
@@ -163,10 +170,19 @@ def find_matching_tie(note, tied_in_notes, prefiltered=False):
         unfiltered_tied_in_notes = tied_in_notes
         tied_in_notes = tied_in_notes.loc[(note.name[0], note.name[1])]
         
+    if midi_masks is not None:
+        midi_mask = midi_masks[note.midi]
+        if midi_mask is None:
+            midi_mask = (tied_in_notes.midi == note.midi)
+            midi_masks[note.midi] = midi_mask
+    else:
+        midi_mask = (tied_in_notes.midi == note.midi)
+            
+        
     matching_notes_mask = (
         (tied_in_notes.mc == note.offset_mc) &
         (tied_in_notes.onset == note.offset_beat) &
-        (tied_in_notes.midi == note.midi)
+        (midi_mask)
     )
     matching_notes = tied_in_notes.loc[matching_notes_mask]
     
@@ -274,30 +290,49 @@ def merge_ties(notes, measures=None):
     # This is all of the notes that will be returned
     merged_notes = pd.DataFrame(notes.loc[notes.tied.isna() | (notes.index.isin(tied_out_notes.index))])
     
+    # Update the underlying numpy arrays rather than the dataframes because it is MUCH faster
+    merged_duration = merged_notes.duration.to_numpy()
+    merged_offset_mc = merged_notes.offset_mc.to_numpy()
+    merged_offset_beat = merged_notes.offset_beat.to_numpy()
+    
     # Loop through and fix the duration and offset every tied out note
     prev_idx = -1
     max_index = tied_out_notes.index.get_level_values('id').max()
-    for idx, _ in tied_out_notes.iterrows():
+    for iloc_idx, (idx, note) in enumerate(tied_out_notes.iterrows()):
         if prev_idx != idx[0]:
             prev_idx = idx[0]
             print(f"Index {idx[0]} / {max_index}")
+            
+            # Pre-filter for speed
             tied_in_notes_filtered = tied_in_notes.loc[(idx[0])]
+            midi_masks = np.full(tied_in_notes_filtered.midi.max() + 1, None)
         
         # Add new notes until an end tie is reached (where tied == -1)
         while True:
-            tied_note = find_matching_tie(merged_notes.loc[idx], tied_in_notes_filtered, prefiltered=True)
+            tied_note = find_matching_tie(note, tied_in_notes_filtered, prefiltered=True,
+                                          midi_masks=midi_masks)
             
             # Error -- no matching tie found.
             if tied_note is None:
                 break
                 
             # Update duration and break if the tie has ended
-            merged_notes.at[idx, ['duration', 'offset_mc', 'offset_beat']] = [
-                merged_notes.loc[idx, 'duration'] + tied_note.duration,
-                tied_note.offset_mc,
-                tied_note.offset_beat
-            ]
+            note['duration'] += tied_note.duration
+            note['offset_mc'] = tied_note.offset_mc
+            note['offset_beat'] = tied_note.offset_beat
+            
+            # Break if tie has ended
             if tied_note.tied == -1:
                 break
+                
+        # Update arrays to final tied values
+        merged_duration[iloc_idx] = note.duration
+        merged_offset_mc[iloc_idx] = note.offset_mc
+        merged_offset_beat[iloc_idx] = note.offset_beat
+        
+    # Update dataframe from tracking arrays
+    merged_notes.duration = merged_duration
+    merged_notes.offset_mc = merged_offset_mc
+    merged_notes.offset_beat = merged_offset_beat
     
     return merged_notes
