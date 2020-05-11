@@ -100,6 +100,77 @@ def get_offsets(notes, measures):
     return offset_mc, offset_beat
 
 
+
+def get_notes_during_chord(chord, notes, measures=None):
+    """
+    Get all of the notes that occur during the given chord.
+    
+    Parameters
+    ----------
+    chord : pd.Series
+        The chord whose notes to return.
+        
+    notes : pd.DataFrame
+        The possible notes.
+        
+    measures : pd.DataFrame
+        The measures in the dataset. Required only if notes doesn't contain
+        offset_mc and offset_beat columns.
+        
+    Returns
+    -------
+    selected_notes : pd.DataFrame
+        A DataFrame containing the notes that occur during the gievn chord, with an
+        additional column 'overlap', which is:
+            NA  if the note occurs entirely within the given chord.
+            -1  if the note's onset is in a previous chord.
+            1   if the note's offset is in a following chord.
+            0   if both -1 and 1 apply.
+    """
+    # First, check for offset information, and calculate it if necessary
+    if not all([column in notes.columns for column in ['offset_beat', 'offset_mc']]):
+        assert measures is not None, ("measures must be given if offset_beat and offset_mc "
+                                      "are not in notes")
+        offset_mc, offset_beat = get_offsets(notes, measures)
+        notes = notes.assign(offset_mc=offset_mc, offset_beat=offset_beat)
+        
+    file_notes = notes.loc[chord.name[0]]
+    selected_notes = file_notes.loc[(file_notes.offset_mc >= chord.mc) &
+                                    (file_notes.mc <= chord.mc_next)].copy()
+    
+    # Drop notes that end before the chord onset...
+    before_chord = (selected_notes.offset_mc == chord.mc) & (selected_notes.offset_beat < chord.onset)
+    selected_notes = selected_notes.loc[~before_chord].copy()
+    
+    # ...or begin after the next chord onset
+    after_chord = (selected_notes.mc == chord.mc_next) & (selected_notes.onset >= chord.onset_next)
+    selected_notes = selected_notes.loc[~after_chord].copy()
+    
+    # Add overlap column
+    
+    # Note onset in earlier measure than chord onset, or...
+    # Note onset in same measure, but beat is earlier
+    ties_in = ((selected_notes.mc < chord.mc) |
+               ((selected_notes.mc == chord.mc) & (selected_notes.onset < chord.onset)))
+    
+    # Note offset in later measure than the next chord, or...
+    # Note offset in same measure as the next chord, but beat is later
+    ties_out = ((selected_notes.offset_mc > chord.mc_next) |
+                ((selected_notes.offset_mc == chord.mc_next) &
+                 (selected_notes.offset_beat > chord.onset_next)))
+    
+    ties_both = (ties_in & ties_out)
+    
+    # Add column
+    selected_notes['overlap'] = pd.NA
+    selected_notes.loc[ties_in, 'overlap'] = -1
+    selected_notes.loc[ties_out, 'overlap'] = 1
+    selected_notes.loc[ties_both, 'overlap'] = 0
+    
+    return selected_notes
+
+
+
 def find_matching_tie(note=None, note_id=None, note_section=None, note_note_idx=None,
                       note_midi=None, note_voice=None, note_staff=None, note_offset_mc=None,
                       note_offset_beat=None, note_duration=None, midi_masks=None,
