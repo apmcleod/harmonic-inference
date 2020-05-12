@@ -138,13 +138,19 @@ def get_note_vector(note, chord):
     vector : np.array
         The vector representation of the given note.
     """
+    # Pitch info
     midi_pitch = note.midi
-    onset_beat = note.onset
-    onset_mc = note.mc
-    duration = note.duration
-    offset_beat = note.offset_beat
-    offset_mc = note.offset_mc
-    pass
+    pitch_one_hot = np.zeros(88)
+    pitch_one_hot[midi_pitch] = 1
+    
+    # Metrical level at onset and offset
+    onset_level, offset_level = corpus_utils.get_metrical_levels(note, measures=self.measures)
+    onset_one_hot = np.zeros(4)
+    onset_one_hot[onset_level] = 1
+    offset_one_hot = np.zeros(4)
+    offset_one_hot[offset_level] = 1
+    
+    return np.concatenate((pitch_one_hot, onset_one_hot, offset_one_hot))
 
 
 
@@ -170,7 +176,7 @@ def get_chord_vector(chord):
     onset_beat = chord.onset
     duration = chord.chord_length
     
-    # bass note
+    # Bass note
     
     
     # Chord notes

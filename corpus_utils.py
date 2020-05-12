@@ -6,6 +6,130 @@ import numpy as np
 from fractions import Fraction
 
 
+
+def get_metrical_level_lengths(timesig):
+    """
+    Get the lengths of the beat and subbeat levels of the given time signature.
+    
+    Parameters
+    ----------
+    timesig : string
+        A string representation of the time signature as "numerator/denominator".
+        
+    Returns
+    -------
+    beat_length : Fraction
+        The length of a beat in the given time signature, where 1 is a whole note.
+        
+    sub_beat_length : Fraction
+        The length of a sub_beat in the given time signature, where 1 is a whole note.
+    """
+    numerator, denominator = [int(val) for val in timesig.split('/')]
+    
+    if (numerator > 3) and (numerator % 3 == 0):
+        # Compound meter
+        sub_beat_length = Fraction(1, denominator)
+        beat_length = sub_beat_length * 3
+    else:
+        # Simple meter
+        beat_length = Fraction(1, denominator)
+        sub_beat_length = beat_length / 2
+    
+    return beat_length, sub_beat_length
+
+
+
+def get_metrical_levels(note, measures=None):
+    """
+    Get the metrical level of the given note's onset and (optionally) its offset.
+    
+    The offset level is not None only if the note contains columns 'offset_beat' and
+    'offset_mc', and either measures is given, note.offset_mc == note.mc, or
+    note.offset_beat == 0.
+    
+    Parameters
+    ----------
+    note : pd.Series
+        The note whose metrical level we want.
+        
+    measure : pd.DataFrame
+        A dataframe of the measures of this piece. Required for offset_level to be
+        calculated, if note.offset_mc != note.mc.
+        
+    Returns
+    -------
+    onset_level : int
+        An int representing the metrical level of the note's onset:
+        3: downbeat
+        2: beat
+        1: sub-beat
+        0: lower
+        
+    offset_level : int
+        An int representing the metrical level of the note's offset, as in onset_level.
+        This value is only not None if note contains columns 'offset_mc' and 'offset_beat',
+        and either measures is given, note.offset_mc == note.mc, or note.offset_beat == 0.
+    """
+    def get_level(beat, beat_length, sub_beat_length):
+        """
+        Get the metrical level of the given beat, given a beat and sub_beat length.
+        
+        Parameters
+        ----------
+        beat : Fraction
+            The beat of which to return the metrical level, measured in duration from the downbeat,
+            where whole note == 1.
+            
+        beat_length : Fraction
+            The length of a beat in a measure, where whole note == 1.
+            
+        sub_beat_length : Fraction
+            The length of a sub_beat in a measure, where whole note == 1.
+            
+        Returns
+        -------
+        level : int
+            An int representing the metrical level of the given beat:
+            3: downbeat
+            2: beat
+            1: sub-beat
+            0: lower
+        """
+        if beat == 0:
+            return 3
+        elif beat % beat_length == 0:
+            return 2
+        elif beat % sub_beat_length == 0:
+            return 1
+        return 0
+    
+    offset_level = None
+    beat_length, sub_beat_length = get_metrical_level_lengths(note.timesig)
+    
+    # Onset level calculation
+    onset_level = get_level(note.onset, beat_length, sub_beat_length)
+        
+    # Offset level calculation
+    if 'offset_beat' in note and 'offset_mc' in note:
+        # Downbeat is easy
+        if note.offset_beat == 0:
+            offset_level = 3
+        
+        # Same measure as onset. We know the metrical structure
+        elif note.offset_mc == note.mc:
+            offset_level = get_level(note.offset_beat, beat_length, sub_beat_length)
+            
+        # Calculation requires measures information (for timesig)
+        elif measures is not None:
+            beat_length, sub_beat_length = get_metrical_level_lengths(
+                measures.loc[(note.name[0], note.offset_mc), 'timesig']
+            )
+            offset_level = get_level(note.offset_beat, beat_length, sub_beat_length)
+            
+    return onset_level, offset_level
+
+
+
 def get_offsets(notes, measures):
     """
     Get the offset positions ('mc' measure count and beat) for each note. If the offset is
