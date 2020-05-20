@@ -7,6 +7,116 @@ from fractions import Fraction
 
 
 
+def get_next_mc(mc, measures):
+    """
+    Get the mc of the measure following this one.
+    
+    Parameters
+    ----------
+    mc : int
+        The mc of the current measure.
+        
+    measures : pd.DataFrame
+        The measures data for the current piece.
+        
+    Returns
+    -------
+        The mc index of the next measure in the piece.
+    """
+    next_list = measures.loc[mc, 'next']
+    return None if len(next_list) == 0 else next_list[-1]
+
+
+
+def get_range_length(range_start, range_end, measures):
+    """
+    Get the length of a range in whole notes.
+    
+    Parameters
+    ----------
+    range_start : tuple(int, Fraction)
+        A tuple of (mc, beat) values of the start of the range.
+        
+    range_end : tuple(int, Fraction)
+        A tuple of (mc, beat) values of the end of the range.
+        
+    measures : pd.DataFrame
+        A DataFrame containing the measures info for this particulad piece id.
+        
+    Returns
+    -------
+    length : Fraction
+        The length of the given range, in whole notes.
+    """
+    start_mc, start_beat = range_start
+    end_mc, end_beat = range_end
+    
+    if start_mc == end_mc:
+        return end_beat - start_beat
+    
+    # Start looping at end of start_mc
+    length = measures.loc[start_mc, 'act_dur']
+    mc = chord_utils.get_next_mc(start_mc, measures)
+    
+    # Loop until reaching end_mc
+    while mc != end_mc:
+        length += measures.loc[mc, 'act_dur']
+        mc = chord_utils.get_next_mc(mc, measures)
+        
+    # Add remainder
+    length += end_beat
+    
+    return length
+
+
+
+
+def get_rhythmic_info_as_proportion_of_range(note, range_start, range_end, measures, range_len=None):
+    """
+    Get a note's onset, offset, and duration as a proportion of the given range.
+    
+    Parameters
+    ----------
+    note : pd.Series
+        The note whose onset offset and duration this will return.
+        
+    range_start : tuple(int, Fraction)
+        A tuple of (mc, beat) values of the start of the range.
+        
+    range_end : tuple(int, Fraction)
+        A tuple of (mc, beat) values of the end of the range.
+        
+    measures : pd.DataFrame
+        A DataFrame containing the measures info for the the corpus.
+        
+    range_len : Fraction
+        The total duration of the given range, if it is known.
+        
+    Returns
+    -------
+    onset : Fraction
+        The onset of the note, as a proportion of the given range.
+    
+    offset : Fraction
+        The offset of the note, as a proportion of the given range.
+    
+    duration : Fraction
+        The duration of the note, as a proportion of the given range.
+    """
+    if range_len is None:
+        range_len = get_range_length(range_start, range_end, measures)
+        
+    duration = note.duration / range_len
+    
+    onset = get_range_length(range_start, (note.mc, note.onset), measures)
+    
+    offset = onset + duration
+    
+    return onset, offset, duration
+    
+
+
+
 def get_metrical_level_lengths(timesig):
     """
     Get the lengths of the beat and subbeat levels of the given time signature.
@@ -641,9 +751,6 @@ def merge_ties(notes, measures=None):
     for iloc_idx, (note_id, note_section, note_note_idx, note_midi, note_voice, note_staff) in enumerate(zip(
             tied_out_notes_id, tied_out_notes_section, tied_out_notes_note_idx, tied_out_notes_midi,
             tied_out_notes_voice, tied_out_notes_staff)):
-        # Status printing
-        if prev_index != note_id:
-            print(f"Index {note_id} / {max_index}")
             
         # These are not in the iterator because they will be updated in the loop
         note_offset_mc = tied_out_notes_offset_mc[iloc_idx]
