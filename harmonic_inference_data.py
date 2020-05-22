@@ -75,8 +75,13 @@ class MusicScoreDataset(Dataset):
         )
         self.files = read_dump(files_tsv, index_col=0) if files_df is None else files_df
         
+        # Remove measure repeats
+        if type(self.measures.iloc[0].next) is list:
+            self.measures = corpus_utils.remove_repeats(self.measures)
+        
         # Add offsets
-        if use_offsets:
+        if use_offsets and not all([column in self.notes.columns
+                                    for column in ['offset_beat', 'offset_mc']]):
             offset_mc, offset_beat = corpus_utils.get_offsets(self.notes, self.measures)
             self.notes = self.notes.assign(offset_mc=offset_mc, offset_beat=offset_beat)
         
@@ -98,8 +103,10 @@ class MusicScoreDataset(Dataset):
         chord = self.chords.iloc[idx]
         chord_vector = self.get_chord_vector(chord)
         
-        note_vectors = np.array([self.get_note_vector(note, chord) for idx, note in
-                                 self.select_notes_with_onset(chord).iterrows()])
+        all_notes = self.select_notes_with_onset(chord)
+        
+        note_vectors = np.array([self.get_note_vector(note, chord, all_notes.midi.min())
+                                 for idx, note in all_notes.iterrows()])
         
         sample = {'notes': note_vectors, 'chord': chord_vector}
         
@@ -181,22 +188,23 @@ class MusicScoreDataset(Dataset):
         tpc_one_hot = create_one_hot(12, tpc)
         
         octave = midi_pitch // 12
-        octave_one_hot = create_one_hot(88 // 12, octave)
+        octave_one_hot = create_one_hot(88 // 12 + 1, octave)
 
         # Metrical level at onset and offset
         onset_level, offset_level = corpus_utils.get_metrical_levels(note, measures=self.measures.loc[chord.name[0]])
         
         # Duration/rhythmic info as percentage of chord duration
         onset, offset, duration = corpus_utils.get_rhythmic_info_as_proportion_of_range(
-            note, (chord.mc, chord.onset), (chord.next_mc, chord.next_onset), self.measures.loc[chord.name[0]]
+            note, (chord.mc, chord.onset), (chord.mc_next, chord.onset_next), self.measures.loc[chord.name[0]]
         )
         
         # Categorical
         is_lowest = int(midi_pitch == lowest_pitch)
 
-        return np.concatenate((midi_pitch_norm, tpc_one_hot, octave_one_hot, np.array(onset_level),
-                               np.array(offset_level), np.array(float(onset)), np.array(float(offset)),
-                               np.array(float(duration)), np.array(is_lowest)))
+        return np.concatenate((np.array([midi_pitch_norm]), tpc_one_hot, octave_one_hot,
+                               np.array([onset_level]), np.array([offset_level]),
+                               np.array([float(onset)]), np.array([float(offset)]), np.array([float(duration)]),
+                               np.array([is_lowest])))
 
 
 

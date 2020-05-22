@@ -7,24 +7,31 @@ from fractions import Fraction
 
 
 
-def get_next_mc(mc, measures):
+def remove_repeats(measures):
     """
-    Get the mc of the measure following this one.
+    Remove repeats from the given measures DataFrame.
     
     Parameters
     ----------
-    mc : int
-        The mc of the current measure.
-        
     measures : pd.DataFrame
-        The measures data for the current piece.
+        The measures data for the entire corpus.
         
     Returns
     -------
-        The mc index of the next measure in the piece.
+    measures : pd.DataFrame
+        A copy of the given measures data frame with repeats removed.
     """
-    next_list = measures.loc[mc, 'next']
-    return None if len(next_list) == 0 else next_list[-1]
+    measures = measures.copy()
+    next_lengths = measures.next.apply(len)
+    
+    last_measures = next_lengths == 0 # Default case
+    last_measures |= (np.roll(measures.index.get_level_values('id').to_numpy(), -1) !=
+                          measures.index.get_level_values('id'))
+    
+    measures.loc[next_lengths >= 1, 'next'] = [next_mc[-1] for next_mc in measures.loc[next_lengths >= 1, 'next']]
+    measures.loc[last_measures, 'next'] = None
+    
+    return measures
 
 
 
@@ -48,6 +55,7 @@ def get_range_length(range_start, range_end, measures):
     length : Fraction
         The length of the given range, in whole notes.
     """
+    # TODO: Handle mc with "offset"
     start_mc, start_beat = range_start
     end_mc, end_beat = range_end
     
@@ -55,13 +63,12 @@ def get_range_length(range_start, range_end, measures):
         return end_beat - start_beat
     
     # Start looping at end of start_mc
-    length = measures.loc[start_mc, 'act_dur']
-    mc = chord_utils.get_next_mc(start_mc, measures)
+    length, mc = measures.loc[start_mc, ['act_dur', 'next']]
     
     # Loop until reaching end_mc
-    while mc != end_mc:
+    while mc != end_mc and mc is not None:
         length += measures.loc[mc, 'act_dur']
-        mc = chord_utils.get_next_mc(mc, measures)
+        mc = measures.loc[mc, 'next']
         
     # Add remainder
     length += end_beat
@@ -108,7 +115,7 @@ def get_rhythmic_info_as_proportion_of_range(note, range_start, range_end, measu
         
     duration = note.duration / range_len
     
-    onset = get_range_length(range_start, (note.mc, note.onset), measures)
+    onset = get_range_length(range_start, (note.mc, note.onset), measures) / range_len
     
     offset = onset + duration
     
@@ -128,6 +135,9 @@ def get_metrical_level_lengths(timesig):
         
     Returns
     -------
+    measure_length : Fraction
+        The length of a measure in the given time signature, where 1 is a whole note.
+        
     beat_length : Fraction
         The length of a beat in the given time signature, where 1 is a whole note.
         
@@ -145,7 +155,7 @@ def get_metrical_level_lengths(timesig):
         beat_length = Fraction(1, denominator)
         sub_beat_length = beat_length / 2
     
-    return beat_length, sub_beat_length
+    return Fraction(numerator, denominator), beat_length, sub_beat_length
 
 
 
@@ -180,7 +190,7 @@ def get_metrical_levels(note, measures=None):
         This value is only not None if note contains columns 'offset_mc' and 'offset_beat',
         and either measures is given, note.offset_mc == note.mc, or note.offset_beat == 0.
     """
-    def get_level(beat, beat_length, sub_beat_length):
+    def get_level(beat, measure_length, beat_length, sub_beat_length):
         """
         Get the metrical level of the given beat, given a beat and sub_beat length.
         
@@ -189,6 +199,9 @@ def get_metrical_levels(note, measures=None):
         beat : Fraction
             The beat of which to return the metrical level, measured in duration from the downbeat,
             where whole note == 1.
+            
+        measure_length : Fraction
+            The length of a measure, where whole note == 1.
             
         beat_length : Fraction
             The length of a beat in a measure, where whole note == 1.
@@ -205,7 +218,7 @@ def get_metrical_levels(note, measures=None):
             1: sub-beat
             0: lower
         """
-        if beat == 0:
+        if beat % measure_length == 0:
             return 3
         elif beat % beat_length == 0:
             return 2
@@ -214,10 +227,10 @@ def get_metrical_levels(note, measures=None):
         return 0
     
     offset_level = None
-    beat_length, sub_beat_length = get_metrical_level_lengths(note.timesig)
+    measure_length, beat_length, sub_beat_length = get_metrical_level_lengths(note.timesig)
     
     # Onset level calculation
-    onset_level = get_level(note.onset, beat_length, sub_beat_length)
+    onset_level = get_level(note.onset, measure_length, beat_length, sub_beat_length)
         
     # Offset level calculation
     if 'offset_beat' in note and 'offset_mc' in note:
@@ -227,14 +240,14 @@ def get_metrical_levels(note, measures=None):
         
         # Same measure as onset. We know the metrical structure
         elif note.offset_mc == note.mc:
-            offset_level = get_level(note.offset_beat, beat_length, sub_beat_length)
+            offset_level = get_level(note.offset_beat, measure_length, beat_length, sub_beat_length)
             
         # Calculation requires measures information (for timesig)
         elif measures is not None:
             beat_length, sub_beat_length = get_metrical_level_lengths(
                 measures.loc[(note.name[0], note.offset_mc), 'timesig']
             )
-            offset_level = get_level(note.offset_beat, beat_length, sub_beat_length)
+            offset_level = get_level(note.offset_beat, measure_length, beat_length, sub_beat_length)
             
     return onset_level, offset_level
 
@@ -285,19 +298,16 @@ def get_offsets(notes, measures):
         A list of the beat times of the offset of each of the notes in the given notes DataFrame,
         measured in whole notes after the beginning of the corresponding offset_mc.
     """
+    if type(measures.iloc[0].next) is list:
+        warnings.warn("Repeats have not been unrolled or removed. Calculating offsets as if they "
+                      "were removed (by using only the last 'next' pointer for each measure).")
+        measures = remove_repeats(measures)
+        
     # Index measures in the order of notes
     note_measures = measures.loc[pd.MultiIndex.from_arrays((notes.index.get_level_values('id'), notes.mc))]
     
     # Find the last measures of each piece
-    next_lengths = measures.next.apply(len)
-    last_measures = next_lengths == 0 # Default case
-    
-    # Check for multi-valued next lists
-    if next_lengths.max() > 1:
-        warnings.warn("Repeats have not been unrolled or removed. Calculating offsets as if they "
-                      "were removed (by using only the last 'next' pointer for each measure).")
-        last_measures |= (np.roll(measures.index.get_level_values('id').to_numpy(), -1) !=
-                          measures.index.get_level_values('id'))
+    last_measures = measures.next.isnull() # Default case
         
     # Get last_measures for each of our notes
     note_last_measures = last_measures.loc[note_measures.index]
@@ -315,7 +325,7 @@ def get_offsets(notes, measures):
         # Update offset position in 2 steps
         # First: save lists of only the changed values for faster computation
         changed_offset_beats = (offset_beat[new_measures] - to_change_note_measures.act_dur).to_numpy()
-        changed_offset_mcs = [mc[-1] for mc in to_change_note_measures.next] # Get the last value in each 'next' list
+        changed_offset_mcs = list(to_change_note_measures.next) # Get the next mc for each changing measure
         
         # Second: Update the global offset lists with the changed values
         offset_beat[new_measures] = changed_offset_beats
