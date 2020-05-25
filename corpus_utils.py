@@ -28,7 +28,8 @@ def remove_repeats(measures):
     last_measures |= (np.roll(measures.index.get_level_values('id').to_numpy(), -1) !=
                           measures.index.get_level_values('id'))
     
-    measures.loc[next_lengths >= 1, 'next'] = [next_mc[-1] for next_mc in measures.loc[next_lengths >= 1, 'next']]
+    measures.loc[next_lengths > 1, 'next'] = [max(next_mc) for next_mc in measures.loc[next_lengths > 1, 'next'].to_numpy()]
+    measures.loc[next_lengths == 1, 'next'] = [next_mc[0] for next_mc in measures.loc[next_lengths == 1, 'next'].to_numpy()]
     measures.loc[last_measures, 'next'] = None
     
     return measures
@@ -159,13 +160,11 @@ def get_metrical_level_lengths(timesig):
 
 
 
-def get_metrical_levels(note, measures=None):
+def get_metrical_levels(note, measures):
     """
     Get the metrical level of the given note's onset and (optionally) its offset.
     
-    The offset level is not None only if the note contains columns 'offset_beat' and
-    'offset_mc', and either measures is given, note.offset_mc == note.mc, or
-    note.offset_beat == 0.
+    The offset is None if the note doesn't contain fields "offset_beat" and "offset_mc".
     
     Parameters
     ----------
@@ -173,8 +172,7 @@ def get_metrical_levels(note, measures=None):
         The note whose metrical level we want.
         
     measure : pd.DataFrame
-        A dataframe of the measures of this piece. Required for offset_level to be
-        calculated, if note.offset_mc != note.mc.
+        A dataframe of the measures of this piece.
         
     Returns
     -------
@@ -187,10 +185,9 @@ def get_metrical_levels(note, measures=None):
         
     offset_level : int
         An int representing the metrical level of the note's offset, as in onset_level.
-        This value is only not None if note contains columns 'offset_mc' and 'offset_beat',
-        and either measures is given, note.offset_mc == note.mc, or note.offset_beat == 0.
+        None if the note doesn't contain fields "offset_beat" and "offset_mc".
     """
-    def get_level(beat, measure_length, beat_length, sub_beat_length):
+    def get_level(beat, mc_offset, measure_length, beat_length, sub_beat_length):
         """
         Get the metrical level of the given beat, given a beat and sub_beat length.
         
@@ -199,6 +196,9 @@ def get_metrical_levels(note, measures=None):
         beat : Fraction
             The beat of which to return the metrical level, measured in duration from the downbeat,
             where whole note == 1.
+            
+        mc_offset : Fraction
+            The actual position of beat==0 in the corresponging measure.
             
         measure_length : Fraction
             The length of a measure, where whole note == 1.
@@ -218,6 +218,8 @@ def get_metrical_levels(note, measures=None):
             1: sub-beat
             0: lower
         """
+        beat += mc_offset
+        
         if beat % measure_length == 0:
             return 3
         elif beat % beat_length == 0:
@@ -230,24 +232,18 @@ def get_metrical_levels(note, measures=None):
     measure_length, beat_length, sub_beat_length = get_metrical_level_lengths(note.timesig)
     
     # Onset level calculation
-    onset_level = get_level(note.onset, measure_length, beat_length, sub_beat_length)
+    mc_offset = measures.loc[note.mc, 'offset']
+    onset_level = get_level(note.onset, mc_offset, measure_length, beat_length, sub_beat_length)
         
     # Offset level calculation
     if 'offset_beat' in note and 'offset_mc' in note:
-        # Downbeat is easy
-        if note.offset_beat == 0:
-            offset_level = 3
-        
-        # Same measure as onset. We know the metrical structure
-        elif note.offset_mc == note.mc:
-            offset_level = get_level(note.offset_beat, measure_length, beat_length, sub_beat_length)
+        # New measure: recalculate vars
+        if note.offset_mc != note.mc:
+            measure = measures.loc[note.mc]
+            mc_offset = measure['offset']
+            measure_length, beat_length, sub_beat_length = get_metrical_level_lengths(measure['timesig'])
             
-        # Calculation requires measures information (for timesig)
-        elif measures is not None:
-            beat_length, sub_beat_length = get_metrical_level_lengths(
-                measures.loc[(note.name[0], note.offset_mc), 'timesig']
-            )
-            offset_level = get_level(note.offset_beat, measure_length, beat_length, sub_beat_length)
+        offset_level = get_level(note.offset_beat, mc_offset, measure_length, beat_length, sub_beat_length)
             
     return onset_level, offset_level
 

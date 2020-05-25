@@ -12,6 +12,10 @@ import corpus_utils
 from corpus_reading import read_dump
 
 
+MAX_PITCH_DEFAULT = 88
+PITCHES_PER_OCTAVE = 12
+
+
 class MusicScoreDataset(Dataset):
     """Harmonic inference dataset, parsed from tsvs created from MuseScore files."""
     
@@ -88,6 +92,8 @@ class MusicScoreDataset(Dataset):
         # Merge ties
         if merge_ties:
             self.notes = corpus_utils.merge_ties(self.notes, measures=self.measures)
+        
+        self.MAX_PITCH = max(MAX_PITCH_DEFAULT, self.notes.midi.max())
         
         self.transform = transform
         
@@ -182,13 +188,13 @@ class MusicScoreDataset(Dataset):
         
         # Pitch info
         midi_pitch = note.midi
-        midi_pitch_norm = midi_pitch / 88
+        midi_pitch_norm = midi_pitch / self.MAX_PITCH
         
-        tpc = midi_pitch % 12
-        tpc_one_hot = create_one_hot(12, tpc)
+        tpc = midi_pitch % PITCHES_PER_OCTAVE
+        tpc_one_hot = create_one_hot(PITCHES_PER_OCTAVE, tpc)
         
-        octave = midi_pitch // 12
-        octave_one_hot = create_one_hot(88 // 12 + 1, octave)
+        octave = midi_pitch // PITCHES_PER_OCTAVE
+        octave_one_hot = create_one_hot(self.MAX_PITCH // PITCHES_PER_OCTAVE + 1, octave)
 
         # Metrical level at onset and offset
         onset_level, offset_level = corpus_utils.get_metrical_levels(note, measures=self.measures.loc[chord.name[0]])
