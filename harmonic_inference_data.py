@@ -1,6 +1,5 @@
 """A package for working with harmonic inference data. This contains Dataset objects for creating
-music data -> chord label datasets from various data formats, as well as functions for
-transforming the input data into various vector representations."""
+music data -> chord label datasets from various data formats."""
 
 import pandas as pd
 from fractions import Fraction as frac
@@ -12,7 +11,7 @@ import corpus_utils
 from corpus_reading import read_dump
 
 
-MAX_PITCH_DEFAULT = 88
+MAX_PITCH_DEFAULT = 127
 PITCHES_PER_OCTAVE = 12
 
 
@@ -21,7 +20,7 @@ class MusicScoreDataset(Dataset):
     
     def __init__(self, chords_df=None, notes_df=None, measures_df=None, files_df=None,
                  chords_tsv=None, notes_tsv=None, measures_tsv=None, files_tsv=None,
-                 use_offsets=True, merge_ties=True, transform=None):
+                 use_offsets=True, merge_ties=True):
         """
         Initialize the dataset.
         
@@ -55,29 +54,26 @@ class MusicScoreDataset(Dataset):
             
         get_note_vector : function
             A function to get a note vector from a note pd.Series.
-            
-        transform : function
-            A transform to apply to each returned data point.
         """
         assert chords_df is not None or chords_tsv is not None, (
             "Either chords_df or chords_tsv is required."
         )
-        self.chords = read_dump(chords_tsv) if chords_df is None else chords_df
+        self.chords = read_dump(chords_tsv) if chords_df is None else chords_df.copy()
         
         assert notes_df is not None or notes_tsv is not None, (
             "Either notes_df or notes_tsv is required."
         )
-        self.notes = read_dump(notes_tsv, index_col=[0,1,2]) if notes_df is None else notes_df
+        self.notes = read_dump(notes_tsv, index_col=[0,1,2]) if notes_df is None else notes_df.copy()
         
         assert measures_df is not None or measures_tsv is not None, (
             "Either measures_df or measures_tsv is required."
         )
-        self.measures = read_dump(measures_tsv) if measures_df is None else measures_df
+        self.measures = read_dump(measures_tsv) if measures_df is None else measures_df.copy()
         
         assert files_df is not None or files_tsv is not None, (
             "Either files_df or files_tsv is required."
         )
-        self.files = read_dump(files_tsv, index_col=0) if files_df is None else files_df
+        self.files = read_dump(files_tsv, index_col=0) if files_df is None else files_df.copy()
         
         # Remove measure repeats
         if type(self.measures.iloc[0].next) is list:
@@ -95,7 +91,11 @@ class MusicScoreDataset(Dataset):
         
         self.MAX_PITCH = max(MAX_PITCH_DEFAULT, self.notes.midi.max())
         
-        self.transform = transform
+        self.notes['midi_pitch_norm'] = self.notes.midi / self.MAX_PITCH
+        self.notes['midi_pitch_tpc'] = self.notes.midi % PITCHES_PER_OCTAVE
+        self.notes['midi_pitch_octave'] = self.notes.midi // PITCHES_PER_OCTAVE
+        
+        self.data_points = np.full(len(self.chords), None)
         
         
     def __len__(self):
@@ -106,20 +106,34 @@ class MusicScoreDataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
             
-        chord = self.chords.iloc[idx]
-        chord_vector = self.get_chord_vector(chord)
-        
-        all_notes = self.select_notes_with_onset(chord)
-        
-        note_vectors = np.array([self.get_note_vector(note, chord, all_notes.midi.min())
-                                 for idx, note in all_notes.iterrows()])
-        
-        sample = {'notes': note_vectors, 'chord': chord_vector}
-        
-        if self.transform:
-            sample = self.transform(sample)
+        if type(idx) is int:
+            idx = [idx]
+        elif type(idx) is slice:
+            start, stop, step = idx.indices(len(self))
+            idx = list(range(start, stop, step))
             
-        return sample
+        data = []
+            
+        for index in idx:
+            if self.data_points[index] is not None:
+                data.append(self.data_points[index])
+                continue
+                
+            chord = self.chords.iloc[index]
+            chord_vector = self.get_chord_vector(chord)
+
+            note_vectors = self.get_note_vectors(self.select_notes_with_onset(chord), chord)
+
+            sample = {'notes': note_vectors, 'chord': chord_vector}
+            
+            self.data_points[index] = sample
+            data.append(sample)
+            
+        if len(data) == 0:
+            return None
+        if len(data) == 1:
+            return data[0]
+        return data
     
     
     
@@ -144,73 +158,81 @@ class MusicScoreDataset(Dataset):
 
 
 
-    def get_note_vector(self, note, chord, lowest_pitch):
+    def get_note_vectors(self, notes, chord):
         """
-        Get the vector representation of a given note.
+        Get the matrix representation of a given notes.
 
         Parameters
         ----------
-        note : pd.Series
-            The pandas row of a musical note.
+        note : pd.DataFrame
+            A pandas dataframe containing each musical note whose vector we need.
 
         chord : pd.Series
             The chord to which this note belongs.
-            
-        lowest_pitch : int
-            The lowest pitch of all notes in this chord.
 
         Returns
         -------
-        vector : np.array
-            The vector representation of the given note.
+        matrix : np.array
+            The matrix representation of the given notes.
         """
-        def create_one_hot(length, value):
+        def create_one_hot(length, values):
             """
-            Create and return a one-hot numpy vector of the given length with a 1 in the
-            given location.
+            Create and return a one-hot numpy matrix of dimension (len(values), length),
+            with 1 in each row at index values[row].
             
             Parameters
             ----------
             length : int
-                The length of the resulting one-hot vector.
+                The length of each resulting one-hot vector.
                 
-            value : int
-                The index at which to place a 1 in the resulting vector.
+            value : list(int)
+                The index at which to place a 1 in each row in the resulting 2d array.
                 
             Returns
             -------
-            vector : np.ndarray
-                A vector of length "length" with all 0's except a 1 at index "value".
+            matrix : np.ndarray
+                A matrix of size (len(values), length) with all 0's except a 1 in each row
+                at index values[row].
             """
-            vector = np.zeros(length)
-            vector[value] = 1
-            return vector
+            matrix = np.zeros((len(values), length))
+            matrix[np.arange(len(values)), values] = 1
+            return matrix
         
-        # Pitch info
-        midi_pitch = note.midi
-        midi_pitch_norm = midi_pitch / self.MAX_PITCH
-        
-        tpc = midi_pitch % PITCHES_PER_OCTAVE
-        tpc_one_hot = create_one_hot(PITCHES_PER_OCTAVE, tpc)
-        
-        octave = midi_pitch // PITCHES_PER_OCTAVE
-        octave_one_hot = create_one_hot(self.MAX_PITCH // PITCHES_PER_OCTAVE + 1, octave)
-
-        # Metrical level at onset and offset
-        onset_level, offset_level = corpus_utils.get_metrical_levels(note, measures=self.measures.loc[chord.name[0]])
-        
-        # Duration/rhythmic info as percentage of chord duration
-        onset, offset, duration = corpus_utils.get_rhythmic_info_as_proportion_of_range(
-            note, (chord.mc, chord.onset), (chord.mc_next, chord.onset_next), self.measures.loc[chord.name[0]]
+        vector_length = (
+            1 +
+            PITCHES_PER_OCTAVE +
+            self.MAX_PITCH // PITCHES_PER_OCTAVE + 1 +
+            2 +
+            3 +
+            1
         )
         
-        # Categorical
-        is_lowest = int(midi_pitch == lowest_pitch)
+        matrix = np.zeros((len(notes), vector_length))
+        
+        # Pitch info
+        matrix[:, 0] = notes.midi_pitch_norm
+        
+        # TPC one-hots
+        matrix[np.arange(len(notes)), notes.midi_pitch_tpc.to_numpy(dtype=int) + 1] = 1
+        
+        # Octave one-hots
+        matrix[np.arange(len(notes)), notes.midi_pitch_octave.to_numpy(dtype=int) + 1 + PITCHES_PER_OCTAVE] = 1
 
-        return np.concatenate((np.array([midi_pitch_norm]), tpc_one_hot, octave_one_hot,
-                               np.array([onset_level]), np.array([offset_level]),
-                               np.array([float(onset)]), np.array([float(offset)]), np.array([float(duration)]),
-                               np.array([is_lowest])))
+        # Metrical level at onset and offset
+        for i, (note_id, note) in enumerate(notes.iterrows()):
+            onset_level, offset_level = corpus_utils.get_metrical_levels(note, measures=self.measures.loc[chord.name[0]])
+
+            # Duration/rhythmic info as percentage of chord duration
+            onset, offset, duration = corpus_utils.get_rhythmic_info_as_proportion_of_range(
+                note, (chord.mc, chord.onset), (chord.mc_next, chord.onset_next), self.measures.loc[chord.name[0]]
+            )
+            
+            matrix[i, -6:-1] = [onset_level, offset_level, float(onset), float(offset), float(duration)]
+        
+        # is min pitch
+        matrix[:, -1] = (notes.midi == notes.midi.min()).to_numpy(dtype=int)
+
+        return matrix
 
 
 
@@ -228,17 +250,16 @@ class MusicScoreDataset(Dataset):
         vector : np.array
             The vector representation of the given chord.
         """
+        vector = np.zeros(10)
+        
         # Key info
         key = chord.key # Roman numeral
         global_key = chord.globalkey # Capital or lowercase letter
 
-        # Rhythmic info
-        onset_beat = chord.onset
-        duration = chord.chord_length
-
         # Bass note
-
+        
 
         # Chord notes
-
-        pass
+        
+        
+        return vector
