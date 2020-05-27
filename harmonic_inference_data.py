@@ -175,29 +175,6 @@ class MusicScoreDataset(Dataset):
         matrix : np.array
             The matrix representation of the given notes.
         """
-        def create_one_hot(length, values):
-            """
-            Create and return a one-hot numpy matrix of dimension (len(values), length),
-            with 1 in each row at index values[row].
-            
-            Parameters
-            ----------
-            length : int
-                The length of each resulting one-hot vector.
-                
-            value : list(int)
-                The index at which to place a 1 in each row in the resulting 2d array.
-                
-            Returns
-            -------
-            matrix : np.ndarray
-                A matrix of size (len(values), length) with all 0's except a 1 in each row
-                at index values[row].
-            """
-            matrix = np.zeros((len(values), length))
-            matrix[np.arange(len(values)), values] = 1
-            return matrix
-        
         vector_length = (
             1 +
             PITCHES_PER_OCTAVE +
@@ -220,11 +197,16 @@ class MusicScoreDataset(Dataset):
 
         # Metrical level at onset and offset
         for i, (note_id, note) in enumerate(notes.iterrows()):
-            onset_level, offset_level = corpus_utils.get_metrical_levels(note, measures=self.measures.loc[chord.name[0]])
+            file_measures = self.measures.loc[chord.name[0]]
+            onset_measure = file_measures.loc[note.mc]
+            offset_measure = onset_measure if note.offset_mc == note.mc else file_measures.loc[note.offset_mc]
+            
+            onset_level = corpus_utils.get_metrical_level(note.mc, note.onset, onset_measure)
+            offset_level  = corupus_utils.get_metrical_level(note.offset_mc, note.offset_beat, offset_measure)
 
             # Duration/rhythmic info as percentage of chord duration
             onset, offset, duration = corpus_utils.get_rhythmic_info_as_proportion_of_range(
-                note, (chord.mc, chord.onset), (chord.mc_next, chord.onset_next), self.measures.loc[chord.name[0]]
+                note, (chord.mc, chord.onset), (chord.mc_next, chord.onset_next), file_measures
             )
             
             matrix[i, -6:-1] = [onset_level, offset_level, float(onset), float(offset), float(duration)]
@@ -256,6 +238,14 @@ class MusicScoreDataset(Dataset):
         key = chord.key # Roman numeral
         global_key = chord.globalkey # Capital or lowercase letter
 
+        # Rhythmic info
+        file_measures = self.measures.loc[chord.name[0]]
+        onset_measure = file_measures.loc[chord.mc]
+        offset_measure = onset_measure if chord.mc_next == chord.mc else file_measures.loc[chord.mc_next]
+        
+        onset_level = corpus_utils.get_metrical_level(chord.mc, chord.onset, onset_measure)
+        offset_level  = corupus_utils.get_metrical_level(chord.mc_next, chord.onset_next, offset_measure)
+        
         # Bass note
         
 

@@ -7,6 +7,7 @@ from fractions import Fraction
 
 
 
+
 def remove_repeats(measures):
     """
     Remove repeats from the given measures DataFrame.
@@ -160,92 +161,43 @@ def get_metrical_level_lengths(timesig):
 
 
 
-def get_metrical_levels(note, measures):
+def get_metrical_levels(mc, beat, measure):
     """
-    Get the metrical level of the given note's onset and (optionally) its offset.
-    
-    The offset is None if the note doesn't contain fields "offset_beat" and "offset_mc".
+    Get the metrical level of a given beat.
     
     Parameters
     ----------
-    note : pd.Series
-        The note whose metrical level we want.
+    mc : int
+        The mc index of the measure.
         
-    measure : pd.DataFrame
-        A dataframe of the measures of this piece.
+    beat : Fraction
+        The beat we are interested in within the measure. 1 corresponds to a whole
+        note after the downbeat.
+        
+    measure : pd.Series
+        The measures_df row of the corresponding mc.
         
     Returns
     -------
-    onset_level : int
-        An int representing the metrical level of the note's onset:
+    level : int
+        An int representing the metrical level of the given beat:
         3: downbeat
         2: beat
         1: sub-beat
         0: lower
-        
-    offset_level : int
-        An int representing the metrical level of the note's offset, as in onset_level.
-        None if the note doesn't contain fields "offset_beat" and "offset_mc".
     """
-    def get_level(beat, mc_offset, measure_length, beat_length, sub_beat_length):
-        """
-        Get the metrical level of the given beat, given a beat and sub_beat length.
-        
-        Parameters
-        ----------
-        beat : Fraction
-            The beat of which to return the metrical level, measured in duration from the downbeat,
-            where whole note == 1.
-            
-        mc_offset : Fraction
-            The actual position of beat==0 in the corresponging measure.
-            
-        measure_length : Fraction
-            The length of a measure, where whole note == 1.
-            
-        beat_length : Fraction
-            The length of a beat in a measure, where whole note == 1.
-            
-        sub_beat_length : Fraction
-            The length of a sub_beat in a measure, where whole note == 1.
-            
-        Returns
-        -------
-        level : int
-            An int representing the metrical level of the given beat:
-            3: downbeat
-            2: beat
-            1: sub-beat
-            0: lower
-        """
-        beat += mc_offset
-        
-        if beat % measure_length == 0:
-            return 3
-        elif beat % beat_length == 0:
-            return 2
-        elif beat % sub_beat_length == 0:
-            return 1
-        return 0
+    measure_length, beat_length, sub_beat_length = get_metrical_level_lengths(measure.timesig)
     
-    offset_level = None
-    measure_length, beat_length, sub_beat_length = get_metrical_level_lengths(note.timesig)
+    # Offset for partial measures (not beginning on a downbeat)
+    beat += measure.offset
     
-    # Onset level calculation
-    mc_offset = measures.loc[note.mc, 'offset']
-    onset_level = get_level(note.onset, mc_offset, measure_length, beat_length, sub_beat_length)
-        
-    # Offset level calculation
-    if 'offset_beat' in note and 'offset_mc' in note:
-        # New measure: recalculate vars
-        if note.offset_mc != note.mc:
-            measure = measures.loc[note.mc]
-            mc_offset = measure['offset']
-            measure_length, beat_length, sub_beat_length = get_metrical_level_lengths(measure['timesig'])
-            
-        offset_level = get_level(note.offset_beat, mc_offset, measure_length, beat_length, sub_beat_length)
-            
-    return onset_level, offset_level
+    if beat % measure_length == 0:
+        return 3
+    elif beat % beat_length == 0:
+        return 2
+    elif beat % sub_beat_length == 0:
+        return 1
+    return 0
 
 
 
