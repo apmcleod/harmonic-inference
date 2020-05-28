@@ -7,12 +7,10 @@ import torch
 from torch.utils.data import Dataset
 import numpy as np
 
-import corpus_utils
 from corpus_reading import read_dump
-
-
-MAX_PITCH_DEFAULT = 127
-PITCHES_PER_OCTAVE = 12
+import corpus_utils
+import rhythmic_utils
+import harmonic_utils
 
 
 class MusicScoreDataset(Dataset):
@@ -89,11 +87,12 @@ class MusicScoreDataset(Dataset):
         if merge_ties:
             self.notes = corpus_utils.merge_ties(self.notes, measures=self.measures)
         
-        self.MAX_PITCH = max(MAX_PITCH_DEFAULT, self.notes.midi.max())
+        self.MAX_PITCH = max(harmonic_utils.MAX_PITCH_DEFAULT, self.notes.midi.max())
         
+        # Pitch info
         self.notes['midi_pitch_norm'] = self.notes.midi / self.MAX_PITCH
-        self.notes['midi_pitch_tpc'] = self.notes.midi % PITCHES_PER_OCTAVE
-        self.notes['midi_pitch_octave'] = self.notes.midi // PITCHES_PER_OCTAVE
+        self.notes['midi_pitch_tpc'] = self.notes.midi % harmonic_utils.PITCHES_PER_OCTAVE
+        self.notes['midi_pitch_octave'] = self.notes.midi // harmonic_utils.PITCHES_PER_OCTAVE
         
         self.data_points = np.full(len(self.chords), None)
         
@@ -177,8 +176,8 @@ class MusicScoreDataset(Dataset):
         """
         vector_length = (
             1 +
-            PITCHES_PER_OCTAVE +
-            self.MAX_PITCH // PITCHES_PER_OCTAVE + 1 +
+            harmonic_utils.PITCHES_PER_OCTAVE +
+            self.MAX_PITCH // harmonic_utils.PITCHES_PER_OCTAVE + 1 +
             2 +
             3 +
             1
@@ -201,11 +200,11 @@ class MusicScoreDataset(Dataset):
             onset_measure = file_measures.loc[note.mc]
             offset_measure = onset_measure if note.offset_mc == note.mc else file_measures.loc[note.offset_mc]
             
-            onset_level = corpus_utils.get_metrical_level(note.mc, note.onset, onset_measure)
-            offset_level  = corupus_utils.get_metrical_level(note.offset_mc, note.offset_beat, offset_measure)
+            onset_level = rhythmic_utils.get_metrical_level(note.mc, note.onset, onset_measure)
+            offset_level  = rhythmic_utils.get_metrical_level(note.offset_mc, note.offset_beat, offset_measure)
 
             # Duration/rhythmic info as percentage of chord duration
-            onset, offset, duration = corpus_utils.get_rhythmic_info_as_proportion_of_range(
+            onset, offset, duration = rhythmic_utils.get_rhythmic_info_as_proportion_of_range(
                 note, (chord.mc, chord.onset), (chord.mc_next, chord.onset_next), file_measures
             )
             
@@ -234,17 +233,36 @@ class MusicScoreDataset(Dataset):
         """
         vector = np.zeros(10)
         
-        # Key info
-        key = chord.key # Roman numeral
-        global_key = chord.globalkey # Capital or lowercase letter
+        # Harmonic info
+        global_key, global_key_is_major = harmonic_utils.get_key(chord.globalkey)
+        local_key, local_key_is_major = harmonic_utils.get_numeral_semitones(chord.key, global_key_is_major)
+        local_key = (global_key + local_key) % harmonic_utils.PITCHES_PER_OCTAVE
+        bass_note = harmonic_utils.get_bass_step_semitones(chord.bass_step, local_key_is_major) # TODO: what exactly is this
+        chord_tonic, chord_is_major = harmonic_utils.get_numeral_semitones(chord.numeral, local_key_is_major)
+        chord_tonic = (local_key + chord_tonic) % harmonic_utils.PITCHES_PER_OCTAVE
 
         # Rhythmic info
         file_measures = self.measures.loc[chord.name[0]]
         onset_measure = file_measures.loc[chord.mc]
-        offset_measure = onset_measure if chord.mc_next == chord.mc else file_measures.loc[chord.mc_next]
         
-        onset_level = corpus_utils.get_metrical_level(chord.mc, chord.onset, onset_measure)
-        offset_level  = corupus_utils.get_metrical_level(chord.mc_next, chord.onset_next, offset_measure)
+        if chord.mc_next == chord.mc:
+            offset_measure = onset_measure
+            offset_mc = chord.mc_next
+            offset_beat = chord.onset_next
+        else:
+            try:
+                offset_measure = file_measures.loc[chord.mc_next]
+                offset_mc = chord.mc_next
+                offset_beat = chord.onset_next
+            except KeyError:
+                # mc_next is the downbeat after the last measure
+                offset_mc = file_measures.index.max()
+                offset_measure = file_measures.loc[offset_mc]
+                offset_beat = offset_measure.act_dur
+        
+        onset_level = rhythmic_utils.get_metrical_level(chord.mc, chord.onset, onset_measure)
+        offset_level  = rhythmic_utils.get_metrical_level(offset_mc, offset_beat, offset_measure)
+        duration = float(rhythmic_utils.get_range_length((chord.mc, chord.onset), (offset_mc, offset_beat), file_measures))
         
         # Bass note
         
