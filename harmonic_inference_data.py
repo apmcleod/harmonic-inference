@@ -119,11 +119,11 @@ class MusicScoreDataset(Dataset):
                 continue
                 
             chord = self.chords.iloc[index]
-            chord_vector = self.get_chord_vector(chord)
+            chord_data = self.get_chord_data(chord)
 
             note_vectors = self.get_note_vectors(self.select_notes_with_onset(chord), chord)
 
-            sample = {'notes': note_vectors, 'chord': chord_vector}
+            sample = {'notes': note_vectors, 'chord': chord_data}
             
             self.data_points[index] = sample
             data.append(sample)
@@ -192,7 +192,7 @@ class MusicScoreDataset(Dataset):
         matrix[np.arange(len(notes)), notes.midi_pitch_tpc.to_numpy(dtype=int) + 1] = 1
         
         # Octave one-hots
-        matrix[np.arange(len(notes)), notes.midi_pitch_octave.to_numpy(dtype=int) + 1 + PITCHES_PER_OCTAVE] = 1
+        matrix[np.arange(len(notes)), notes.midi_pitch_octave.to_numpy(dtype=int) + 1 + harmonic_utils.PITCHES_PER_OCTAVE] = 1
 
         # Metrical level at onset and offset
         for i, (note_id, note) in enumerate(notes.iterrows()):
@@ -217,9 +217,9 @@ class MusicScoreDataset(Dataset):
 
 
 
-    def get_chord_vector(self, chord):
+    def get_chord_data(self, chord):
         """
-        Get the vector representation of a given chord.
+        Get the data of a given chord.
 
         Parameters
         ----------
@@ -228,18 +228,56 @@ class MusicScoreDataset(Dataset):
 
         Returns
         -------
-        vector : np.array
-            The vector representation of the given chord.
+        data : dict
+            A dict containing the chord data:
+                'one_hot': The overall one-hot chord label, including root and type.
+                'vector': The chord vector the model will try to match internally.
+                'rhythm': The rhythmic vector the model may use earlier.
         """
-        vector = np.zeros(10)
+        data = {}
         
         # Harmonic info
+        
+        # Global key absolute [0-12)
         global_key, global_key_is_major = harmonic_utils.get_key(chord.globalkey)
-        local_key, local_key_is_major = harmonic_utils.get_numeral_semitones(chord.key, global_key_is_major)
-        local_key = (global_key + local_key) % harmonic_utils.PITCHES_PER_OCTAVE
-        bass_note = harmonic_utils.get_bass_step_semitones(chord.bass_step, local_key_is_major) # TODO: what exactly is this
-        chord_tonic, chord_is_major = harmonic_utils.get_numeral_semitones(chord.numeral, local_key_is_major)
-        chord_tonic = (local_key + chord_tonic) % harmonic_utils.PITCHES_PER_OCTAVE
+        
+        # Local key (relative to global key)
+        local_key_relative, local_key_is_major = harmonic_utils.get_numeral_semitones(chord.key, global_key_is_major)
+        local_key_absolute = (global_key + local_key_relative) % harmonic_utils.PITCHES_PER_OCTAVE
+        
+        # Applied root (relative to local key)
+        if pd.isnull(chord.relativeroot):
+            applied_root_relative = 0
+            applied_root_is_major = local_key_is_major
+            applied_root_absolute = local_key_absolute
+        else:
+            applied_root_relative, applied_root_is_major = harmonic_utils.get_numeral_semitones(chord.relativeroot, local_key_is_major)
+            applied_root_absolute = (local_key_absolute + applied_root_relative) % harmonic_utils.PITCHES_PER_OCTAVE
+        
+        # Chord tonic (relative to applied root)
+        chord_root_relative, chord_is_major = harmonic_utils.get_numeral_semitones(chord.numeral, applied_root_is_major)
+        chord_root_absolute = (applied_root_absolute + chord_root_relative) % harmonic_utils.PITCHES_PER_OCTAVE
+        
+        # Bass note (relative to local key)
+        bass_note_relative = harmonic_utils.get_bass_step_semitones(chord.bass_step, local_key_is_major)
+        bass_note_absolute = (local_key_absolute + bass_note_relative) % harmonic_utils.PITCHES_PER_OCTAVE
+        
+        # Chord notes
+        chord_type_string = harmonic_utils.get_chord_type_string(chord_is_major, form=chord.form, figbass=chord.figbass)
+        chord_vector_relative = harmonic_utils.get_vector_from_chord_type(chord_type_string)
+        chord_vector_absolute = harmonic_utils.transpose_chord_vector(chord_vector_relative, chord_root_absolute)
+        
+        # TODO: chord changes/additions
+        
+        # vector contains bass_note, root, and the pitch presence vector
+        vector = np.zeros(harmonic_utils.PITCHES_PER_OCTAVE * 3)
+        vector[bass_note_absolute] = 1
+        vector[harmonic_utils.PITCHES_PER_OCTAVE + chord_root_absolute] = 1
+        vector[-harmonic_utils.PITCHES_PER_OCTAVE:] = chord_vector_absolute
+        data['vector'] = vector
+        
+        # Target one-hot label
+        data['one_hot'] = harmonic_utils.CHORD_TYPES.index(chord_type_string) * harmonic_utils.PITCHES_PER_OCTAVE + chord_root_absolute
 
         # Rhythmic info
         file_measures = self.measures.loc[chord.name[0]]
@@ -262,12 +300,9 @@ class MusicScoreDataset(Dataset):
         
         onset_level = rhythmic_utils.get_metrical_level(chord.mc, chord.onset, onset_measure)
         offset_level  = rhythmic_utils.get_metrical_level(offset_mc, offset_beat, offset_measure)
-        duration = float(rhythmic_utils.get_range_length((chord.mc, chord.onset), (offset_mc, offset_beat), file_measures))
+        duration = rhythmic_utils.get_range_length((chord.mc, chord.onset), (offset_mc, offset_beat), file_measures)
         
-        # Bass note
+        # Create rhythmic vector
+        data['rhythm'] = np.array([onset_level, offset_level, duration], dtype=float)
         
-
-        # Chord notes
-        
-        
-        return vector
+        return data

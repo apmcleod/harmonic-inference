@@ -1,6 +1,7 @@
 """Utility functions for getting harmonic and pitch information from the corpus DataFrames."""
 
 import pandas as pd
+import numpy as np
 
 
 MAX_PITCH_DEFAULT = 127
@@ -30,6 +31,38 @@ NOTE_TO_INDEX = {
     'B': 11
 }
 
+# Triad types as one-hot semitone presence vectors
+TRIAD_TYPES_SEMITONES = {
+    'M': [1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+    'm': [1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
+    'o': [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
+    '+': [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]
+}
+TRIAD_TYPES_SEMITONES['%'] = TRIAD_TYPES_SEMITONES['o'] # Half-diminished
+
+# Seventh types as semitone distance above root
+SEVENTH_TYPES_SEMITONES = {
+    'M': 11,
+    'm': 10,
+    'o': 9
+}
+SEVENTH_TYPES_SEMITONES['+'] = SEVENTH_TYPES_SEMITONES['m'] # Augmented
+SEVENTH_TYPES_SEMITONES['%'] = SEVENTH_TYPES_SEMITONES['m'] # Half-diminished
+
+
+CHORD_TYPES = [
+    'M',
+    'm',
+    'o',
+    '+',
+    'mm7',
+    'Mm7',
+    'MM7',
+    'mM7',
+    'o7',
+    '%7',
+    '+7'
+]
 
 
 def get_accidental_adjustment(string, in_front=True):
@@ -156,10 +189,135 @@ def get_key(key):
     """
     adjustment, key = get_accidental_adjustment(key, in_front=False)
     
-    is_major = numeral.isupper()
+    is_major = key.isupper()
     if is_major:
         tonic_index = NOTE_TO_INDEX[key]
     else:
         tonic_index = NOTE_TO_INDEX[key.upper()]
         
     return tonic_index + adjustment, is_major
+
+
+
+def transpose_chord_vector(chord_vector, transposition):
+    """
+    Transpose a chord vector by a certain number of semitones.
+    
+    Parameters
+    ----------
+    chord_vector : list(int)
+        A binary vector representation of the given chord type, where 1 indicates
+        the presence of a note in the given chord type, and 0 represents non-presence.
+        The vector is length 12. The root may be in any position.
+        
+    transposition : int
+        Rotate the vector by the given amount. If the chord's root was previously at
+        index 0, the returned vector will have the root at index (0 + transposition) % 12.
+        
+    Returns
+    -------
+    transposed_chord_vector : list(int)
+        The input vector, with each chord tone transposed by the given amount.
+    """
+    if type(chord_vector) is list:
+        # Equivalent to np.roll(chord_vector, transposition), but without np conversion.
+        return chord_vector[-transposition:] + chord_vector[:-transposition]
+    return np.roll(chord_vector, transposition)
+
+
+
+def get_vector_from_chord_type(type_string):
+    """
+    Convert a chord type string into a vector representation of semitone presence.
+    
+    Parameters
+    ----------
+    type_string : string
+        A type of chord. One of:
+            'M':   Major triad
+            'm':   Minor triad
+            'o':   Diminished triad
+            '+':   Augmented triad
+            'mm7': Minor seventh chord
+            'Mm7': Dominant seventh chord
+            'MM7': Major seventh chord
+            'mM7': Minor major seventh chord
+            'o7':  Diminished seventh chord
+            '%7':  Half-diminished seventh chord
+            '+7':  Augmented seventh chord
+            
+    Returns
+    -------
+    chord_vector : list(int)
+        A binary vector representation of the given chord type, where 1 indicates
+        the presence of a note in the given chord type, and 0 represents non-presence.
+        The vector is length 12, where chord_vector[0] is the root note, chord_vector[1]
+        is a half step up from the root, etc.
+    """
+    chord_vector = TRIAD_TYPES_SEMITONES[type_string[0]]
+    
+    if type_string[-1] == '7':
+        chord_vector[SEVENTH_TYPES_SEMITONES[type_string[-2]]] = 1
+        
+    return chord_vector
+
+
+
+def get_chord_type_string(is_major, form=None, figbass=None):
+    """
+    Get the chord type string, given some features about the chord.
+    
+    Parameters
+    ----------
+    is_major : boolean
+        True if the basic chord (triad) is major. False otherwise. Ignored if
+        the triad is diminished or augmented (in which case, form disambiguates).
+        
+    form : string
+        A string representing the form of the chord:
+            'o':  Diminished 7th or triad
+            '%':  Half-diminished 7th chord
+            '+':  Augmented seventh or triad
+            'M':  7th chord with a major 7th
+            None: Other chord. Either a 7th chord with a minor 7th, or a major or minor triad.
+    
+    figbass : string
+        The figured bass notation for the chord, representing its inversion. Importantly:
+            None: Triad in first inversion
+            '6':  Triad with 3rd in the bass
+            '64': Triad with 5th in the bass
+            
+    Returns
+    -------
+    chord_type : string
+        A string representing the chord type of this chord. One of:
+            'M':   Major triad
+            'm':   Minor triad
+            'o':   Diminished triad
+            '+':   Augmented triad
+            'mm7': Minor seventh chord
+            'Mm7': Dominant seventh chord
+            'MM7': Major seventh chord
+            'mM7': Minor major seventh chord
+            'o7':  Diminished seventh chord
+            '%7':  Half-diminished seventh chord
+            '+7':  Augmented seventh chord
+    """
+    if pd.isnull(figbass):
+        figbass = None
+    if pd.isnull(form):
+        form = None
+        
+    # Triad
+    if figbass or figbass in [None, '6', '64']:
+        if form in ['o', '+']:
+            return form
+        return 'M' if is_major else 'm'
+    
+    # Seventh chord
+    if form in ['o', '%', '+']:
+        return f"{form}7"
+    
+    triad = 'M' if is_major else 'm'
+    seventh = 'M' if form == 'M' else 'm'
+    return f"{triad}{seventh}7"

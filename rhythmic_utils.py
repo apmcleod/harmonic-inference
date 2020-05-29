@@ -1,7 +1,7 @@
 """Utility functions for getting rhythmic or metrical information from the corpus DataFrames."""
 
 import pandas as pd
-
+from fractions import Fraction
 
 
 def get_range_length(range_start, range_end, measures):
