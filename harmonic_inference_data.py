@@ -6,6 +6,7 @@ from fractions import Fraction as frac
 import torch
 from torch.utils.data import Dataset
 import numpy as np
+import traceback
 
 from corpus_reading import read_dump
 import corpus_utils
@@ -118,15 +119,18 @@ class MusicScoreDataset(Dataset):
                 data.append(self.data_points[index])
                 continue
                 
-            chord = self.chords.iloc[index]
-            chord_data = self.get_chord_data(chord)
+            try:
+                chord = self.chords.iloc[index]
+                chord_data = self.get_chord_data(chord)
 
-            note_vectors = self.get_note_vectors(self.select_notes_with_onset(chord), chord)
+                note_vectors = self.get_note_vectors(self.select_notes_with_onset(chord), chord)
 
-            sample = {'notes': note_vectors, 'chord': chord_data}
-            
-            self.data_points[index] = sample
-            data.append(sample)
+                sample = {'notes': note_vectors, 'chord': chord_data}
+
+                self.data_points[index] = sample
+                data.append(sample)
+            except Exception as e:
+                print(f'Error at index {index}: {repr(e)}')
             
         if len(data) == 0:
             return None
