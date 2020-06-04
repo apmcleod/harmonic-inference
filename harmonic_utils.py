@@ -132,14 +132,15 @@ def get_numeral_semitones(numeral, is_major):
         True if the chord is major (upper-case). False otherwise.
     """
     adjustment, numeral = get_accidental_adjustment(numeral)
-        
-    is_major = numeral.isupper()
-    if is_major:
-        semitones = MAJOR_SCALE[NUMERAL_TO_NUMBER[numeral]]
+    
+    if numeral.upper() in ['GER', 'IT', 'FR']:
+        semitones = MINOR_SCALE[6]
+    elif is_major:
+        semitones = MAJOR_SCALE[NUMERAL_TO_NUMBER[numeral.upper()]]
     else:
         semitones = MINOR_SCALE[NUMERAL_TO_NUMBER[numeral.upper()]]
         
-    return semitones + adjustment, is_major
+    return semitones + adjustment, numeral.isupper()
 
 
 

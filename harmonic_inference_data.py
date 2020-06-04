@@ -7,6 +7,9 @@ import torch
 from torch.utils.data import Dataset
 import numpy as np
 import traceback
+import os
+import h5py
+from tqdm import tqdm
 
 from corpus_reading import read_dump
 import corpus_utils
@@ -14,17 +17,78 @@ import rhythmic_utils
 import harmonic_utils
 
 
+
+
+def create_music_score_h5(music_score_dataset, directory='.', filename='music_score_data.h5'):
+    """
+    Write a MusicScoreDataset object out to chord and note h5 files.
+    
+    Parameters
+    ----------
+    music_score_dataset : MusicScoreDataset
+        The data we will write out to the h5 file.
+        
+    directory : string
+        The directory in which to save the data files. This will be created if it does not exist.
+        
+    filename : string
+        The filename for the h5py files.
+    """
+    os.makedirs(directory, exist_ok=True)
+    
+    note_vectors = []
+    chord_vectors = []
+    chord_note_pointer_starts = []
+    chord_note_pointer_lengths = []
+    chord_rhythm_vectors = []
+    chord_one_hots = []
+    
+    note_vector_index = 0
+    for data in tqdm(music_score_dataset):
+        if data is None:
+            continue
+            
+        # Raw data
+        note_vectors.append(data['notes'])
+        chord_vectors.append(data['chord']['vector'])
+        chord_rhythm_vectors.append(data['chord']['rhythm'])
+        chord_one_hots.append(data['chord']['one_hot'])
+        
+        # Note pointers
+        chord_note_pointer_starts.append(note_vector_index)
+        chord_note_pointer_lengths.append(len(data['notes']))
+        note_vector_index += len(data['notes'])
+        
+    # Write out data
+    h5_file = h5py.File(os.path.join(directory, filename), 'w')
+    h5_file.create_dataset('note_vectors', data=np.vstack(note_vectors), compression="gzip")
+    h5_file.create_dataset('chord_vectors', data=np.vstack(chord_vectors), compression="gzip")
+    h5_file.create_dataset('chord_rhythm_vectors', data=np.vstack(chord_rhythm_vectors), compression="gzip")
+    h5_file.create_dataset('chord_one_hots', data=np.array(chord_one_hots), compression="gzip")
+    h5_file.create_dataset('chord_note_pointers', data=np.hstack((chord_note_pointer_starts,
+                                                                  chord_note_pointer_lengths)), compression="gzip")
+    h5_file.close()
+
+
+
+
 class MusicScoreDataset(Dataset):
     """Harmonic inference dataset, parsed from tsvs created from MuseScore files."""
     
-    def __init__(self, chords_df=None, notes_df=None, measures_df=None, files_df=None,
+    def __init__(self, h5_file=None, h5_overwrite=False, chords_df=None, notes_df=None, measures_df=None, files_df=None,
                  chords_tsv=None, notes_tsv=None, measures_tsv=None, files_tsv=None,
-                 use_offsets=True, merge_ties=True):
+                 use_offsets=True, merge_ties=True, cache=True):
         """
         Initialize the dataset.
         
         Parameters
         ----------
+        h5_file : string
+            Path of an h5py file to read data from. If this is given and it exists, all other options
+            are ignored and data is read exclusively from the h5 file. If this is given but the file
+            doesn't exist, the data is pre-computed and written out to the h5 file for faster loading
+            during runtime.
+            
         chords_tsv : string
             The path of the chords tsv file.
             
@@ -53,53 +117,81 @@ class MusicScoreDataset(Dataset):
             
         get_note_vector : function
             A function to get a note vector from a note pd.Series.
+            
+        cache : boolean
+            Save data points in a cache when they are first created for faster subsequent loading.
         """
-        assert chords_df is not None or chords_tsv is not None, (
-            "Either chords_df or chords_tsv is required."
-        )
-        self.chords = read_dump(chords_tsv) if chords_df is None else chords_df.copy()
-        
-        assert notes_df is not None or notes_tsv is not None, (
-            "Either notes_df or notes_tsv is required."
-        )
-        self.notes = read_dump(notes_tsv, index_col=[0,1,2]) if notes_df is None else notes_df.copy()
-        
-        assert measures_df is not None or measures_tsv is not None, (
-            "Either measures_df or measures_tsv is required."
-        )
-        self.measures = read_dump(measures_tsv) if measures_df is None else measures_df.copy()
-        
-        assert files_df is not None or files_tsv is not None, (
-            "Either files_df or files_tsv is required."
-        )
-        self.files = read_dump(files_tsv, index_col=0) if files_df is None else files_df.copy()
-        
-        # Remove measure repeats
-        if type(self.measures.iloc[0].next) is list:
-            self.measures = corpus_utils.remove_repeats(self.measures)
-        
-        # Add offsets
-        if use_offsets and not all([column in self.notes.columns
-                                    for column in ['offset_beat', 'offset_mc']]):
-            offset_mc, offset_beat = corpus_utils.get_offsets(self.notes, self.measures)
-            self.notes = self.notes.assign(offset_mc=offset_mc, offset_beat=offset_beat)
-        
-        # Merge ties
-        if merge_ties:
-            self.notes = corpus_utils.merge_ties(self.notes, measures=self.measures)
-        
-        self.MAX_PITCH = max(harmonic_utils.MAX_PITCH_DEFAULT, self.notes.midi.max())
-        
-        # Pitch info
-        self.notes['midi_pitch_norm'] = self.notes.midi / self.MAX_PITCH
-        self.notes['midi_pitch_tpc'] = self.notes.midi % harmonic_utils.PITCHES_PER_OCTAVE
-        self.notes['midi_pitch_octave'] = self.notes.midi // harmonic_utils.PITCHES_PER_OCTAVE
-        
-        self.data_points = np.full(len(self.chords), None)
+        # First, check h5_file
+        self.h5_file = h5_file
+        self.h5_data_present = False
+        if self.h5_file is not None:
+            if not h5_overwrite and os.path.isfile(h5_file):
+                self.h5_data_present = True
+            
+        if not self.h5_data_present:
+            assert chords_df is not None or chords_tsv is not None, (
+                "Either chords_df or chords_tsv is required."
+            )
+            self.chords = read_dump(chords_tsv) if chords_df is None else chords_df.copy()
+
+            assert notes_df is not None or notes_tsv is not None, (
+                "Either notes_df or notes_tsv is required."
+            )
+            self.notes = read_dump(notes_tsv, index_col=[0,1,2]) if notes_df is None else notes_df.copy()
+
+            assert measures_df is not None or measures_tsv is not None, (
+                "Either measures_df or measures_tsv is required."
+            )
+            self.measures = read_dump(measures_tsv) if measures_df is None else measures_df.copy()
+
+            assert files_df is not None or files_tsv is not None, (
+                "Either files_df or files_tsv is required."
+            )
+            self.files = read_dump(files_tsv, index_col=0) if files_df is None else files_df.copy()
+
+            # Remove measure repeats
+            if type(self.measures.iloc[0].next) is list:
+                self.measures = corpus_utils.remove_repeats(self.measures)
+
+            # Add offsets
+            if use_offsets and not all([column in self.notes.columns
+                                        for column in ['offset_beat', 'offset_mc']]):
+                offset_mc, offset_beat = corpus_utils.get_offsets(self.notes, self.measures)
+                self.notes = self.notes.assign(offset_mc=offset_mc, offset_beat=offset_beat)
+
+            # Merge ties
+            if merge_ties:
+                self.notes = corpus_utils.merge_ties(self.notes, measures=self.measures)
+
+            self.MAX_PITCH = max(harmonic_utils.MAX_PITCH_DEFAULT, self.notes.midi.max())
+
+            # Pitch info
+            self.notes['midi_pitch_norm'] = self.notes.midi / self.MAX_PITCH
+            self.notes['midi_pitch_tpc'] = self.notes.midi % harmonic_utils.PITCHES_PER_OCTAVE
+            self.notes['midi_pitch_octave'] = self.notes.midi // harmonic_utils.PITCHES_PER_OCTAVE
+
+            self.cache = cache
+            if self.cache:
+                self.data_points = np.full(len(self.chords), None)
+                
+        if self.h5_file is not None:
+            if not self.h5_data_present:
+                create_music_score_h5(self, directory=os.path.split(h5_file)[0], filename=os.path.split(h5_file)[1])
+                self.h5_data_present = True
+            
+            with h5py.File(self.h5_file, 'r') as h5_file_obj:
+                self.note_vectors = np.array(h5_file_obj['note_vectors'])
+                self.chord_vectors = np.array(h5_file_obj['chord_vectors'])
+                self.chord_rhythm_vectors = np.array(h5_file_obj['chord_rhythm_vectors'])
+                self.chord_one_hots = np.array(h5_file_obj['chord_one_hots'])
+                self.chord_note_pointers = np.array(h5_file_obj['chord_note_pointers'])
         
         
     def __len__(self):
-        return len(self.chords)
+        if self.h5_data_present:
+            return len(self.chord_vectors)
+        else:
+            return len(self.chords)
 
 
     def __getitem__(self, idx):
@@ -115,22 +207,30 @@ class MusicScoreDataset(Dataset):
         data = []
             
         for index in idx:
-            if self.data_points[index] is not None:
+            if self.h5_data_present:
+                data.append(self.get_sample_from_h5_index(index))
+                continue
+                
+            if self.cache and self.data_points[index] is not None:
                 data.append(self.data_points[index])
                 continue
                 
             try:
                 chord = self.chords.iloc[index]
-                chord_data = self.get_chord_data(chord)
+                notes = self.select_notes_with_onset(chord)
+                
+                chord_data = self.get_chord_data(chord, notes.midi.min())
 
-                note_vectors = self.get_note_vectors(self.select_notes_with_onset(chord), chord)
+                note_vectors = self.get_note_vectors(notes, chord)
 
                 sample = {'notes': note_vectors, 'chord': chord_data}
 
-                self.data_points[index] = sample
+                if self.cache:
+                    self.data_points[index] = sample
                 data.append(sample)
             except Exception as e:
-                print(f'Error at index {index}: {repr(e)}')
+                print(f'Error at index {index}:')
+                traceback.print_exc()
             
         if len(data) == 0:
             return None
@@ -138,6 +238,34 @@ class MusicScoreDataset(Dataset):
             return data[0]
         return data
     
+    
+    def get_sample_from_h5_index(self, index):
+        """
+        Get a the sample at the given index, parsed from the h5 data fields.
+        
+        Parameters
+        ----------
+        index : int
+            The index of the sample to return.
+            
+        Returns
+        -------
+        sample : dict
+            The data point.
+        """
+        sample = {}
+        
+        sample['chord'] = {
+            'vector': self.chord_vectors[index],
+            'one_hot': self.chord_one_hots[index],
+            'rhythm': self.chord_rhythm_vectors[index]
+        }
+        
+        note_indexes = range(self.chord_note_pointers[0], self.chord_note_pointers[0] + self.chord_note_pointers[1])
+        
+        sample['notes'] = self.note_vectors[note_indexes]
+        
+        return sample
     
     
     def select_notes_with_onset(self, chord):
@@ -221,7 +349,7 @@ class MusicScoreDataset(Dataset):
 
 
 
-    def get_chord_data(self, chord):
+    def get_chord_data(self, chord, lowest_note):
         """
         Get the data of a given chord.
 
@@ -229,6 +357,10 @@ class MusicScoreDataset(Dataset):
         ----------
         chord : pd.Series
             The pandas row of a chord.
+            
+        lowest_note : int
+            The pitch of the lowest note in this chord. This is used only in the case
+            of an error in the bass_step column.
 
         Returns
         -------
@@ -264,7 +396,11 @@ class MusicScoreDataset(Dataset):
         
         # Bass note (relative to local key)
         bass_note_relative = harmonic_utils.get_bass_step_semitones(chord.bass_step, local_key_is_major)
-        bass_note_absolute = (local_key_absolute + bass_note_relative) % harmonic_utils.PITCHES_PER_OCTAVE
+        if bass_note_relative is None:
+            # bass_step was invalid. Guess based on lowest note in chord
+            bass_note_absolute = lowest_note % harmonic_utils.PITCHES_PER_OCTAVE
+        else:
+            bass_note_absolute = (local_key_absolute + bass_note_relative) % harmonic_utils.PITCHES_PER_OCTAVE
         
         # Chord notes
         chord_type_string = harmonic_utils.get_chord_type_string(chord_is_major, form=chord.form, figbass=chord.figbass)
