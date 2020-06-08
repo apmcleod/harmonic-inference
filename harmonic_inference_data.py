@@ -71,6 +71,64 @@ def create_music_score_h5(music_score_dataset, directory='.', filename='music_sc
 
 
 
+def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None, files_df=None,
+                                chords_tsv=None, notes_tsv=None, measures_tsv=None, files_tsv=None,
+                                seed=None, train_prop=0.8, test_prop=0.1, valid_prop=0.1,
+                                create_h5=True, h5_directory='.', h5_prefix='data'):
+    """
+    """
+    assert chords_df is not None or chords_tsv is not None, (
+        "Either chords_df or chords_tsv is required."
+    )
+    if chords_df is None:
+        chords_df = read_dump(chords_tsv)
+
+    assert notes_df is not None or notes_tsv is not None, (
+        "Either notes_df or notes_tsv is required."
+    )
+    if notes_df is None:
+        notes_df = read_dump(notes_tsv, index_col=[0,1,2])
+
+    assert measures_df is not None or measures_tsv is not None, (
+        "Either measures_df or measures_tsv is required."
+    )
+    if measures_df is None:
+        measures_df = read_dump(measures_tsv)
+
+    assert files_df is not None or files_tsv is not None, (
+        "Either files_df or files_tsv is required."
+    )
+    if files_df is None:
+        files_df = read_dump(files_tsv, index_col=0)
+        
+    norm_sum = train_prop + valid_prop + test_prop
+    train_prop /= norm_sum
+    valid_prop /= norm_sum
+    test_prop /= norm_sum
+    
+    if seed is None:
+        seed = np.random.randint(0, 2**32)
+    np.random.seed(seed)
+    
+    # Shuffle and split data
+    num_files = len(files_df)
+    file_ids = np.random.shuffle(files_df.index.to_numpy())
+    train_ids, valid_ids, test_ids = np.split(file_ids, [int(train_prop * num_files), int((1 - test_prop) * num_files)])
+    
+    # Create datasets
+    train_dataset = MusicScoreDataset(h5_file=os.path.join(h5_directory, f'{h5_prefix}_{seed}_train.h5') if create_h5 else None,
+                                      chords_df=chords_df.loc[train_ids], notes_df=notes_df.loc[train_ids],
+                                      measures_df=measures_df.loc[train_ids], files_df=files_df.loc[train_ids])
+    valid_dataset = MusicScoreDataset(h5_file=os.path.join(h5_directory, f'{h5_prefix}_{seed}_valid.h5') if create_h5 else None,
+                                      chords_df=chords_df.loc[valid_ids], notes_df=notes_df.loc[valid_ids],
+                                      measures_df=measures_df.loc[valid_ids], files_df=files_df.loc[valid_ids])
+    test_dataset = MusicScoreDataset(h5_file=os.path.join(h5_directory, f'{h5_prefix}_{seed}_test.h5') if create_h5 else None,
+                                     chords_df=chords_df.loc[test_ids], notes_df=notes_df.loc[test_ids],
+                                     measures_df=measures_df.loc[test_ids], files_df=files_df.loc[test_ids])
+    
+    return train_dataset, valid_dataset, test_dataset
+
+
 
 class MusicScoreDataset(Dataset):
     """Harmonic inference dataset, parsed from tsvs created from MuseScore files."""
