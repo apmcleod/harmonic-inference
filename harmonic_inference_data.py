@@ -76,6 +76,53 @@ def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None,
                                 seed=None, train_prop=0.8, test_prop=0.1, valid_prop=0.1,
                                 create_h5=True, h5_directory='.', h5_prefix='data'):
     """
+    chords_df : pd.DataFrame
+        The full chords data.
+        
+    notes_df : pd.DataFrame
+        The full notes data.
+        
+    measures_df : pd.DataFrame
+        The full measures data.
+        
+    files_df : pd.DataFrame
+        The full files data.
+        
+    chords_tsv : string
+        The path of a chords tsv file. Used only if chords_df is None.
+
+    notes_tsv : string
+        The path of a notes tsv file. Used only if notes_df is None.
+
+    measures_tsv : string
+        The path of a measures tsv file. Used only if measures_tsv is None.
+
+    files_tsv : string
+        The path of a files tsv file. Used only if files_df is None.
+        
+    seed : int
+        The seed to use for splitting the files into train, valid, and test sets.
+        
+    train_prop : float
+        The proportion of files which should be used as training. train_prop, valid_prop, and test_prop
+        are normalized to sum to 1.
+        
+    valid_prop : float
+        The proportion of files which should be used as validation. train_prop, valid_prop, and test_prop
+        are normalized to sum to 1.
+        
+    test_prop : float
+        The proportion of files which should be used as testing. train_prop, valid_prop, and test_prop
+        are normalized to sum to 1.
+        
+    create_h5 : boolean
+        True to create h5 data files to save the splits (or load from one if it alread exists).
+        
+    h5_directory : string
+        The directory in which to store the h5 data files.
+        
+    h5_prefix : string
+        A prefix to use for the h5 data filenames. They will be named {prefix}_{seed}_{split}.h5.
     """
     assert chords_df is not None or chords_tsv is not None, (
         "Either chords_df or chords_tsv is required."
@@ -112,7 +159,8 @@ def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None,
     
     # Shuffle and split data
     num_files = len(files_df)
-    file_ids = np.random.shuffle(files_df.index.to_numpy())
+    file_ids = files_df.index.to_numpy()
+    np.random.shuffle(file_ids)
     train_ids, valid_ids, test_ids = np.split(file_ids, [int(train_prop * num_files), int((1 - test_prop) * num_files)])
     
     # Create datasets
