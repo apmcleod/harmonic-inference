@@ -3,13 +3,16 @@ music data -> chord label datasets from various data formats."""
 
 import pandas as pd
 from fractions import Fraction as frac
-import torch
-from torch.utils.data import Dataset
 import numpy as np
 import traceback
 import os
 import h5py
 from tqdm import tqdm
+
+import torch
+from torch.utils.data import Dataset
+from torch.utils.data.dataloader import default_collate
+from torch.nn.utils.rnn import pad_sequence
 
 from corpus_reading import read_dump
 import corpus_utils
@@ -65,8 +68,8 @@ def create_music_score_h5(music_score_dataset, directory='.', filename='music_sc
     h5_file.create_dataset('chord_vectors', data=np.vstack(chord_vectors), compression="gzip")
     h5_file.create_dataset('chord_rhythm_vectors', data=np.vstack(chord_rhythm_vectors), compression="gzip")
     h5_file.create_dataset('chord_one_hots', data=np.array(chord_one_hots), compression="gzip")
-    h5_file.create_dataset('chord_note_pointers', data=np.hstack((chord_note_pointer_starts,
-                                                                  chord_note_pointer_lengths)), compression="gzip")
+    h5_file.create_dataset('chord_note_pointers', data=np.vstack((chord_note_pointer_starts,
+                                                                  chord_note_pointer_lengths)).T, compression="gzip")
     h5_file.close()
 
 
@@ -175,6 +178,36 @@ def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None,
                                      measures_df=measures_df.loc[test_ids], files_df=files_df.loc[test_ids])
     
     return train_dataset, valid_dataset, test_dataset
+
+
+
+
+def pad_and_collate_samples(batch):
+    """
+    Collate the samples of a given batch into torch tensors. [chord] (and all fields within)
+    are collated as default. [notes] are padded with 0s to the maximum of the length of any
+    notes list within the samples before collating (and the original length of each list
+    is returned as [num_notes]).
+    
+    Parameters
+    ----------
+    batch : list
+        A list of samples drawn from a harmonic inference dataset.
+        
+    Returns
+    -------
+    collated_batch : dict
+        A dict of torch tensors from collating the given samples.
+    """
+    collated_batch = {}
+    collated_batch['chord'] = default_collate([sample['chord'] for sample in batch])
+    notes = [torch.tensor(sample['notes']) for sample in batch]
+    collated_batch['notes'] = pad_sequence(notes, batch_first=True)
+    collated_batch['num_notes'] = torch.tensor([len(n) for n in notes])
+    
+    return collated_batch
+    
+
 
 
 
@@ -367,7 +400,8 @@ class MusicScoreDataset(Dataset):
             'rhythm': self.chord_rhythm_vectors[index]
         }
         
-        note_indexes = range(self.chord_note_pointers[0], self.chord_note_pointers[0] + self.chord_note_pointers[1])
+        note_indexes = range(self.chord_note_pointers[index, 0],
+                             self.chord_note_pointers[index, 0] + self.chord_note_pointers[index, 1])
         
         sample['notes'] = self.note_vectors[note_indexes]
         

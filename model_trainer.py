@@ -1,7 +1,12 @@
 import os
+import sys
 
 import torch
 import torch.nn as nn
+
+from torch.utils.data import DataLoader
+
+from harmonic_inference_data import pad_and_collate_samples
 
 
 
@@ -14,7 +19,7 @@ class ModelTrainer():
     def __init__(self, model, train_dataset=None, valid_dataset=None, test_dataset=None,
                  device=torch.device("cpu"), seed=None,
                  batch_size=64, valid_batch_size=None, num_epochs=100,
-                 optimizer=None, scheduler=None, criterion=None, accuracy=None,
+                 optimizer=None, scheduler=None, criterion=None,
                  log_every=1, log_file=None,
                  save_every=10, save_dir='.', save_prefix='checkpoint'):
         """
@@ -58,10 +63,6 @@ class ModelTrainer():
         criterion : torch.criterion
             The loss criterion to use during training and evaluation.
             
-        accuracy : func
-            A function that takes as input a torch tensor of predictions, followed by ground truth,
-            and returns a torch tensor of the accuracy.
-            
         log_every : int
             Print to the log every this many epochs during training.
             
@@ -80,9 +81,12 @@ class ModelTrainer():
         if valid_batch_size is None:
             valid_batch_size = batch_size
             
-        self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True) if train_dataset is not None else None
-        self.valid_loader = DataLoader(valid_dataset, batch_size=valid_batch_size, shuffle=False) if valid_dataset is not None else None
-        self.test_loader = DataLoader(test_dataset, batch_size=valid_batch_size, shuffle=False) if test_dataset is not None else None
+        self.train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
+                                       collate_fn=pad_and_collate_samples) if train_dataset is not None else None
+        self.valid_loader = DataLoader(valid_dataset, batch_size=valid_batch_size, shuffle=False,
+                                       collate_fn=pad_and_collate_samples) if valid_dataset is not None else None
+        self.test_loader = DataLoader(test_dataset, batch_size=valid_batch_size, shuffle=False,
+                                      collate_fn=pad_and_collate_samples) if test_dataset is not None else None
         
         if seed is not None:
             torch.manual_seed(seed)
@@ -96,7 +100,6 @@ class ModelTrainer():
         self.optimizer = optimizer
         self.scheduler = scheduler
         self.criterion = criterion
-        self.accuracy = accuracy
         
         self.log_every = log_every
         self.log_file = sys.stdout if log_file is None else log_file
@@ -143,7 +146,7 @@ class ModelTrainer():
     
     
     
-    def iteration(train=True):
+    def iteration(self, train=True):
         """
         Perform a single pass through a loaded Dataset and return the model's loss and accuracy.
         
@@ -164,9 +167,9 @@ class ModelTrainer():
             this_batch_size = len(batch)
             
             # Load data
-            notes = [sample['notes'] for sample in batch]
-            notes_lengths = [len(note) for note in notes]
-            labels = [sample['chords']['one_hot'] for sample in batch]
+            notes = batch['notes'].float()
+            notes_lengths = batch['num_notes']
+            labels = batch['chord']['one_hot'].long()
             
             # Transfer to device
             notes, labels = notes.to(self.device), labels.to(self.device)
@@ -174,9 +177,9 @@ class ModelTrainer():
             if train:
                 self.optimizer.zero_grad()
                 
-            predictions = self.model.forward(notes, notes_length)
+            predictions = self.model.forward(notes, notes_lengths)
             loss = self.criterion(predictions, labels)
-            acc = self.accuracy(predictions, labels)
+            acc = labels.eq(predictions.long()).mean()
             
             total_loss += this_batch_size * loss.item()
             total_acc += this_batch_size * acc.item()
