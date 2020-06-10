@@ -164,12 +164,11 @@ class ModelTrainer():
         torch.set_grad_enabled(train)
         
         for batch in data_loader:
-            this_batch_size = len(batch)
-            
             # Load data
             notes = batch['notes'].float()
             notes_lengths = batch['num_notes']
             labels = batch['chord']['one_hot'].long()
+            this_batch_size = notes.shape[0]
             
             # Transfer to device
             notes, labels = notes.to(self.device), labels.to(self.device)
@@ -177,9 +176,11 @@ class ModelTrainer():
             if train:
                 self.optimizer.zero_grad()
                 
-            predictions = self.model.forward(notes, notes_lengths)
-            loss = self.criterion(predictions, labels)
-            acc = labels.eq(predictions.long()).mean()
+            outputs = self.model.forward(notes, notes_lengths)
+            loss = self.criterion(outputs, labels)
+            _, predictions = outputs.max(1)
+            correct = (predictions == labels).sum().float()
+            acc = correct / this_batch_size
             
             total_loss += this_batch_size * loss.item()
             total_acc += this_batch_size * acc.item()
