@@ -139,7 +139,7 @@ class ModelTrainer():
                 self.log([train_loss, train_acc, valid_loss, valid_acc])
 
             # Save checkpoints
-            if epoch % save_every == 0:
+            if epoch % self.save_every == 0:
                 self.save(epoch=epoch)
                 
         self.save(epoch=epoch)
@@ -228,15 +228,15 @@ class ModelTrainer():
         save_path : string
             The file the model checkpoint was saved to.
         """
-        if path is None:
+        if save_path is None:
             save_dir = '.' if self.save_dir is None else self.save_dir
             save_prefix = 'checkpoint' if self.save_prefix is None else self.save_prefix
             save_filename = f'{save_prefix}_e{epoch}.model' if epoch is not None else f'{save_prefix}.model'
             save_path = os.path.join(save_dir, save_filename)
         else:
             save_dir = os.path.dirname(save_path)
-            if save_dir != '':
-                os.makedirs(save_dir, exist_ok=True)
+        if save_dir != '':
+            os.makedirs(save_dir, exist_ok=True)
         
         # Save model on cpu
         torch.save(self.model.cpu(), save_path)
