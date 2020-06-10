@@ -2,6 +2,8 @@ import os
 import sys
 import shutil
 
+import numpy as np
+
 import torch
 import torch.nn as nn
 
@@ -169,10 +171,10 @@ class ModelTrainer():
         # Temp copy of teset data into valid slot
         old_valid_loader = self.valid_loader
         self.valid_loader = self.test_loader
-        loss, acc = iteration(train=False)
+        loss, acc, outputs, targets = iteration(train=False, return_outputs=True)
         self.valid_loader = old_valid_loader
         
-        return loss, acc
+        return loss, acc, outputs, targets
         
         
     def train(self):
@@ -220,7 +222,7 @@ class ModelTrainer():
     
     
     
-    def iteration(self, train=True):
+    def iteration(self, train=False, return_outputs=False):
         """
         Perform a single pass through a loaded Dataset and return the model's loss and accuracy.
         
@@ -228,10 +230,17 @@ class ModelTrainer():
         ----------
         train : bool
             If True, use self.train_loader and perform backprop. If False, use self.valid_loader and perform no backprop.
+            
+        return_outputs : bool
+            If True, return the full outputs and targets for every data point in the dataset.
         """
         total_loss = 0
         total_acc = 0
         total_size = 0
+        
+        if return_outputs:
+            all_outputs = []
+            all_targets = []
         
         data_loader = self.train_loader if train else self.valid_loader
         
@@ -260,6 +269,10 @@ class ModelTrainer():
             total_acc += this_batch_size * acc.item()
             total_size += this_batch_size
             
+            if return_outputs:
+                all_outputs.extend(outputs.numpy())
+                all_targets.extend(labels.numpy())
+            
             if train:
                 loss.backward()
                 self.optimizer.step()
@@ -267,6 +280,8 @@ class ModelTrainer():
         loss = total_loss / total_size
         acc = total_acc / total_size
         
+        if return_outputs:
+            return loss, acc, np.array(all_outputs), np.array(all_targets)
         return loss, acc
     
     
