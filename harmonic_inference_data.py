@@ -54,8 +54,9 @@ def create_music_score_h5(music_score_dataset, directory='.', filename='music_sc
             continue
             
         # Raw data
-        note_vectors.append(data['notes'])
-        note_indexes.append(data['note_indexes'])
+        if len(data['notes']) != 0:
+            note_vectors.append(data['notes'])
+            note_indexes.append(data['note_indexes'])
         chord_vectors.append(data['chord']['vector'])
         chord_indexes.append(data['chord_index'])
         chord_rhythm_vectors.append(data['chord']['rhythm'])
