@@ -171,7 +171,7 @@ class ModelTrainer():
         # Temp copy of teset data into valid slot
         old_valid_loader = self.valid_loader
         self.valid_loader = self.test_loader
-        loss, acc, outputs, targets = iteration(train=False, return_outputs=True)
+        loss, acc, outputs, targets = self.iteration(train=False, return_outputs=True)
         self.valid_loader = old_valid_loader
         
         return loss, acc, outputs, targets
