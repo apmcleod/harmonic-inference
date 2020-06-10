@@ -65,6 +65,23 @@ CHORD_TYPES = [
 ]
 
 
+def get_one_hot_labels():
+    """
+    Get the human-readable label of every one-hot chord value.
+    
+    Returns
+    -------
+    labels : list
+        A List, where labels[0] is the String interpretation of the one-hot chord label 0, etc.
+    """
+    labels = []
+    for chord_type in CHORD_TYPES:
+        for root in ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']:
+            labels.append(f'{root}{chord_type}')
+            
+    return labels
+
+
 def get_accidental_adjustment(string, in_front=True):
     """
     Get the accidental adjustment of the accidentals at the beginning of a string.
