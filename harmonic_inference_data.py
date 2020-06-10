@@ -40,7 +40,9 @@ def create_music_score_h5(music_score_dataset, directory='.', filename='music_sc
     os.makedirs(directory, exist_ok=True)
     
     note_vectors = []
+    note_indexes = []
     chord_vectors = []
+    chord_indexes = []
     chord_note_pointer_starts = []
     chord_note_pointer_lengths = []
     chord_rhythm_vectors = []
@@ -53,7 +55,9 @@ def create_music_score_h5(music_score_dataset, directory='.', filename='music_sc
             
         # Raw data
         note_vectors.append(data['notes'])
+        note_indexes.append(data['note_indexes'])
         chord_vectors.append(data['chord']['vector'])
+        chord_indexes.append(data['chord_index'])
         chord_rhythm_vectors.append(data['chord']['rhythm'])
         chord_one_hots.append(data['chord']['one_hot'])
         
@@ -65,7 +69,9 @@ def create_music_score_h5(music_score_dataset, directory='.', filename='music_sc
     # Write out data
     h5_file = h5py.File(os.path.join(directory, filename), 'w')
     h5_file.create_dataset('note_vectors', data=np.vstack(note_vectors), compression="gzip")
+    h5_file.create_dataset('note_indexes', data=np.vstack(note_indexes), compression="gzip")
     h5_file.create_dataset('chord_vectors', data=np.vstack(chord_vectors), compression="gzip")
+    h5_file.create_dataset('chord_indexes', data=np.vstack(chord_indexes), compression="gzip")
     h5_file.create_dataset('chord_rhythm_vectors', data=np.vstack(chord_rhythm_vectors), compression="gzip")
     h5_file.create_dataset('chord_one_hots', data=np.array(chord_one_hots), compression="gzip")
     h5_file.create_dataset('chord_note_pointers', data=np.vstack((chord_note_pointer_starts,
@@ -320,7 +326,9 @@ class MusicScoreDataset(Dataset):
             
             with h5py.File(self.h5_file, 'r') as h5_file_obj:
                 self.note_vectors = np.array(h5_file_obj['note_vectors'])
+                self.note_indexes = np.array(h5_file_obj['note_indexes'])
                 self.chord_vectors = np.array(h5_file_obj['chord_vectors'])
+                self.chord_indexes = np.array(h5_file_obj['chord_indexes'])
                 self.chord_rhythm_vectors = np.array(h5_file_obj['chord_rhythm_vectors'])
                 self.chord_one_hots = np.array(h5_file_obj['chord_one_hots'])
                 self.chord_note_pointers = np.array(h5_file_obj['chord_note_pointers'])
@@ -362,7 +370,12 @@ class MusicScoreDataset(Dataset):
 
                 note_vectors = self.get_note_vectors(notes, chord)
 
-                sample = {'notes': note_vectors, 'chord': chord_data}
+                sample = {
+                    'notes': note_vectors,
+                    'chord': chord_data,
+                    'note_indexes': [list(index) for index in notes.index],
+                    'chord_index': list(chord.name)
+                }
 
                 if self.cache:
                     self.data_points[index] = sample
@@ -399,11 +412,13 @@ class MusicScoreDataset(Dataset):
             'one_hot': self.chord_one_hots[index],
             'rhythm': self.chord_rhythm_vectors[index]
         }
+        sample['chord_index'] = self.chord_indexes[index]
         
         note_indexes = range(self.chord_note_pointers[index, 0],
                              self.chord_note_pointers[index, 0] + self.chord_note_pointers[index, 1])
         
         sample['notes'] = self.note_vectors[note_indexes]
+        sample['note_indexes'] = self.note_indexes[note_indexes]
         
         return sample
     
