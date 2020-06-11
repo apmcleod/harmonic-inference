@@ -82,9 +82,7 @@ def get_rhythmic_info_as_proportion_of_range(note, range_start, range_end, measu
         range_len = get_range_length(range_start, range_end, measures)
         
     duration = note.duration / range_len
-    
     onset = get_range_length(range_start, (note.mc, note.onset), measures) / range_len
-    
     offset = onset + duration
     
     return onset, offset, duration
@@ -127,15 +125,12 @@ def get_metrical_level_lengths(timesig):
 
 
 
-def get_metrical_level(mc, beat, measure):
+def get_metrical_level(beat, measure):
     """
     Get the metrical level of a given beat.
     
     Parameters
     ----------
-    mc : int
-        The mc index of the measure.
-        
     beat : Fraction
         The beat we are interested in within the measure. 1 corresponds to a whole
         note after the downbeat.

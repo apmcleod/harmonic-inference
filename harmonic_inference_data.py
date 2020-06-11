@@ -489,8 +489,8 @@ class MusicScoreDataset(Dataset):
             onset_measure = file_measures.loc[note.mc]
             offset_measure = onset_measure if note.offset_mc == note.mc else file_measures.loc[note.offset_mc]
             
-            onset_level = rhythmic_utils.get_metrical_level(note.mc, note.onset, onset_measure)
-            offset_level  = rhythmic_utils.get_metrical_level(note.offset_mc, note.offset_beat, offset_measure)
+            onset_level = rhythmic_utils.get_metrical_level(note.onset, onset_measure)
+            offset_level  = rhythmic_utils.get_metrical_level(note.offset_beat, offset_measure)
 
             # Duration/rhythmic info as percentage of chord duration
             onset, offset, duration = rhythmic_utils.get_rhythmic_info_as_proportion_of_range(
@@ -595,8 +595,8 @@ class MusicScoreDataset(Dataset):
                 offset_measure = file_measures.loc[offset_mc]
                 offset_beat = offset_measure.act_dur
         
-        onset_level = rhythmic_utils.get_metrical_level(chord.mc, chord.onset, onset_measure)
-        offset_level  = rhythmic_utils.get_metrical_level(offset_mc, offset_beat, offset_measure)
+        onset_level = rhythmic_utils.get_metrical_level(chord.onset, onset_measure)
+        offset_level  = rhythmic_utils.get_metrical_level(offset_beat, offset_measure)
         duration = rhythmic_utils.get_range_length((chord.mc, chord.onset), (offset_mc, offset_beat), file_measures)
         
         # Create rhythmic vector
