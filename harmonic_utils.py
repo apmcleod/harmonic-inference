@@ -151,6 +151,7 @@ def get_numeral_semitones(numeral, is_major):
     adjustment, numeral = get_accidental_adjustment(numeral)
     
     if numeral.upper() in ['GER', 'IT', 'FR']:
+        numeral = numeral.lower()
         semitones = MINOR_SCALE[6]
     elif is_major:
         semitones = MAJOR_SCALE[NUMERAL_TO_NUMBER[numeral.upper()]]
@@ -182,7 +183,11 @@ def get_bass_step_semitones(bass_step, is_major):
     adjustment, bass_step = get_accidental_adjustment(bass_step)
     
     try:
-        return int(bass_step) + adjustment
+        if is_major:
+            semitones = MAJOR_SCALE[int(bass_step)]
+        else:
+            semitones = MINOR_SCALE[int(bass_step)]
+        return semitones + adjustment
     except:
         return None
 
@@ -272,7 +277,7 @@ def get_vector_from_chord_type(type_string):
         The vector is length 12, where chord_vector[0] is the root note, chord_vector[1]
         is a half step up from the root, etc.
     """
-    chord_vector = TRIAD_TYPES_SEMITONES[type_string[0]]
+    chord_vector = TRIAD_TYPES_SEMITONES[type_string[0]].copy()
     
     if type_string[-1] == '7':
         chord_vector[SEVENTH_TYPES_SEMITONES[type_string[-2]]] = 1
