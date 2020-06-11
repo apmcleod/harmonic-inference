@@ -327,7 +327,7 @@ def get_chord_type_string(is_major, form=None, figbass=None):
         form = None
         
     # Triad
-    if figbass or figbass in [None, '6', '64']:
+    if figbass in [None, '6', '64']:
         if form in ['o', '+']:
             return form
         return 'M' if is_major else 'm'

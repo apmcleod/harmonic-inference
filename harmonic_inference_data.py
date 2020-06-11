@@ -22,65 +22,6 @@ import harmonic_utils
 
 
 
-def create_music_score_h5(music_score_dataset, directory='.', filename='music_score_data.h5'):
-    """
-    Write a MusicScoreDataset object out to chord and note h5 files.
-    
-    Parameters
-    ----------
-    music_score_dataset : MusicScoreDataset
-        The data we will write out to the h5 file.
-        
-    directory : string
-        The directory in which to save the data files. This will be created if it does not exist.
-        
-    filename : string
-        The filename for the h5py files.
-    """
-    os.makedirs(directory, exist_ok=True)
-    
-    note_vectors = []
-    note_indexes = []
-    chord_vectors = []
-    chord_indexes = []
-    chord_note_pointer_starts = []
-    chord_note_pointer_lengths = []
-    chord_rhythm_vectors = []
-    chord_one_hots = []
-    
-    note_vector_index = 0
-    for data in tqdm(music_score_dataset):
-        if data is None:
-            continue
-            
-        # Raw data
-        if len(data['notes']) != 0:
-            note_vectors.append(data['notes'])
-            note_indexes.append(data['note_indexes'])
-        chord_vectors.append(data['chord']['vector'])
-        chord_indexes.append(data['chord_index'])
-        chord_rhythm_vectors.append(data['chord']['rhythm'])
-        chord_one_hots.append(data['chord']['one_hot'])
-        
-        # Note pointers
-        chord_note_pointer_starts.append(note_vector_index)
-        chord_note_pointer_lengths.append(len(data['notes']))
-        note_vector_index += len(data['notes'])
-        
-    # Write out data
-    h5_file = h5py.File(os.path.join(directory, filename), 'w')
-    h5_file.create_dataset('note_vectors', data=np.vstack(note_vectors), compression="gzip")
-    h5_file.create_dataset('note_indexes', data=np.vstack(note_indexes), compression="gzip")
-    h5_file.create_dataset('chord_vectors', data=np.vstack(chord_vectors), compression="gzip")
-    h5_file.create_dataset('chord_indexes', data=np.vstack(chord_indexes), compression="gzip")
-    h5_file.create_dataset('chord_rhythm_vectors', data=np.vstack(chord_rhythm_vectors), compression="gzip")
-    h5_file.create_dataset('chord_one_hots', data=np.array(chord_one_hots), compression="gzip")
-    h5_file.create_dataset('chord_note_pointers', data=np.vstack((chord_note_pointer_starts,
-                                                                  chord_note_pointer_lengths)).T, compression="gzip")
-    h5_file.close()
-
-
-
 def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None, files_df=None,
                                 chords_tsv=None, notes_tsv=None, measures_tsv=None, files_tsv=None,
                                 seed=None, train_prop=0.8, test_prop=0.1, valid_prop=0.1,
@@ -185,6 +126,66 @@ def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None,
                                      measures_df=measures_df.loc[test_ids], files_df=files_df.loc[test_ids])
     
     return train_dataset, valid_dataset, test_dataset
+
+
+
+
+def create_music_score_h5(music_score_dataset, directory='.', filename='music_score_data.h5'):
+    """
+    Write a MusicScoreDataset object out to chord and note h5 files.
+    
+    Parameters
+    ----------
+    music_score_dataset : MusicScoreDataset
+        The data we will write out to the h5 file.
+        
+    directory : string
+        The directory in which to save the data files. This will be created if it does not exist.
+        
+    filename : string
+        The filename for the h5py files.
+    """
+    os.makedirs(directory, exist_ok=True)
+    
+    note_vectors = []
+    note_indexes = []
+    chord_vectors = []
+    chord_indexes = []
+    chord_note_pointer_starts = []
+    chord_note_pointer_lengths = []
+    chord_rhythm_vectors = []
+    chord_one_hots = []
+    
+    note_vector_index = 0
+    for data in tqdm(music_score_dataset):
+        if data is None:
+            continue
+            
+        # Raw data
+        if len(data['notes']) != 0:
+            note_vectors.append(data['notes'])
+            note_indexes.append(data['note_indexes'])
+        chord_vectors.append(data['chord']['vector'])
+        chord_indexes.append(data['chord_index'])
+        chord_rhythm_vectors.append(data['chord']['rhythm'])
+        chord_one_hots.append(data['chord']['one_hot'])
+        
+        # Note pointers
+        chord_note_pointer_starts.append(note_vector_index)
+        chord_note_pointer_lengths.append(len(data['notes']))
+        note_vector_index += len(data['notes'])
+        
+    # Write out data
+    h5_file = h5py.File(os.path.join(directory, filename), 'w')
+    h5_file.create_dataset('note_vectors', data=np.vstack(note_vectors), compression="gzip")
+    h5_file.create_dataset('note_indexes', data=np.vstack(note_indexes), compression="gzip")
+    h5_file.create_dataset('chord_vectors', data=np.vstack(chord_vectors), compression="gzip")
+    h5_file.create_dataset('chord_indexes', data=np.vstack(chord_indexes), compression="gzip")
+    h5_file.create_dataset('chord_rhythm_vectors', data=np.vstack(chord_rhythm_vectors), compression="gzip")
+    h5_file.create_dataset('chord_one_hots', data=np.array(chord_one_hots), compression="gzip")
+    h5_file.create_dataset('chord_note_pointers', data=np.vstack((chord_note_pointer_starts,
+                                                                  chord_note_pointer_lengths)).T, compression="gzip")
+    h5_file.close()
 
 
 
