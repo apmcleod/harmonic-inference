@@ -133,16 +133,34 @@ def test_get_chord_type_string():
         
         # Triad
         if chord_type[-1] != '7':
+            if chord_type in ['o', '+']:
+                form = chord_type
+            else:
+                is_major = chord_type.isupper()
+                
             for figbass in [pd.NA, '6', '64']:
-                if chord_type in ['o', '+']:
-                    form = chord_type
-                else:
-                    is_major = chord_type.isupper()
-            out_type = hu.get_chord_type_string(is_major, form=form, figbass=figbass)
-            assert out_type == chord_type, (f"Chord type is {out_type} instead of {chord_type} "
-                                            f"for inputs (is_major, form, figbass) {is_major}, "
-                                            f"{form}, {figbass}")
+                out_type = hu.get_chord_type_string(is_major, form=form, figbass=figbass)
+                assert out_type == chord_type, (f"Chord type is {out_type} instead of {chord_type} "
+                                                f"for inputs (is_major, form, figbass) {is_major}, "
+                                                f"{form}, {figbass}")
             
         # 7th chord
         else:
-            pass
+            # Dim, aug, half-dim
+            if len(chord_type) == 2:
+                form = chord_type[0]
+                for figbass in ['7', '65', '43', '2', '42']:
+                    out_type = hu.get_chord_type_string(is_major, form=form, figbass=figbass)
+                    assert out_type == chord_type, (f"Chord type is {out_type} instead of {chord_type} "
+                                                    f"for inputs (is_major, form, figbass) {is_major}, "
+                                                    f"{form}, {figbass}")
+                    
+            # MM, Mm, mM, mm
+            else:
+                is_major = chord_type[0].isupper()
+                form = chord_type[1]
+                for figbass in ['7', '65', '43', '2', '42']:
+                        out_type = hu.get_chord_type_string(is_major, form=form, figbass=figbass)
+                        assert out_type == chord_type, (f"Chord type is {out_type} instead of {chord_type} "
+                                                        f"for inputs (is_major, form, figbass) {is_major}, "
+                                                        f"{form}, {figbass}")
