@@ -91,7 +91,7 @@ def test_get_key():
             
             
 def test_transpose_chord_vector():
-    LENGTH = 12
+    LENGTH = hu.PITCHES_PER_OCTAVE
     
     for chord_vector in itertools.product([0, 1], repeat=LENGTH):
         for transposition in range(-LENGTH + 1, LENGTH):
