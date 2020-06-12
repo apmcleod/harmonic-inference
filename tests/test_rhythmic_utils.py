@@ -84,8 +84,61 @@ def test_get_range_length():
 
 
 
-def get_rhythmic_info_as_proportion_of_range():
-    pass
+def test_get_rhythmic_info_as_proportion_of_range():
+    # note, range_start, range_end, measures, range_len=None
+    # note has duration, mc, onset
+    
+    # Create measures
+    NUM_MEASURES = 5
+    mc = list(range(NUM_MEASURES))
+    next = list(range(1, NUM_MEASURES)) + [pd.NA]
+    act_dur = [Fraction(3, 2)] * NUM_MEASURES
+    measures = pd.DataFrame({'mc': mc,
+                             'next': next,
+                             'act_dur': act_dur}).set_index('mc')
+    
+    # Note equal to range
+    for note_onset in [0, Fraction(1, 2), Fraction(3, 2)]:
+        for mc in [0, 1]:
+            for note_duration in [0, Fraction(1, 2), Fraction(3, 2)]:
+                for range_end_mc in range(mc + 1, 5):
+                    for range_start_mc in range(0, mc):
+                        range_start = (range_start_mc, 0)
+                        range_end = (range_end_mc, 0)
+                        note = pd.Series([mc, note_onset, note_duration], index=['mc', 'onset', 'duration'])
+                        onset, offset, duration = ru.get_rhythmic_info_as_proportion_of_range(
+                            note, range_start, range_end, measures)
+                        
+                        # Tested above
+                        range_len = ru.get_range_length(range_start, range_end, measures)
+                        correct_onset = ru.get_range_length(range_start, (note.mc, note.onset), measures) / range_len
+                        correct_duration = note.duration / range_len
+                        correct_offset = correct_onset + correct_duration
+                        assert onset == correct_onset, (
+                            f"Incorrect onset with note {note} and range {range_start}-{range_end}"
+                        )
+                        assert offset == correct_offset, (
+                            f"Incorrect offset with note {note} and range {range_start}-{range_end}"
+                        )
+                        assert duration == correct_duration, (
+                            f"Incorrect duration with note {note} and range {range_start}-{range_end}"
+                        )
+                        
+                        # Again with range_len given
+                        onset, offset, duration = ru.get_rhythmic_info_as_proportion_of_range(
+                            note, range_start, range_end, measures, range_len=range_len)
+                        assert onset == correct_onset, (
+                            f"Incorrect onset with range_len given and note {note} and range {range_start}-{range_end}"
+                        )
+                        assert offset == correct_offset, (
+                            f"Incorrect offset with range_len given and note {note} and range {range_start}-{range_end}"
+                        )
+                        assert duration == correct_duration, (
+                            f"Incorrect duration with range_len given and note {note} and range {range_start}-{range_end}"
+                        )
+    
+    # Duration halfway
+    
 
 
 
