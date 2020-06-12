@@ -32,6 +32,7 @@ def get_range_length(range_start, range_end, measures):
     
     # Start looping at end of start_mc
     length, mc = measures.loc[start_mc, ['act_dur', 'next']]
+    length -= start_beat
     
     # Loop until reaching end_mc
     while mc != end_mc and mc is not None:

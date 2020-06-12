@@ -14,7 +14,73 @@ import rhythmic_utils as ru
 
 
 def test_get_range_length():
-    pass
+    NUM_MEASURES = 5
+    
+    mc = list(range(NUM_MEASURES))
+    next = list(range(1, NUM_MEASURES)) + [pd.NA]
+    act_dur = [Fraction(3, 2)] * NUM_MEASURES
+    
+    for start_mc in range(NUM_MEASURES):
+        for end_mc in range(start_mc, NUM_MEASURES):
+            for start_beat_num in range(7):
+                min_end_beat_num = start_beat_num if start_mc == end_mc else 0
+                
+                for end_beat_num in range(min_end_beat_num, 7):
+                    start_beat = Fraction(start_beat_num, 4)
+                    end_beat = Fraction(end_beat_num, 4)
+                    start = (start_mc, start_beat)
+                    end = (end_mc, end_beat)
+                    
+                    measures = pd.DataFrame({'mc': mc,
+                                             'next': next,
+                                             'act_dur': act_dur}).set_index('mc')
+                    
+                    length = ru.get_range_length(start, end, measures)
+                    if start_mc == end_mc:
+                        correct_length = end_beat - start_beat
+                    elif start_mc + 1 == end_mc:
+                        correct_length = end_beat + Fraction(3, 2) - start_beat
+                    else:
+                        correct_length = (Fraction(3, 2) * (end_mc - start_mc - 1) + # Full measures
+                                          (Fraction(3, 2) - start_beat) + # Start measure
+                                          end_beat) # End measure
+                    assert length == correct_length, f"Range length incorrect between {start} and {end}"
+                    
+                    # Try different measure lengths
+                    measures.loc[start_mc, 'act_dur'] = Fraction(7, 2)
+                    if end_mc > start_mc:
+                        measures.loc[list(range(start_mc + 1, end_mc + 1)), 'act_dur'] = Fraction(9, 2)
+                        
+                    length = ru.get_range_length(start, end, measures)
+                    if start_mc == end_mc:
+                        correct_length = end_beat - start_beat
+                    elif start_mc + 1 == end_mc:
+                        correct_length = end_beat + Fraction(7, 2) - start_beat
+                    else:
+                        correct_length = (Fraction(9, 2) * (end_mc - start_mc - 1) + # Full measures
+                                          (Fraction(7, 2) - start_beat) + # Start measure
+                                          end_beat) # End measure
+                    assert length == correct_length, f"Range length incorrect between {start} and {end}"
+                    
+                    # Try weird next list
+                    if end_mc > start_mc:
+                        measures = pd.DataFrame({'mc': mc,
+                                                 'next': next,
+                                                 'act_dur': act_dur}).set_index('mc')
+                        
+                        # One measure
+                        measures.loc[start_mc, 'next'] = end_mc
+                        length = ru.get_range_length(start, end, measures)
+                        correct_length = end_beat + Fraction(3, 2) - start_beat
+                        assert length == correct_length, f"Range length incorrect with start.next==end between {start} and {end}"
+                        
+                        if start_mc != 0:
+                            measures.loc[start_mc, 'next'] = 0
+                            measures.loc[0, 'next'] = end_mc
+                            length = ru.get_range_length(start, end, measures)
+                            correct_length = end_beat + 2 * Fraction(3, 2) - start_beat
+                            assert length == correct_length, f"Range length incorrect with start.next==0 between {start} and {end}"
+            
 
 
 
