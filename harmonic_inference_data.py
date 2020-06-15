@@ -25,7 +25,7 @@ import harmonic_utils
 def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None, files_df=None,
                                 chords_tsv=None, notes_tsv=None, measures_tsv=None, files_tsv=None,
                                 seed=None, train_prop=0.8, test_prop=0.1, valid_prop=0.1,
-                                create_h5=True, h5_directory='.', h5_prefix='data'):
+                                create_h5=True, h5_directory='.', h5_prefix='data', make_dfs=False):
     """
     chords_df : pd.DataFrame
         The full chords data.
@@ -74,6 +74,9 @@ def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None,
         
     h5_prefix : string
         A prefix to use for the h5 data filenames. They will be named {prefix}_{seed}_{split}.h5.
+        
+    make_dfs : bool
+        Force the Dataset to make the DataFrames even if it loads the data from an h5 file.
     """
     assert chords_df is not None or chords_tsv is not None, (
         "Either chords_df or chords_tsv is required."
@@ -117,13 +120,16 @@ def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None,
     # Create datasets
     train_dataset = MusicScoreDataset(h5_file=os.path.join(h5_directory, f'{h5_prefix}_{seed}_train.h5') if create_h5 else None,
                                       chords_df=chords_df.loc[train_ids], notes_df=notes_df.loc[train_ids],
-                                      measures_df=measures_df.loc[train_ids], files_df=files_df.loc[train_ids])
+                                      measures_df=measures_df.loc[train_ids], files_df=files_df.loc[train_ids],
+                                      make_dfs=make_dfs)
     valid_dataset = MusicScoreDataset(h5_file=os.path.join(h5_directory, f'{h5_prefix}_{seed}_valid.h5') if create_h5 else None,
                                       chords_df=chords_df.loc[valid_ids], notes_df=notes_df.loc[valid_ids],
-                                      measures_df=measures_df.loc[valid_ids], files_df=files_df.loc[valid_ids])
+                                      measures_df=measures_df.loc[valid_ids], files_df=files_df.loc[valid_ids],
+                                      make_dfs=make_dfs)
     test_dataset = MusicScoreDataset(h5_file=os.path.join(h5_directory, f'{h5_prefix}_{seed}_test.h5') if create_h5 else None,
                                      chords_df=chords_df.loc[test_ids], notes_df=notes_df.loc[test_ids],
-                                     measures_df=measures_df.loc[test_ids], files_df=files_df.loc[test_ids])
+                                     measures_df=measures_df.loc[test_ids], files_df=files_df.loc[test_ids],
+                                     make_dfs=make_dfs)
     
     return train_dataset, valid_dataset, test_dataset
 
@@ -224,7 +230,7 @@ class MusicScoreDataset(Dataset):
     
     def __init__(self, h5_file=None, h5_overwrite=False, chords_df=None, notes_df=None, measures_df=None, files_df=None,
                  chords_tsv=None, notes_tsv=None, measures_tsv=None, files_tsv=None,
-                 use_offsets=True, merge_ties=True, cache=True):
+                 use_offsets=True, merge_ties=True, cache=True, make_dfs=False):
         """
         Initialize the dataset.
         
@@ -267,6 +273,9 @@ class MusicScoreDataset(Dataset):
             
         cache : boolean
             Save data points in a cache when they are first created for faster subsequent loading.
+            
+        make_dfs : bool
+            Force the Dataset to make the DataFrames even if it loads the data from an h5 file.
         """
         # First, check h5_file
         self.h5_file = h5_file
@@ -275,7 +284,7 @@ class MusicScoreDataset(Dataset):
             if not h5_overwrite and os.path.isfile(h5_file):
                 self.h5_data_present = True
             
-        if not self.h5_data_present:
+        if not self.h5_data_present or make_dfs:
             assert chords_df is not None or chords_tsv is not None, (
                 "Either chords_df or chords_tsv is required."
             )
