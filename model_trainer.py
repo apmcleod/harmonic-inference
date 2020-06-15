@@ -164,10 +164,18 @@ class ModelTrainer():
         
         
         
-    def evaluate(self):
+    def evaluate(self, valid=False):
         """
-        Get the loss and accuracy of the loaded model on the loaded test data.
+        Get the loss and accuracy of the loaded model on the loaded test or validation data.
+        
+        Parameters
+        ----------
+        valid : bool
+            True to use validation data. False to use test data.
         """
+        if valid:
+            return self.iteration(train=False, return_outputs=True)
+        
         # Temp copy of teset data into valid slot
         old_valid_loader = self.valid_loader
         self.valid_loader = self.test_loader
