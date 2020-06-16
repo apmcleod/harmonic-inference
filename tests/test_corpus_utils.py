@@ -73,10 +73,15 @@ def test_get_notes_during_chord():
         
     NUM_TESTS = 1000
     indexes = np.random.randint(low=0, high=len(chords_df), size=NUM_TESTS)
+    return_sizes = []
+    return_non_onsets = []
     
     for i in indexes:
         chord = chords_df.iloc[i]
-        for note_id, note in cu.get_notes_during_chord(chord, notes_df).iterrows():
+        notes = cu.get_notes_during_chord(chord, notes_df)
+        return_sizes.append(len(notes))
+        return_non_onsets.append(0)
+        for note_id, note in notes.iterrows():
             if pd.isna(note.overlap):
                 # Note onset is not before chord
                 assert not comes_before((note.mc, note.onset), (chord.mc, chord.onset))
@@ -84,16 +89,46 @@ def test_get_notes_during_chord():
                 assert not comes_before((chord.mc_next, chord.onset_next), (note.offset_mc, note.offset_beat))
                 
             elif note.overlap == -1:
+                return_non_onsets[-1] += 1
                 # Note onset is before chord
                 assert comes_before((note.mc, note.onset), (chord.mc, chord.onset))
                 # Note offset is not after chord
                 assert not comes_before((chord.mc_next, chord.onset_next), (note.offset_mc, note.offset_beat))
                 
             elif note.overlap == 0:
+                return_non_onsets[-1] += 1
                 # Note onset is before chord
                 assert comes_before((note.mc, note.onset), (chord.mc, chord.onset))
                 # Note offset is after chord
                 assert comes_before((chord.mc_next, chord.onset_next), (note.offset_mc, note.offset_beat))
+                
+            elif note.overlap == 1:
+                # Note onset is not before chord
+                assert not comes_before((note.mc, note.onset), (chord.mc, chord.onset))
+                # Note offset is after chord
+                assert comes_before((chord.mc_next, chord.onset_next), (note.offset_mc, note.offset_beat))
+                
+            else:
+                assert False, "Invalid overlap value returned: " + str(note.overlap)
+                
+    for list_index, i in enumerate(indexes):
+        chord = chords_df.iloc[i]
+        notes = cu.get_notes_during_chord(chord, notes_df, onsets_only=True)
+        assert len(notes) == return_sizes[list_index] - return_non_onsets[list_index], (
+            "Length of returned df incorrect with onsets_only"
+        )
+        for note_id, note in notes.iterrows():
+            if pd.isna(note.overlap):
+                # Note onset is not before chord
+                assert not comes_before((note.mc, note.onset), (chord.mc, chord.onset))
+                # Note offset is not after chord
+                assert not comes_before((chord.mc_next, chord.onset_next), (note.offset_mc, note.offset_beat))
+                
+            elif note.overlap == -1:
+                assert False, "onsets_only returned an overlap -1"
+                
+            elif note.overlap == 0:
+                assert False, "onsets_only returned an overlap 0"
                 
             elif note.overlap == 1:
                 # Note onset is not before chord

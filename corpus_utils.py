@@ -129,7 +129,7 @@ def get_offsets(notes, measures):
 
 
 
-def get_notes_during_chord(chord, notes, measures=None):
+def get_notes_during_chord(chord, notes, onsets_only=False, measures=None):
     """
     Get all of the notes that occur during the given chord.
     
@@ -194,6 +194,9 @@ def get_notes_during_chord(chord, notes, measures=None):
     selected_notes.loc[ties_in, 'overlap'] = -1
     selected_notes.loc[ties_out, 'overlap'] = 1
     selected_notes.loc[ties_both, 'overlap'] = 0
+    
+    if onsets_only:
+        selected_notes = selected_notes.loc[~selected_notes.overlap.isin([-1, 0])].copy()
     
     return selected_notes
 

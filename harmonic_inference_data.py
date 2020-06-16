@@ -375,7 +375,7 @@ class MusicScoreDataset(Dataset):
                 
             try:
                 chord = self.chords.iloc[index]
-                notes = self.select_notes_with_onset(chord)
+                notes = corpus_utils.get_notes_during_chord(chord, notes, onsets_only=True)
                 
                 chord_data = self.get_chord_data(chord, notes.midi.min())
 
@@ -432,26 +432,6 @@ class MusicScoreDataset(Dataset):
         sample['note_indexes'] = self.note_indexes[note_indexes]
         
         return sample
-    
-    
-    def select_notes_with_onset(self, chord):
-        """
-        Select the notes which onset during the given a chord.
-
-        Parameters
-        ----------
-        chord : pd.Series
-            The chord whose notes we want.
-
-        Returns
-        -------
-        pd.DataFrame
-            A DataFrame containing the selected notes.
-        """
-        all_notes = corpus_utils.get_notes_during_chord(chord, self.notes)
-
-        has_onset = all_notes.overlap.isna() | (all_notes.overlap == 1)
-        return all_notes.loc[has_onset]
 
 
 
