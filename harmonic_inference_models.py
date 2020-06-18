@@ -10,7 +10,8 @@ import torch.nn.functional as f
 class MusicScoreModel(nn.Module):
     """
     """
-    def __init__(self, input_dim, num_classes, lstm_layers=1, lstm_dim=256, hidden_dim=256, dropout=0):
+    def __init__(self, input_dim, num_classes, lstm_layers=1, lstm_dim=256, hidden_dim=256, dropout=0,
+                 input_mask=None):
         super().__init__()
         
         self.input_dim = input_dim
@@ -19,6 +20,7 @@ class MusicScoreModel(nn.Module):
         self.hidden_dim = hidden_dim
         self.dropout = dropout
         self.num_classes = num_classes
+        self.input_mask = input_mask
         
         self.lstm = nn.LSTM(self.input_dim,
                             self.lstm_dim,
@@ -41,6 +43,8 @@ class MusicScoreModel(nn.Module):
     
     def forward(self, notes, lengths):
         batch_size = notes.shape[0]
+        if self.input_mask is not None:
+            notes *= self.input_mask
         lengths = torch.clamp(lengths, min=1)
         h_0, c_0 = self.init_hidden(batch_size)
         
