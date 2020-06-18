@@ -55,6 +55,6 @@ for mask, mask_name in zip(masks, mask_names):
                                          criterion=criterion,
                                          log_every=1, 
                                          save_every=10, save_dir=mask_name, save_prefix='checkpoint',
-                                         resume=None, log_file=open(mask_name + '.log', 'w'))
+                                         resume=None, log_file_name=mask_name + '.log')
     
     trainer.train()

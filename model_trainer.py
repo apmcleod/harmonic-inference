@@ -24,7 +24,7 @@ class ModelTrainer():
                  device=torch.device("cpu"), seed=None,
                  batch_size=64, valid_batch_size=None, num_epochs=100, early_stopping=20,
                  optimizer=None, scheduler=None, schedule_var=None, criterion=None,
-                 log_every=1, log_file=None,
+                 log_every=1, log_file_name=None,
                  save_every=10, save_dir='.', save_prefix='checkpoint',
                  resume=None):
         """
@@ -78,7 +78,7 @@ class ModelTrainer():
         log_every : int
             Print to the log every this many epochs during training.
             
-        log_file : file
+        log_file_name : string
             The file to print the log to. Prints to standard out if None.
             
         save_every : int
@@ -130,7 +130,7 @@ class ModelTrainer():
             )
         
         self.log_every = log_every
-        self.log_file = sys.stdout if log_file is None else log_file
+        self.log_file_name = log_file_name
         
         self.save_every = save_every
         self.save_dir = save_dir if save_dir is not None and save_dir != '' else '.'
@@ -295,14 +295,19 @@ class ModelTrainer():
     
     def log(self, log_vals):
         """
-        Print the given values out to self.log_file.
+        Print the given values out to self.log_file_name.
         
         Parameters
         ----------
         log_val : list
             A list of values to print to the log file as comma-separated values.
         """
-        print(','.join([str(val) for val in log_vals]), file=self.log_file)
+        output = ','.join([str(val) for val in log_vals])
+        if self.log_file_name is None:
+            print(output)
+        else:
+            with open(self.log_file_name, 'a') as file:
+                print(output, file=file)
     
     
     
