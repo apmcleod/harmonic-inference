@@ -77,7 +77,7 @@ def get_one_hot_labels():
     labels = []
     for chord_type in CHORD_TYPES:
         for root in ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']:
-            labels.append(f'{root}{chord_type}')
+            labels.append(f'{root}:{chord_type}')
             
     return labels
 
