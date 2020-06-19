@@ -72,7 +72,8 @@ if __name__ == '__main__':
 
     for mask, mask_name in zip(masks, mask_names):
         print(mask_name)
-        mask = torch.tensor(mask)
+        if mask is not None:
+            mask = torch.tensor(mask)
         model = him.MusicScoreModel(len(train_dataset[0]['notes'][0]), len(hu.CHORD_TYPES) * 12, dropout=0.2, input_mask=mask)
 
         optimizer = Adam(model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.001)
