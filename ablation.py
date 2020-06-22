@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import argparse
 import os
+import sys
 
 import harmonic_inference_data as hid
 import harmonic_inference_models as him
@@ -15,9 +16,14 @@ from torch.optim import Adam
 from torch.nn import CrossEntropyLoss
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 
-def get_masks_and_names():
+def get_masks_and_names(include_none=True):
     """
     Get input masks and input mask names for ablation studies.
+    
+    Parameters
+    ----------
+    include_none : boolean
+        True to include a 'no_ablation' mask of all 1's in the list. False otherwise.
     
     Returns
     -------
@@ -28,6 +34,8 @@ def get_masks_and_names():
         A list of the name of each binary mask in masks.
     """
     mask_names = ['no_rhythm', 'no_levels', 'no_chord-relative_rhythm', 'no_lowest', 'no_octave']
+    if include_none:
+        mask_names.append('no_ablation')
     
     masks = [np.ones(30) for _ in range(len(mask_names))]
     masks[0][-6:-1] = 0
@@ -37,6 +45,36 @@ def get_masks_and_names():
     masks[4][1 + 12:1 + 12 + 127 // 12 + 1] = 0
     
     return masks, mask_names
+
+
+
+def load_all_ablated_dfs(include_none=True):
+    """
+    Load all ablated dataframes into a list of dfs.
+    
+    Parameters
+    ----------
+    include_none : boolean
+        True to include the 'no_ablation' mask results. False otherwise.
+    
+    Returns
+    -------
+    dfs : list(pd.DataFrame)
+        The DataFrames, loaded in the order of masks returned by get_masks_and_names.
+        If a csv does not exist, that value is None.
+    """
+    _, mask_names = get_masks_and_names(include_none=include_none)
+    
+    dfs = []
+    for mask_name in mask_names:
+        try:
+            dfs.append(eu.load_eval_df(mask_name + '.csv'))
+        except:
+            print(f"Error loading eval df from {mask_name}.csv", file=sys.stderr)
+            dfs.append(None)
+            
+    return dfs
+
 
 
 if __name__ == '__main__':
@@ -66,13 +104,12 @@ if __name__ == '__main__':
         seed=0, h5_directory='data', h5_prefix='811split', make_dfs=True
     )
 
-    masks, mask_names = get_masks_and_names()
-    masks.append(None)
-    mask_names.append('no_ablation')
+    masks, mask_names = get_masks_and_names(include_none=True)
 
     for mask, mask_name in zip(masks, mask_names):
         print(mask_name)
         if mask is not None:
+            continue
             mask = torch.tensor(mask)
         model = him.MusicScoreModel(len(train_dataset[0]['notes'][0]), len(hu.CHORD_TYPES) * 12, dropout=0.2, input_mask=mask)
 
@@ -95,6 +132,6 @@ if __name__ == '__main__':
         if args.eval:
             loss, acc, outputs, labels = trainer.evaluate(valid=args.split == 'valid')
             eval_df = eu.get_eval_df(labels, outputs, test_dataset if args.split == 'test' else valid_dataset)
-            eval_df.to_csv(mask_name + '.csv')
+            eu.write_eval_df(eval_df, mask_name + '.csv')
         else:
             trainer.train()
