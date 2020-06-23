@@ -109,7 +109,6 @@ if __name__ == '__main__':
     for mask, mask_name in zip(masks, mask_names):
         print(mask_name)
         if mask is not None:
-            continue
             mask = torch.tensor(mask)
         model = him.MusicScoreModel(len(train_dataset[0]['notes'][0]), len(hu.CHORD_TYPES) * 12, dropout=0.2, input_mask=mask)
 

@@ -131,6 +131,20 @@ class ModelTrainer():
         
         self.log_every = log_every
         self.log_file_name = log_file_name
+        if self.log_file_name is not None:
+            log_dir = os.path.dirname(self.log_file_name)
+            if log_dir != '':
+                os.makedirs(log_dir, exist_ok=True)
+                
+        # Remove existing log if the logfile exists already
+        if resume is None:
+            if self.log_file_name is not None:
+                try:
+                    os.remove(self.log_file_name)
+                except:
+                    # Error removing log file -- doesn't really matter
+                    pass
+            self.log(['epoch', 'train_loss', 'train_acc', 'valid_loss', 'valid_acc'])
         
         self.save_every = save_every
         self.save_dir = save_dir if save_dir is not None and save_dir != '' else '.'
