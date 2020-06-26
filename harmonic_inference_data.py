@@ -25,7 +25,8 @@ import harmonic_utils
 def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None, files_df=None,
                                 chords_tsv=None, notes_tsv=None, measures_tsv=None, files_tsv=None,
                                 seed=None, train_prop=0.8, test_prop=0.1, valid_prop=0.1,
-                                create_h5=True, h5_directory='.', h5_prefix='data', make_dfs=False):
+                                create_h5=True, h5_directory='.', h5_prefix='data', make_dfs=False,
+                                transpose_global=False, transpose_local=False):
     """
     chords_df : pd.DataFrame
         The full chords data.
@@ -77,6 +78,12 @@ def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None,
         
     make_dfs : bool
         Force the Dataset to make the DataFrames even if it loads the data from an h5 file.
+        
+    transpose_global : bool
+        Transpose all chords and notes to global key C maj/A min.
+        
+    transpose_local : bool
+        Transpose all chords and notes to local key C maj/A min.
     """
     assert chords_df is not None or chords_tsv is not None, (
         "Either chords_df or chords_tsv is required."
@@ -121,15 +128,15 @@ def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None,
     train_dataset = MusicScoreDataset(h5_file=os.path.join(h5_directory, f'{h5_prefix}_{seed}_train.h5') if create_h5 else None,
                                       chords_df=chords_df.loc[train_ids], notes_df=notes_df.loc[train_ids],
                                       measures_df=measures_df.loc[train_ids], files_df=files_df.loc[train_ids],
-                                      make_dfs=make_dfs)
+                                      make_dfs=make_dfs, transpose_global=transpose_global, transpose_local=transpose_local)
     valid_dataset = MusicScoreDataset(h5_file=os.path.join(h5_directory, f'{h5_prefix}_{seed}_valid.h5') if create_h5 else None,
                                       chords_df=chords_df.loc[valid_ids], notes_df=notes_df.loc[valid_ids],
                                       measures_df=measures_df.loc[valid_ids], files_df=files_df.loc[valid_ids],
-                                      make_dfs=make_dfs)
+                                      make_dfs=make_dfs, transpose_global=transpose_global, transpose_local=transpose_local)
     test_dataset = MusicScoreDataset(h5_file=os.path.join(h5_directory, f'{h5_prefix}_{seed}_test.h5') if create_h5 else None,
                                      chords_df=chords_df.loc[test_ids], notes_df=notes_df.loc[test_ids],
                                      measures_df=measures_df.loc[test_ids], files_df=files_df.loc[test_ids],
-                                     make_dfs=make_dfs)
+                                     make_dfs=make_dfs, transpose_global=transpose_global, transpose_local=transpose_local)
     
     return train_dataset, valid_dataset, test_dataset
 
@@ -230,7 +237,8 @@ class MusicScoreDataset(Dataset):
     
     def __init__(self, h5_file=None, h5_overwrite=False, chords_df=None, notes_df=None, measures_df=None, files_df=None,
                  chords_tsv=None, notes_tsv=None, measures_tsv=None, files_tsv=None,
-                 use_offsets=True, merge_ties=True, cache=True, make_dfs=False):
+                 use_offsets=True, merge_ties=True, cache=True, make_dfs=False, transpose_global=False,
+                 transpose_local=False):
         """
         Initialize the dataset.
         
@@ -276,7 +284,19 @@ class MusicScoreDataset(Dataset):
             
         make_dfs : bool
             Force the Dataset to make the DataFrames even if it loads the data from an h5 file.
+            
+        transpose_global : bool
+            Transpose all chords and notes to global key C maj/A min.
+
+        transpose_local : bool
+            Transpose all chords and notes to local key C maj/A min. Overrides transpose_global if
+            both are True.
         """
+        self.transpose_global = transpose_global
+        self.transpose_local = transpose_local
+        if self.transpose_local:
+            self.transpose_global = False
+            
         # First, check h5_file
         self.h5_file = h5_file
         self.h5_data_present = False
@@ -323,7 +343,7 @@ class MusicScoreDataset(Dataset):
 
             # Pitch info
             self.notes['midi_pitch_norm'] = self.notes.midi / self.MAX_PITCH
-            self.notes['midi_pitch_tpc'] = self.notes.midi % harmonic_utils.PITCHES_PER_OCTAVE
+            self.notes['midi_pitch_flat'] = self.notes.midi % harmonic_utils.PITCHES_PER_OCTAVE
             self.notes['midi_pitch_octave'] = self.notes.midi // harmonic_utils.PITCHES_PER_OCTAVE
 
             self.cache = cache
@@ -375,11 +395,11 @@ class MusicScoreDataset(Dataset):
                 
             try:
                 chord = self.chords.iloc[index]
-                notes = corpus_utils.get_notes_during_chord(chord, notes, onsets_only=True)
+                notes = corpus_utils.get_notes_during_chord(chord, self.notes, onsets_only=True)
                 
-                chord_data = self.get_chord_data(chord, notes.midi.min())
+                chord_data, transposition = self.get_chord_data(chord, notes.midi.min())
 
-                note_vectors = self.get_note_vectors(notes, chord)
+                note_vectors = self.get_note_vectors(notes, chord, transposition)
 
                 sample = {
                     'notes': note_vectors,
@@ -435,7 +455,7 @@ class MusicScoreDataset(Dataset):
 
 
 
-    def get_note_vectors(self, notes, chord):
+    def get_note_vectors(self, notes, chord, transposition):
         """
         Get the matrix representation of a given notes.
 
@@ -446,6 +466,9 @@ class MusicScoreDataset(Dataset):
 
         chord : pd.Series
             The chord to which this note belongs.
+            
+        transposition : int
+            The amount (in semitones) by which to transpose each chord.
 
         Returns
         -------
@@ -461,13 +484,22 @@ class MusicScoreDataset(Dataset):
             1
         )
         
+        # Transpose all relevant info
+        if transposition != 0:
+            notes = notes.copy()
+            notes.midi_pitch_norm += transposition / self.MAX_PITCH
+            notes.midi_pitch_flat += transposition
+            notes.loc[notes.midi_pitch_flat >= 12, 'midi_pitch_octave'] += 1
+            notes.loc[notes.midi_pitch_flat < 0, 'midi_pitch_octave'] -= 1
+            notes.midi_pitch_flat %= 12
+        
         matrix = np.zeros((len(notes), vector_length))
         
         # Pitch info
         matrix[:, 0] = notes.midi_pitch_norm
         
         # TPC one-hots
-        matrix[np.arange(len(notes)), notes.midi_pitch_tpc.to_numpy(dtype=int) + 1] = 1
+        matrix[np.arange(len(notes)), notes.midi_pitch_flat.to_numpy(dtype=int) + 1] = 1
         
         # Octave one-hots
         matrix[np.arange(len(notes)), notes.midi_pitch_octave.to_numpy(dtype=int) + 1 + harmonic_utils.PITCHES_PER_OCTAVE] = 1
@@ -521,11 +553,29 @@ class MusicScoreDataset(Dataset):
         # Harmonic info
         
         # Global key absolute [0-12)
+        transposition = 0
         global_key, global_key_is_major = harmonic_utils.get_key(chord.globalkey)
+        if self.transpose_global:
+            if global_key_is_major:
+                transposition = 12 - global_key
+            else:
+                transposition = harmonic_utils.NOTE_TO_INDEX['A'] - global_key
+            global_key = 0
         
         # Local key (relative to global key)
         local_key_relative, local_key_is_major = harmonic_utils.get_numeral_semitones(chord.key, global_key_is_major)
         local_key_absolute = (global_key + local_key_relative) % harmonic_utils.PITCHES_PER_OCTAVE
+        if self.transpose_local:
+            if local_key_is_major:
+                transposition = 12 - local_key_absolute
+            else:
+                transposition = harmonic_utils.NOTE_TO_INDEX['A'] - local_key_absolute
+            local_key_absolute = 0
+            
+        # Fix transposition
+        transposition %= 12
+        if transposition > 6:
+            transposition -= 12
         
         # Applied root (relative to local key)
         if pd.isnull(chord.relativeroot):
@@ -544,7 +594,7 @@ class MusicScoreDataset(Dataset):
         bass_note_relative = harmonic_utils.get_bass_step_semitones(chord.bass_step, local_key_is_major)
         if bass_note_relative is None:
             # bass_step was invalid. Guess based on lowest note in chord
-            bass_note_absolute = lowest_note % harmonic_utils.PITCHES_PER_OCTAVE
+            bass_note_absolute = (lowest_note + transposition) % harmonic_utils.PITCHES_PER_OCTAVE
         else:
             bass_note_absolute = (local_key_absolute + bass_note_relative) % harmonic_utils.PITCHES_PER_OCTAVE
         
@@ -591,4 +641,4 @@ class MusicScoreDataset(Dataset):
         # Create rhythmic vector
         data['rhythm'] = np.array([onset_level, offset_level, duration], dtype=float)
         
-        return data
+        return data, transposition
