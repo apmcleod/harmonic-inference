@@ -88,7 +88,7 @@ if __name__ == '__main__':
     parser.add_argument('--eval', action='store_true', help='Create tsvs of the results.')
     parser.add_argument('--split', choices=['test', 'valid'], default='test',
                         help='Which split to calculate results for (with --eval)')
-    parser.add_argument('--rel', choices['local', 'global'], help='Use data with pitches '
+    parser.add_argument('--rel', choices=['local', 'global'], help='Use data with pitches '
                         'and chord roots relative to a local or global key.')
     
     args = parser.parse_args()
