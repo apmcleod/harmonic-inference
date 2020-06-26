@@ -111,7 +111,7 @@ if __name__ == '__main__':
     
     h5_prefix = '811split'
     if args.rel is not None:
-        h5_prefix = args.rel + '_811split'
+        h5_prefix = args.rel + 'key_811split'
 
     train_dataset, valid_dataset, test_dataset = hid.get_train_valid_test_splits(
         chords_df=chords_df, notes_df=notes_df, measures_df=measures_df, files_df=files_df,
