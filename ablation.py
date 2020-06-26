@@ -83,6 +83,8 @@ if __name__ == '__main__':
     parser.add_argument('--eval', action='store_true', help='Create tsvs of the results.')
     parser.add_argument('--split', choices=['test', 'valid'], default='test',
                         help='Which split to calculate results for (with --eval)')
+    parser.add_argument('--rel', choices['local', 'global'], help='Use data with pitches '
+                        'and chord roots relative to a local or global key.')
     
     args = parser.parse_args()
     
@@ -98,10 +100,18 @@ if __name__ == '__main__':
 
     # Bugfixes
     measures_df.loc[(685, 487), 'next'][0] = 488
+    
+    transpose_global = args.rel is not None and args.rel == 'global'
+    transpose_local = args.rel is not None and args.rel == 'local'
+    
+    h5_prefix = '811split'
+    if args.rel is not None:
+        h5_prefix = args.rel + '_811split'
 
     train_dataset, valid_dataset, test_dataset = hid.get_train_valid_test_splits(
         chords_df=chords_df, notes_df=notes_df, measures_df=measures_df, files_df=files_df,
-        seed=0, h5_directory='data', h5_prefix='811split', make_dfs=True
+        seed=0, h5_directory='data', h5_prefix=h5_prefix, make_dfs=True,
+        transpose_global=transpose_global, transpose_local=transpose_local
     )
 
     masks, mask_names = get_masks_and_names(include_none=True)
