@@ -48,12 +48,15 @@ def get_masks_and_names(include_none=True):
 
 
 
-def load_all_ablated_dfs(include_none=True):
+def load_all_ablated_dfs(prefix=None, include_none=True):
     """
     Load all ablated dataframes into a list of dfs.
     
     Parameters
     ----------
+    prefix : string
+        If given, a prefix to the file name of each csv (followed by '_').
+        
     include_none : boolean
         True to include the 'no_ablation' mask results. False otherwise.
     
@@ -67,6 +70,8 @@ def load_all_ablated_dfs(include_none=True):
     
     dfs = []
     for mask_name in mask_names:
+        if prefix is not None:
+            mask_name = prefix + '_' + mask_name
         try:
             dfs.append(eu.load_eval_df(mask_name + '.csv'))
         except:
@@ -118,6 +123,8 @@ if __name__ == '__main__':
 
     for mask, mask_name in zip(masks, mask_names):
         print(mask_name)
+        if args.rel is not None:
+            mask_name = args.rel + '_' + mask_name
         if mask is not None:
             mask = torch.tensor(mask)
         model = him.MusicScoreModel(len(train_dataset[0]['notes'][0]), len(hu.CHORD_TYPES) * 12, dropout=0.2, input_mask=mask)
