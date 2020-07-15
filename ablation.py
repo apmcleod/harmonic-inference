@@ -48,12 +48,15 @@ def get_masks_and_names(include_none=True):
 
 
 
-def load_all_ablated_dfs(prefix=None, include_none=True):
+def load_all_ablated_dfs(directory=None, prefix=None, include_none=True):
     """
     Load all ablated dataframes into a list of dfs.
     
     Parameters
     ----------
+    directory : string
+        If given, the directory all of the csv files are found in.
+        
     prefix : string
         If given, a prefix to the file name of each csv (followed by '_').
         
@@ -73,7 +76,10 @@ def load_all_ablated_dfs(prefix=None, include_none=True):
         if prefix is not None:
             mask_name = prefix + '_' + mask_name
         try:
-            dfs.append(eu.load_eval_df(mask_name + '.csv'))
+            if directory is None:
+                dfs.append(eu.load_eval_df(mask_name + '.csv'))
+            else:
+                dfs.append(eu.load_eval_df(os.path.join(directory, mask_name + '.csv')))
         except:
             print(f"Error loading eval df from {mask_name}.csv", file=sys.stderr)
             dfs.append(None)
@@ -85,6 +91,8 @@ def load_all_ablated_dfs(prefix=None, include_none=True):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train or evaluate ablation results.')
     
+    parser.add_argument('--dir', help='The directory to save checkpoints and results into',
+                        default='.')
     parser.add_argument('--eval', action='store_true', help='Create tsvs of the results.')
     parser.add_argument('--split', choices=['test', 'valid'], default='test',
                         help='Which split to calculate results for (with --eval)')
@@ -135,19 +143,19 @@ if __name__ == '__main__':
         schedule_var = 'valid_loss'
         resume = None
         if args.eval:
-            resume = os.path.join(mask_name, 'best.pth.tar')
+            resume = os.path.join(args.dir, mask_name, 'best.pth.tar')
 
         trainer = model_trainer.ModelTrainer(model, train_dataset=train_dataset, valid_dataset=valid_dataset,
                                              test_dataset=test_dataset, seed=0, num_epochs=100, early_stopping=20,
                                              optimizer=optimizer, scheduler=scheduler, schedule_var=schedule_var,
                                              criterion=criterion,
                                              log_every=1, 
-                                             save_every=10, save_dir=mask_name, save_prefix='checkpoint',
-                                             resume=resume, log_file_name=mask_name + '.log')
+                                             save_every=10, save_dir=os.path.join(args.dir, mask_name), save_prefix='checkpoint',
+                                             resume=resume, log_file_name=os.path.join(args.dir, mask_name + '.log'))
 
         if args.eval:
             loss, acc, outputs, labels = trainer.evaluate(valid=args.split == 'valid')
             eval_df = eu.get_eval_df(labels, outputs, test_dataset if args.split == 'test' else valid_dataset)
-            eu.write_eval_df(eval_df, mask_name + '.csv')
+            eu.write_eval_df(eval_df, os.path.join(args.dir, mask_name + '.csv'))
         else:
             trainer.train()

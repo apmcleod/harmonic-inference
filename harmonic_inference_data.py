@@ -120,7 +120,7 @@ def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None,
     
     # Shuffle and split data
     num_files = len(files_df)
-    file_ids = files_df.index.to_numpy()
+    file_ids = sorted(files_df.index.to_numpy().copy())
     np.random.shuffle(file_ids)
     train_ids, valid_ids, test_ids = np.split(file_ids, [int(train_prop * num_files), int((1 - test_prop) * num_files)])
     
