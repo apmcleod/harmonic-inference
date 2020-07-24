@@ -395,7 +395,7 @@ class MusicScoreDataset(Dataset):
         return len(self.chords)
 
 
-    def __getitem__(self, idx: int or slice or List) -> (Dict or List(Dict)):
+    def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 

@@ -42,7 +42,7 @@ def remove_repeats(measures: pd.DataFrame) -> pd.DataFrame:
 
 
 
-def get_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> (List(int), List(Fraction)):
+def get_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> (List[int], List[Fraction]):
     """
     Get the offset positions ('mc' measure count and beat) for each note. If the offset is
     on a downbeat, the returned offset is at the following measure at beat 0; UNLESS the note
@@ -221,13 +221,13 @@ def find_matching_tie(note: pd.Series = None, note_id: int = None, note_section:
                       note_staff: int = None, note_offset_mc: int = None,
                       note_offset_beat: Fraction = None, note_duration: Fraction = None,
                       midi_masks: np.ndarray = None, prefiltered: bool = False,
-                      tied_in_notes: pd.DataFrame = None, tied_in_notes_id: np.ndarray(int) = None,
-                      tied_in_notes_section: np.ndarray(int) = None,
-                      tied_in_notes_midi: np.ndarray(int) = None,
-                      tied_in_notes_voice: np.ndarray(int) = None,
-                      tied_in_notes_staff: np.ndarray(int) = None,
-                      tied_in_notes_mc: np.ndarray(int) = None,
-                      tied_in_notes_onset: np.ndarray(Fraction) = None) -> int:
+                      tied_in_notes: pd.DataFrame = None, tied_in_notes_id: np.ndarray = None,
+                      tied_in_notes_section: np.ndarray = None,
+                      tied_in_notes_midi: np.ndarray = None,
+                      tied_in_notes_voice: np.ndarray = None,
+                      tied_in_notes_staff: np.ndarray = None,
+                      tied_in_notes_mc: np.ndarray = None,
+                      tied_in_notes_onset: np.ndarray = None) -> int:
     """
     Find the note which a given note is tied to. The matching note must have an onset beat
     and mc equal to the given note's offset_beat and offset_mc, as well as equal midi pitch.

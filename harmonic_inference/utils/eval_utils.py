@@ -12,7 +12,7 @@ import corpus_utils as cu
 from harmonic_inference.data.harmonic_inference_data import MusicScoreDataset
 
 
-def get_conf_mat(labels: List(int), outputs: torch.tensor,
+def get_conf_mat(labels: List[int], outputs: torch.tensor,
                  normalize: bool = True) -> np.ndarray:
     """
     Get a confusion matrix from a model output.
@@ -51,8 +51,8 @@ def get_conf_mat(labels: List(int), outputs: torch.tensor,
 
 
 
-def get_correct_and_incorrect_indexes(labels: List(int), outputs: torch.tensor) -> (List(int),
-                                                                                    List(int)):
+def get_correct_and_incorrect_indexes(labels: List[int], outputs: torch.tensor) -> (List[int],
+                                                                                    List[int]):
     """
     Get the indices of correct and incorrect model outputs.
 
@@ -86,7 +86,7 @@ def get_correct_and_incorrect_indexes(labels: List(int), outputs: torch.tensor) 
 
 
 
-def print_result(index: int, labels: List(int), outputs: torch.tensor,
+def print_result(index: int, labels: List[int], outputs: torch.tensor,
                  limit: int = None, prob: bool = True) -> None:
     """
     Print the model's output of a given data point in a nice format.
@@ -159,7 +159,7 @@ def get_input_df_rows(index: int, dataset: MusicScoreDataset) -> (pd.Series, pd.
 
 
 
-def get_correct_ranks(labels: List(int), outputs: torch.tensor) -> (List(int), List(List(int))):
+def get_correct_ranks(labels: List[int], outputs: torch.tensor) -> (List[int], List[List[int]]):
     """
     Get the rank of the correct chord label in the model's output for each data point.
 
@@ -228,7 +228,7 @@ def write_eval_df(eval_df: pd.DataFrame, filename: str) -> None:
 
 
 
-def get_eval_df(labels: List(int), outputs: torch.tensor,
+def get_eval_df(labels: List[int], outputs: torch.tensor,
                 dataset: MusicScoreDataset) -> pd.DataFrame:
     """
     Get a DataFrame where each row is a data point and the columns are different statistics

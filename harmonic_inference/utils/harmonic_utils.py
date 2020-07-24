@@ -66,7 +66,7 @@ CHORD_TYPES = [
 ]
 
 
-def get_one_hot_labels() -> List(str):
+def get_one_hot_labels() -> List[str]:
     """
     Get the human-readable label of every one-hot chord value.
 
@@ -223,7 +223,7 @@ def get_key(key: str) -> (int, bool):
 
 
 
-def transpose_chord_vector(chord_vector: List(int), transposition: int) -> List(int):
+def transpose_chord_vector(chord_vector: List[int], transposition: int) -> List[int]:
     """
     Transpose a chord vector by a certain number of semitones.
 
@@ -250,7 +250,7 @@ def transpose_chord_vector(chord_vector: List(int), transposition: int) -> List(
 
 
 
-def get_vector_from_chord_type(type_string: str) -> List(int):
+def get_vector_from_chord_type(type_string: str) -> List[int]:
     """
     Convert a chord type string into a vector representation of semitone presence.
 

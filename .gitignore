@@ -1,8 +1,7 @@
-__pycache__/**
+**/__pycache__
+**/.ipynb_checkpoints
 .idea/**
-.ipynb_checkpoints/**
 data/**
 results/**
 .pytest_cache/**
 .vscode/**
-tests/__pycache__/**

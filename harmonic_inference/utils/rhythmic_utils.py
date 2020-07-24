@@ -4,7 +4,7 @@ from typing import TypeVar, Tuple
 from fractions import Fraction
 import pandas as pd
 
-Beat = TypeVar(Tuple(int, Fraction))
+Beat = TypeVar(Tuple[int, Fraction])
 TripleFraction = TypeVar(Fraction, Fraction, Fraction)
 
 def get_range_length(range_start: Beat, range_end: Beat, measures: pd.DataFrame) -> Fraction:
