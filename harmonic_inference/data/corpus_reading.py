@@ -1,5 +1,6 @@
 """Utilities for parsing corpus tsv files into pandas DataFrames."""
 import re
+from typing import Iterable, Dict
 from fractions import Fraction
 
 import pandas as pd
@@ -73,7 +74,8 @@ CONVERTERS = {'act_dur': frac_or_empty,
 
 
 
-def read_dump(file, index_col=(0, 1), converters=None, dtypes=None, **kwargs):
+def read_dump(file: str, index_col: Iterable = (0, 1), converters: Dict = None,
+              dtypes: Dict = None, **kwargs) -> pd.DataFrame:
     """
     Read a corpus tsv file into a pandas DataFrame.
 
@@ -105,4 +107,5 @@ def read_dump(file, index_col=(0, 1), converters=None, dtypes=None, **kwargs):
         types.update(dtypes)
     if converters is not None:
         conv.update(converters)
-    return pd.read_csv(file, sep='\t', index_col=list(index_col), dtype=types, converters=conv, **kwargs)
+    return pd.read_csv(file, sep='\t', index_col=list(index_col), dtype=types, converters=conv,
+                       **kwargs)

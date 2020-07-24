@@ -3,7 +3,7 @@ music data -> chord label datasets from various data formats."""
 
 import traceback
 import os
-from typing import TypeVar
+from typing import TypeVar, List, Dict
 
 import numpy as np
 import pandas as pd
@@ -23,11 +23,15 @@ from harmonic_inference.utils import harmonic_utils as hu
 
 
 Splits = TypeVar('MusicScoreDataset', 'MusicScoreDataset', 'MusicScoreDataset')
-def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None, files_df=None,
-                                chords_tsv=None, notes_tsv=None, measures_tsv=None, files_tsv=None,
-                                seed=None, train_prop=0.8, test_prop=0.1, valid_prop=0.1,
-                                create_h5=True, h5_directory='.', h5_prefix='data', make_dfs=False,
-                                transpose_global=False, transpose_local=False) -> Splits:
+def get_train_valid_test_splits(chords_df: pd.DataFrame = None, notes_df: pd.DataFrame = None,
+                                measures_df: pd.DataFrame = None, files_df: pd.DataFrame = None,
+                                chords_tsv: str = None, notes_tsv: str = None,
+                                measures_tsv: str = None, files_tsv: str = None, seed: int = None,
+                                train_prop: float = 0.8, test_prop: float = 0.1,
+                                valid_prop: float = 0.1, create_h5: bool = True,
+                                h5_directory: str = '.', h5_prefix: str = 'data',
+                                make_dfs: bool = False, transpose_global: bool = False,
+                                transpose_local: bool = False) -> Splits:
     """
     chords_df : pd.DataFrame
         The full chords data.
@@ -155,7 +159,8 @@ def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None,
 
 
 
-def create_music_score_h5(music_score_dataset, directory='.', filename='music_score_data.h5'):
+def create_music_score_h5(music_score_dataset: MusicScoreDataset, directory: str = '.',
+                          filename: str = 'music_score_data.h5') -> None:
     """
     Write a MusicScoreDataset object out to chord and note h5 files.
 
@@ -217,7 +222,7 @@ def create_music_score_h5(music_score_dataset, directory='.', filename='music_sc
 
 
 
-def pad_and_collate_samples(batch):
+def pad_and_collate_samples(batch: List) -> Dict:
     """
     Collate the samples of a given batch into torch tensors. [chord] (and all fields within)
     are collated as default. [notes] are padded with 0s to the maximum of the length of any
@@ -249,10 +254,13 @@ def pad_and_collate_samples(batch):
 class MusicScoreDataset(Dataset):
     """Harmonic inference dataset, parsed from tsvs created from MuseScore files."""
 
-    def __init__(self, h5_file=None, h5_overwrite=False, chords_df=None, notes_df=None,
-                 measures_df=None, files_df=None, chords_tsv=None, notes_tsv=None,
-                 measures_tsv=None, files_tsv=None, use_offsets=True, merge_ties=True,
-                 cache=True, make_dfs=False, transpose_global=False, transpose_local=False):
+    def __init__(self, h5_file: str = None, h5_overwrite: bool = False,
+                 chords_df: pd.DataFrame = None, notes_df: pd.DataFrame = None,
+                 measures_df: pd.DataFrame = None, files_df: pd.DataFrame = None,
+                 chords_tsv: str = None, notes_tsv: str = None, measures_tsv: str = None,
+                 files_tsv: str = None, use_offsets: bool = True, merge_ties: bool = True,
+                 cache: bool = True, make_dfs: bool = False, transpose_global: bool = False,
+                 transpose_local: bool = False):
         """
         Initialize the dataset.
 
@@ -381,13 +389,13 @@ class MusicScoreDataset(Dataset):
                 self.chord_note_pointers = np.array(h5_file_obj['chord_note_pointers'])
 
 
-    def __len__(self):
+    def __len__(self) -> int:
         if self.h5_data_present:
             return len(self.chord_vectors)
         return len(self.chords)
 
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int or slice or List) -> (Dict or List(Dict)):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
@@ -426,7 +434,7 @@ class MusicScoreDataset(Dataset):
                 if self.cache:
                     self.data_points[index] = sample
                 data.append(sample)
-            except Exception as e:
+            except Exception:
                 print(f'Error at index {index}:')
                 traceback.print_exc()
 
@@ -437,7 +445,7 @@ class MusicScoreDataset(Dataset):
         return data
 
 
-    def get_sample_from_h5_index(self, index):
+    def get_sample_from_h5_index(self, index: int) -> Dict:
         """
         Get a the sample at the given index, parsed from the h5 data fields.
 
@@ -472,7 +480,8 @@ class MusicScoreDataset(Dataset):
 
 
 
-    def get_note_vectors(self, notes, chord, transposition):
+    def get_note_vectors(self, notes: pd.DataFrame, chord: pd.Series,
+                         transposition: int) -> np.ndarray:
         """
         Get the matrix representation of a given notes.
 
@@ -547,7 +556,7 @@ class MusicScoreDataset(Dataset):
 
 
 
-    def get_chord_data(self, chord, lowest_note):
+    def get_chord_data(self, chord: pd.Series, lowest_note: int) -> Dict:
         """
         Get the data of a given chord.
 
@@ -644,7 +653,8 @@ class MusicScoreDataset(Dataset):
         data['vector'] = vector
 
         # Target one-hot label
-        data['one_hot'] = hu.CHORD_TYPES.index(chord_type_string) * hu.PITCHES_PER_OCTAVE + chord_root_absolute
+        data['one_hot'] = (hu.CHORD_TYPES.index(chord_type_string) * hu.PITCHES_PER_OCTAVE +
+                           chord_root_absolute)
 
         # Rhythmic info
         file_measures = self.measures.loc[chord.name[0]]

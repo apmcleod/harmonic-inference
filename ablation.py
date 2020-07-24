@@ -2,8 +2,10 @@
 import argparse
 import os
 import sys
+from typing import List
 
 import numpy as np
+import pandas as pd
 
 import torch
 from torch.optim import Adam
@@ -18,7 +20,7 @@ from harmonic_inference.models import model_trainer
 from harmonic_inference.utils import eval_utils as eu
 
 
-def get_masks_and_names(include_none=True):
+def get_masks_and_names(include_none: bool = True) -> (List(np.array), List(int)):
     """
     Get input masks and input mask names for ablation studies.
 
@@ -50,7 +52,8 @@ def get_masks_and_names(include_none=True):
 
 
 
-def load_all_ablated_dfs(directory=None, prefix=None, include_none=True):
+def load_all_ablated_dfs(directory: str = None, prefix: str = None,
+                         include_none: bool = True) -> List(pd.DataFrame):
     """
     Load all ablated dataframes into a list of dfs.
 
@@ -139,7 +142,7 @@ if __name__ == '__main__':
                                    dropout=0.2, input_mask=mask)
 
         optimizer = Adam(model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-08,
-                        weight_decay=0.001)
+                         weight_decay=0.001)
         criterion = CrossEntropyLoss()
         scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=10)
         SCHEDULE_VAR = 'valid_loss'
