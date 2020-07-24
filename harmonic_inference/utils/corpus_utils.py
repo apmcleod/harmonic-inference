@@ -502,7 +502,7 @@ def merge_ties(notes, measures=None):
     # For all initial gracenote ties, add the notes they are tied into to the tied_out_notes
     to_add = [] # Add to tied_out_notes
     to_remove = [] # Remove from tied_in_notes
-    for idx, note in notes.loc[tied_out_mask & ~notes.gracenote.isna()].iterrows():
+    for _, note in notes.loc[tied_out_mask & ~notes.gracenote.isna()].iterrows():
         tied_note_index = find_matching_tie(note=note, tied_in_notes=tied_in_notes)
         
         if tied_note_index is not None:
@@ -541,7 +541,6 @@ def merge_ties(notes, measures=None):
     # Some iteration tracking and other helper variables
     prev_index = -1
     prev_section = -1
-    max_index = tied_out_notes.index.get_level_values('id').max()
     max_midi = tied_out_notes.midi.max()
     
     # Loop through and fix the duration and offset every tied out note

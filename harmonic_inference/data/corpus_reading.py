@@ -1,5 +1,5 @@
 """Utilities for parsing corpus tsv files into pandas DataFrames."""
-
+import re
 import pandas as pd
 from fractions import Fraction
 
