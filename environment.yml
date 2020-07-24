@@ -4,6 +4,7 @@ channels:
   - pytorch
 dependencies:
   - python=3
+  - h5py
   - numpy
   - tqdm
   - jupyter

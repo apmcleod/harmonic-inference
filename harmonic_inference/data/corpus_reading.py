@@ -1,15 +1,15 @@
 """Utilities for parsing corpus tsv files into pandas DataFrames."""
 import re
-import pandas as pd
 from fractions import Fraction
-
+import pandas as pd
 
 
 # Helper functions to be used as converters, handlling empty strings
 parse_lists_of_int = lambda l: [int(mc) for mc in l.strip('[]').split(', ') if mc != '']
 parse_tuples = lambda t: tuple(i.strip("\',") for i in t.strip("() ").split(", ") if i != '')
 parse_lists_of_str_tuples = lambda l: [tuple(t.split(',')) for t in re.findall(r'\((.+?)\)', l)]
-parse_lists_of_int_tuples = lambda l: [tuple(int(i) for i in t.split(',')) for t in re.findall(r'\((.+?)\)', l)]
+parse_lists_of_int_tuples = lambda l: [tuple(int(i) for i in t.split(','))
+                                       for t in re.findall(r'\((.+?)\)', l)]
 frac_or_empty = lambda val: '' if val == '' else Fraction(val)
 
 
@@ -72,7 +72,7 @@ CONVERTERS = {'act_dur': frac_or_empty,
 
 
 
-def read_dump(file, index_col=[0,1], converters={}, dtypes={}, **kwargs):
+def read_dump(file, index_col=[0, 1], converters=dict(), dtypes=dict(), **kwargs):
     """
     Read a corpus tsv file into a pandas DataFrame.
     

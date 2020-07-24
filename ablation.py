@@ -4,12 +4,12 @@ import argparse
 import os
 import sys
 
-import harmonic_inference_data as hid
-import harmonic_inference_models as him
-import harmonic_utils as hu
-from corpus_reading import read_dump
-import model_trainer
-import eval_utils as eu
+from harmonic_inference.data import harmonic_inference_data as hid
+from harmonic_inference.models import chord_classifiers as cc
+from harmonic_inference.utils import harmonic_utils as hu
+from harmonic_inference.data.corpus_reading import read_dump
+from harmonic_inference.models import model_trainer
+from harmonic_inference.utils import eval_utils as eu
 
 import torch
 from torch.optim import Adam
@@ -135,7 +135,7 @@ if __name__ == '__main__':
             mask_name = args.rel + '_' + mask_name
         if mask is not None:
             mask = torch.tensor(mask)
-        model = him.MusicScoreModel(len(train_dataset[0]['notes'][0]), len(hu.CHORD_TYPES) * 12, dropout=0.2, input_mask=mask)
+        model = cc.MusicScoreModel(len(train_dataset[0]['notes'][0]), len(hu.CHORD_TYPES) * 12, dropout=0.2, input_mask=mask)
 
         optimizer = Adam(model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.001)
         criterion = CrossEntropyLoss()
