@@ -1,0 +1,12 @@
+name: harmony
+channels:
+  - default
+  - pytorch
+dependencies:
+  - python=3
+  - numpy
+  - tqdm
+  - jupyter
+  - pandas
+  - pytorch
+  - cpuonly
