@@ -1,0 +1,15 @@
+Metadata-Version: 2.1
+Name: harmonic-inference
+Version: 0.0.1
+Summary: A package to perform harmonic inference on various data structures
+Home-page: https://github.com/apmcleod/harmonic_inference
+Author: Andrew McLeod
+Author-email: andrew.mcleod@epfl.ch
+License: UNKNOWN
+Description: # harmonic-inference
+Platform: UNKNOWN
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3
+Description-Content-Type: text/markdown

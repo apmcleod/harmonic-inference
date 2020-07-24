@@ -1,6 +1,7 @@
 """Utilities for parsing corpus tsv files into pandas DataFrames."""
 import re
 from fractions import Fraction
+
 import pandas as pd
 
 
@@ -72,34 +73,36 @@ CONVERTERS = {'act_dur': frac_or_empty,
 
 
 
-def read_dump(file, index_col=[0, 1], converters=dict(), dtypes=dict(), **kwargs):
+def read_dump(file, index_col=(0, 1), converters=None, dtypes=None, **kwargs):
     """
     Read a corpus tsv file into a pandas DataFrame.
-    
+
     Parameters
     ----------
     file : string
         The tsv file to parse.
-        
+
     index_col : int or list(int)
         The index (or indices) of column(s) to use as the index. For note_list.tsv,
         use [0, 1, 2].
-        
+
     converters : dict
         Converters which will be passed to the pandas read_csv function. These will
         overwrite/be added to the default list of CONVERTERS.
-        
+
     dtypes : dict
         Dtypes which will be passed to the pandas read_csv function. These will
         overwrite/be added to the default list of DTYPES.
-        
+
     Returns
     -------
     df : pd.DataFrame
         The pandas DataFrame, parsed from the given tsv file.
     """
-    conv = CONVERTERS
-    types = DTYPES
-    types.update(dtypes)
-    conv.update(converters)
-    return pd.read_csv(file, sep='\t', index_col=index_col, dtype=types, converters=conv, **kwargs)
+    conv = CONVERTERS.copy()
+    types = DTYPES.copy()
+    if dtypes is not None:
+        types.update(dtypes)
+    if converters is not None:
+        conv.update(converters)
+    return pd.read_csv(file, sep='\t', index_col=list(index_col), dtype=types, converters=conv, **kwargs)

@@ -3,6 +3,7 @@ music data -> chord label datasets from various data formats."""
 
 import traceback
 import os
+from typing import TypeVar
 
 import numpy as np
 import pandas as pd
@@ -15,18 +16,18 @@ from torch.utils.data.dataloader import default_collate
 from torch.nn.utils.rnn import pad_sequence
 
 from corpus_reading import read_dump
-from harmonic_inference.utils import corpus_utils
-from harmonic_inference.utils import rhythmic_utils
-from harmonic_inference.utils import harmonic_utils
+from harmonic_inference.utils import corpus_utils as cu
+from harmonic_inference.utils import rhythmic_utils as ru
+from harmonic_inference.utils import harmonic_utils as hu
 
 
 
-
+Splits = TypeVar('MusicScoreDataset', 'MusicScoreDataset', 'MusicScoreDataset')
 def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None, files_df=None,
                                 chords_tsv=None, notes_tsv=None, measures_tsv=None, files_tsv=None,
                                 seed=None, train_prop=0.8, test_prop=0.1, valid_prop=0.1,
                                 create_h5=True, h5_directory='.', h5_prefix='data', make_dfs=False,
-                                transpose_global=False, transpose_local=False):
+                                transpose_global=False, transpose_local=False) -> Splits:
     """
     chords_df : pd.DataFrame
         The full chords data.
@@ -56,16 +57,16 @@ def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None,
         The seed to use for splitting the files into train, valid, and test sets.
 
     train_prop : float
-        The proportion of files which should be used as training. train_prop, valid_prop, and test_prop
-        are normalized to sum to 1.
+        The proportion of files which should be used as training. train_prop, valid_prop,
+        and test_prop are normalized to sum to 1.
 
     valid_prop : float
-        The proportion of files which should be used as validation. train_prop, valid_prop, and test_prop
-        are normalized to sum to 1.
+        The proportion of files which should be used as validation. train_prop, valid_prop,
+        and test_prop are normalized to sum to 1.
 
     test_prop : float
-        The proportion of files which should be used as testing. train_prop, valid_prop, and test_prop
-        are normalized to sum to 1.
+        The proportion of files which should be used as testing. train_prop, valid_prop,
+        and test_prop are normalized to sum to 1.
 
     create_h5 : boolean
         True to create h5 data files to save the splits (or load from one if it alread exists).
@@ -95,7 +96,7 @@ def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None,
         "Either notes_df or notes_tsv is required."
     )
     if notes_df is None:
-        notes_df = read_dump(notes_tsv, index_col=[0,1,2])
+        notes_df = read_dump(notes_tsv, index_col=[0, 1, 2])
 
     assert measures_df is not None or measures_tsv is not None, (
         "Either measures_df or measures_tsv is required."
@@ -128,18 +129,26 @@ def get_train_valid_test_splits(chords_df=None, notes_df=None, measures_df=None,
     test_ids = ids[2]
 
     # Create datasets
-    train_dataset = MusicScoreDataset(h5_file=os.path.join(h5_directory, f'{h5_prefix}_{seed}_train.h5') if create_h5 else None,
-                                      chords_df=chords_df.loc[train_ids], notes_df=notes_df.loc[train_ids],
-                                      measures_df=measures_df.loc[train_ids], files_df=files_df.loc[train_ids],
-                                      make_dfs=make_dfs, transpose_global=transpose_global, transpose_local=transpose_local)
-    valid_dataset = MusicScoreDataset(h5_file=os.path.join(h5_directory, f'{h5_prefix}_{seed}_valid.h5') if create_h5 else None,
-                                      chords_df=chords_df.loc[valid_ids], notes_df=notes_df.loc[valid_ids],
-                                      measures_df=measures_df.loc[valid_ids], files_df=files_df.loc[valid_ids],
-                                      make_dfs=make_dfs, transpose_global=transpose_global, transpose_local=transpose_local)
-    test_dataset = MusicScoreDataset(h5_file=os.path.join(h5_directory, f'{h5_prefix}_{seed}_test.h5') if create_h5 else None,
-                                     chords_df=chords_df.loc[test_ids], notes_df=notes_df.loc[test_ids],
-                                     measures_df=measures_df.loc[test_ids], files_df=files_df.loc[test_ids],
-                                     make_dfs=make_dfs, transpose_global=transpose_global, transpose_local=transpose_local)
+    train_dataset = MusicScoreDataset(
+        h5_file=os.path.join(h5_directory, f'{h5_prefix}_{seed}_train.h5')
+        if create_h5 else None, chords_df=chords_df.loc[train_ids],
+        notes_df=notes_df.loc[train_ids], measures_df=measures_df.loc[train_ids],
+        files_df=files_df.loc[train_ids], make_dfs=make_dfs,
+        transpose_global=transpose_global, transpose_local=transpose_local)
+
+    valid_dataset = MusicScoreDataset(
+        h5_file=os.path.join(h5_directory, f'{h5_prefix}_{seed}_valid.h5')
+        if create_h5 else None, chords_df=chords_df.loc[valid_ids],
+        notes_df=notes_df.loc[valid_ids], measures_df=measures_df.loc[valid_ids],
+        files_df=files_df.loc[valid_ids], make_dfs=make_dfs,
+        transpose_global=transpose_global, transpose_local=transpose_local)
+
+    test_dataset = MusicScoreDataset(
+        h5_file=os.path.join(h5_directory, f'{h5_prefix}_{seed}_test.h5')
+        if create_h5 else None, chords_df=chords_df.loc[test_ids],
+        notes_df=notes_df.loc[test_ids], measures_df=measures_df.loc[test_ids],
+        files_df=files_df.loc[test_ids], make_dfs=make_dfs,
+        transpose_global=transpose_global, transpose_local=transpose_local)
 
     return train_dataset, valid_dataset, test_dataset
 
@@ -197,10 +206,12 @@ def create_music_score_h5(music_score_dataset, directory='.', filename='music_sc
     h5_file.create_dataset('note_indexes', data=np.vstack(note_indexes), compression="gzip")
     h5_file.create_dataset('chord_vectors', data=np.vstack(chord_vectors), compression="gzip")
     h5_file.create_dataset('chord_indexes', data=np.vstack(chord_indexes), compression="gzip")
-    h5_file.create_dataset('chord_rhythm_vectors', data=np.vstack(chord_rhythm_vectors), compression="gzip")
+    h5_file.create_dataset('chord_rhythm_vectors', data=np.vstack(chord_rhythm_vectors),
+                           compression="gzip")
     h5_file.create_dataset('chord_one_hots', data=np.array(chord_one_hots), compression="gzip")
-    h5_file.create_dataset('chord_note_pointers', data=np.vstack((chord_note_pointer_starts,
-                                                                  chord_note_pointer_lengths)).T, compression="gzip")
+    h5_file.create_dataset('chord_note_pointers',
+                           data=np.vstack((chord_note_pointer_starts,
+                                           chord_note_pointer_lengths)).T, compression="gzip")
     h5_file.close()
 
 
@@ -238,20 +249,20 @@ def pad_and_collate_samples(batch):
 class MusicScoreDataset(Dataset):
     """Harmonic inference dataset, parsed from tsvs created from MuseScore files."""
 
-    def __init__(self, h5_file=None, h5_overwrite=False, chords_df=None, notes_df=None, measures_df=None, files_df=None,
-                 chords_tsv=None, notes_tsv=None, measures_tsv=None, files_tsv=None,
-                 use_offsets=True, merge_ties=True, cache=True, make_dfs=False, transpose_global=False,
-                 transpose_local=False):
+    def __init__(self, h5_file=None, h5_overwrite=False, chords_df=None, notes_df=None,
+                 measures_df=None, files_df=None, chords_tsv=None, notes_tsv=None,
+                 measures_tsv=None, files_tsv=None, use_offsets=True, merge_ties=True,
+                 cache=True, make_dfs=False, transpose_global=False, transpose_local=False):
         """
         Initialize the dataset.
 
         Parameters
         ----------
         h5_file : string
-            Path of an h5py file to read data from. If this is given and it exists, all other options
-            are ignored and data is read exclusively from the h5 file. If this is given but the file
-            doesn't exist, the data is pre-computed and written out to the h5 file for faster loading
-            during runtime.
+            Path of an h5py file to read data from. If this is given and it exists, all other
+            options are ignored and data is read exclusively from the h5 file. If this is given but
+            the file doesn't exist, the data is pre-computed and written out to the h5 file for
+            faster loading during runtime.
 
         chords_tsv : string
             The path of the chords tsv file.
@@ -316,7 +327,8 @@ class MusicScoreDataset(Dataset):
             assert notes_df is not None or notes_tsv is not None, (
                 "Either notes_df or notes_tsv is required."
             )
-            self.notes = read_dump(notes_tsv, index_col=[0,1,2]) if notes_df is None else notes_df.copy()
+            self.notes = (read_dump(notes_tsv, index_col=[0, 1, 2])
+                          if notes_df is None else notes_df.copy())
 
             assert measures_df is not None or measures_tsv is not None, (
                 "Either measures_df or measures_tsv is required."
@@ -329,25 +341,25 @@ class MusicScoreDataset(Dataset):
             self.files = read_dump(files_tsv, index_col=0) if files_df is None else files_df.copy()
 
             # Remove measure repeats
-            if type(self.measures.iloc[0].next) is list:
-                self.measures = corpus_utils.remove_repeats(self.measures)
+            if isinstance(self.measures.iloc[0].next, list):
+                self.measures = cu.remove_repeats(self.measures)
 
             # Add offsets
             if use_offsets and not all([column in self.notes.columns
                                         for column in ['offset_beat', 'offset_mc']]):
-                offset_mc, offset_beat = corpus_utils.get_offsets(self.notes, self.measures)
+                offset_mc, offset_beat = cu.get_offsets(self.notes, self.measures)
                 self.notes = self.notes.assign(offset_mc=offset_mc, offset_beat=offset_beat)
 
             # Merge ties
             if merge_ties:
-                self.notes = corpus_utils.merge_ties(self.notes, measures=self.measures)
+                self.notes = cu.merge_ties(self.notes, measures=self.measures)
 
-            self.MAX_PITCH = max(harmonic_utils.MAX_PITCH_DEFAULT, self.notes.midi.max())
+            self.max_pitch = max(hu.MAX_PITCH_DEFAULT, self.notes.midi.max())
 
             # Pitch info
-            self.notes['midi_pitch_norm'] = self.notes.midi / self.MAX_PITCH
-            self.notes['midi_pitch_flat'] = self.notes.midi % harmonic_utils.PITCHES_PER_OCTAVE
-            self.notes['midi_pitch_octave'] = self.notes.midi // harmonic_utils.PITCHES_PER_OCTAVE
+            self.notes['midi_pitch_norm'] = self.notes.midi / self.max_pitch
+            self.notes['midi_pitch_flat'] = self.notes.midi % hu.PITCHES_PER_OCTAVE
+            self.notes['midi_pitch_octave'] = self.notes.midi // hu.PITCHES_PER_OCTAVE
 
             self.cache = cache
             if self.cache:
@@ -355,7 +367,8 @@ class MusicScoreDataset(Dataset):
 
         if self.h5_file is not None:
             if not self.h5_data_present:
-                create_music_score_h5(self, directory=os.path.split(h5_file)[0], filename=os.path.split(h5_file)[1])
+                create_music_score_h5(self, directory=os.path.split(h5_file)[0],
+                                      filename=os.path.split(h5_file)[1])
                 self.h5_data_present = True
 
             with h5py.File(self.h5_file, 'r') as h5_file_obj:
@@ -371,17 +384,16 @@ class MusicScoreDataset(Dataset):
     def __len__(self):
         if self.h5_data_present:
             return len(self.chord_vectors)
-        else:
-            return len(self.chords)
+        return len(self.chords)
 
 
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        if type(idx) is int:
+        if isinstance(idx, int):
             idx = [idx]
-        elif type(idx) is slice:
+        elif isinstance(idx, slice):
             start, stop, step = idx.indices(len(self))
             idx = list(range(start, stop, step))
 
@@ -398,7 +410,7 @@ class MusicScoreDataset(Dataset):
 
             try:
                 chord = self.chords.iloc[index]
-                notes = corpus_utils.get_notes_during_chord(chord, self.notes, onsets_only=True)
+                notes = cu.get_notes_during_chord(chord, self.notes, onsets_only=True)
 
                 chord_data, transposition = self.get_chord_data(chord, notes.midi.min())
 
@@ -448,8 +460,10 @@ class MusicScoreDataset(Dataset):
         }
         sample['chord_index'] = self.chord_indexes[index]
 
-        note_indexes = range(self.chord_note_pointers[index, 0],
-                             self.chord_note_pointers[index, 0] + self.chord_note_pointers[index, 1])
+        note_indexes = range(
+            self.chord_note_pointers[index, 0],
+            self.chord_note_pointers[index, 0] + self.chord_note_pointers[index, 1]
+        )
 
         sample['notes'] = self.note_vectors[note_indexes]
         sample['note_indexes'] = self.note_indexes[note_indexes]
@@ -480,8 +494,8 @@ class MusicScoreDataset(Dataset):
         """
         vector_length = (
             1 +
-            harmonic_utils.PITCHES_PER_OCTAVE +
-            self.MAX_PITCH // harmonic_utils.PITCHES_PER_OCTAVE + 1 +
+            hu.PITCHES_PER_OCTAVE +
+            self.max_pitch // hu.PITCHES_PER_OCTAVE + 1 +
             2 +
             3 +
             1
@@ -490,7 +504,7 @@ class MusicScoreDataset(Dataset):
         # Transpose all relevant info
         if transposition != 0:
             notes = notes.copy()
-            notes.midi_pitch_norm += transposition / self.MAX_PITCH
+            notes.midi_pitch_norm += transposition / self.max_pitch
             notes.midi_pitch_flat += transposition
             notes.loc[notes.midi_pitch_flat >= 12, 'midi_pitch_octave'] += 1
             notes.loc[notes.midi_pitch_flat < 0, 'midi_pitch_octave'] -= 1
@@ -505,23 +519,26 @@ class MusicScoreDataset(Dataset):
         matrix[np.arange(len(notes)), notes.midi_pitch_flat.to_numpy(dtype=int) + 1] = 1
 
         # Octave one-hots
-        matrix[np.arange(len(notes)), notes.midi_pitch_octave.to_numpy(dtype=int) + 1 + harmonic_utils.PITCHES_PER_OCTAVE] = 1
+        matrix[np.arange(len(notes)), notes.midi_pitch_octave.to_numpy(dtype=int) +
+               1 + hu.PITCHES_PER_OCTAVE] = 1
 
         # Metrical level at onset and offset
-        for i, (note_id, note) in enumerate(notes.iterrows()):
+        for i, (_, note) in enumerate(notes.iterrows()):
             file_measures = self.measures.loc[chord.name[0]]
             onset_measure = file_measures.loc[note.mc]
-            offset_measure = onset_measure if note.offset_mc == note.mc else file_measures.loc[note.offset_mc]
+            offset_measure = (onset_measure if note.offset_mc == note.mc
+                              else file_measures.loc[note.offset_mc])
 
-            onset_level = rhythmic_utils.get_metrical_level(note.onset, onset_measure)
-            offset_level  = rhythmic_utils.get_metrical_level(note.offset_beat, offset_measure)
+            onset_level = ru.get_metrical_level(note.onset, onset_measure)
+            offset_level = ru.get_metrical_level(note.offset_beat, offset_measure)
 
             # Duration/rhythmic info as percentage of chord duration
-            onset, offset, duration = rhythmic_utils.get_rhythmic_info_as_proportion_of_range(
+            onset, offset, duration = ru.get_rhythmic_info_as_proportion_of_range(
                 note, (chord.mc, chord.onset), (chord.mc_next, chord.onset_next), file_measures
             )
 
-            matrix[i, -6:-1] = [onset_level, offset_level, float(onset), float(offset), float(duration)]
+            matrix[i, -6:-1] = [onset_level, offset_level, float(onset), float(offset),
+                                float(duration)]
 
         # is min pitch
         matrix[:, -1] = (notes.midi == notes.midi.min()).to_numpy(dtype=int)
@@ -557,22 +574,24 @@ class MusicScoreDataset(Dataset):
 
         # Global key absolute [0-12)
         transposition = 0
-        global_key, global_key_is_major = harmonic_utils.get_key(chord.globalkey)
+        global_key, global_key_is_major = hu.get_key(chord.globalkey)
         if self.transpose_global:
             if global_key_is_major:
                 transposition = 12 - global_key
             else:
-                transposition = harmonic_utils.NOTE_TO_INDEX['A'] - global_key
+                transposition = hu.NOTE_TO_INDEX['A'] - global_key
             global_key = 0
 
         # Local key (relative to global key)
-        local_key_relative, local_key_is_major = harmonic_utils.get_numeral_semitones(chord.key, global_key_is_major)
-        local_key_absolute = (global_key + local_key_relative) % harmonic_utils.PITCHES_PER_OCTAVE
+        local_key_relative, local_key_is_major = hu.get_numeral_semitones(
+            chord.key, global_key_is_major
+        )
+        local_key_absolute = (global_key + local_key_relative) % hu.PITCHES_PER_OCTAVE
         if self.transpose_local:
             if local_key_is_major:
                 transposition = 12 - local_key_absolute
             else:
-                transposition = harmonic_utils.NOTE_TO_INDEX['A'] - local_key_absolute
+                transposition = hu.NOTE_TO_INDEX['A'] - local_key_absolute
             local_key_absolute = 0
 
         # Fix transposition
@@ -586,37 +605,46 @@ class MusicScoreDataset(Dataset):
             applied_root_is_major = local_key_is_major
             applied_root_absolute = local_key_absolute
         else:
-            applied_root_relative, applied_root_is_major = harmonic_utils.get_numeral_semitones(chord.relativeroot, local_key_is_major)
-            applied_root_absolute = (local_key_absolute + applied_root_relative) % harmonic_utils.PITCHES_PER_OCTAVE
+            applied_root_relative, applied_root_is_major = hu.get_numeral_semitones(
+                chord.relativeroot, local_key_is_major
+            )
+            applied_root_absolute = ((local_key_absolute + applied_root_relative) %
+                                     hu.PITCHES_PER_OCTAVE)
 
         # Chord tonic (relative to applied root)
-        chord_root_relative, chord_is_major = harmonic_utils.get_numeral_semitones(chord.numeral, applied_root_is_major)
-        chord_root_absolute = (applied_root_absolute + chord_root_relative) % harmonic_utils.PITCHES_PER_OCTAVE
+        chord_root_relative, chord_is_major = hu.get_numeral_semitones(
+            chord.numeral, applied_root_is_major
+        )
+        chord_root_absolute = ((applied_root_absolute + chord_root_relative) %
+                               hu.PITCHES_PER_OCTAVE)
 
         # Bass note (relative to local key)
-        bass_note_relative = harmonic_utils.get_bass_step_semitones(chord.bass_step, local_key_is_major)
+        bass_note_relative = hu.get_bass_step_semitones(chord.bass_step, local_key_is_major)
         if bass_note_relative is None:
             # bass_step was invalid. Guess based on lowest note in chord
-            bass_note_absolute = (lowest_note + transposition) % harmonic_utils.PITCHES_PER_OCTAVE
+            bass_note_absolute = (lowest_note + transposition) % hu.PITCHES_PER_OCTAVE
         else:
-            bass_note_absolute = (local_key_absolute + bass_note_relative) % harmonic_utils.PITCHES_PER_OCTAVE
+            bass_note_absolute = ((local_key_absolute + bass_note_relative) %
+                                  hu.PITCHES_PER_OCTAVE)
 
         # Chord notes
-        chord_type_string = harmonic_utils.get_chord_type_string(chord_is_major, form=chord.form, figbass=chord.figbass)
-        chord_vector_relative = harmonic_utils.get_vector_from_chord_type(chord_type_string)
-        chord_vector_absolute = harmonic_utils.transpose_chord_vector(chord_vector_relative, chord_root_absolute)
+        chord_type_string = hu.get_chord_type_string(chord_is_major, form=chord.form,
+                                                     figbass=chord.figbass)
+        chord_vector_relative = hu.get_vector_from_chord_type(chord_type_string)
+        chord_vector_absolute = hu.transpose_chord_vector(chord_vector_relative,
+                                                          chord_root_absolute)
 
         # TODO: chord changes/additions
 
         # vector contains bass_note, root, and the pitch presence vector
-        vector = np.zeros(harmonic_utils.PITCHES_PER_OCTAVE * 3)
+        vector = np.zeros(hu.PITCHES_PER_OCTAVE * 3)
         vector[bass_note_absolute] = 1
-        vector[harmonic_utils.PITCHES_PER_OCTAVE + chord_root_absolute] = 1
-        vector[-harmonic_utils.PITCHES_PER_OCTAVE:] = chord_vector_absolute
+        vector[hu.PITCHES_PER_OCTAVE + chord_root_absolute] = 1
+        vector[-hu.PITCHES_PER_OCTAVE:] = chord_vector_absolute
         data['vector'] = vector
 
         # Target one-hot label
-        data['one_hot'] = harmonic_utils.CHORD_TYPES.index(chord_type_string) * harmonic_utils.PITCHES_PER_OCTAVE + chord_root_absolute
+        data['one_hot'] = hu.CHORD_TYPES.index(chord_type_string) * hu.PITCHES_PER_OCTAVE + chord_root_absolute
 
         # Rhythmic info
         file_measures = self.measures.loc[chord.name[0]]
@@ -637,9 +665,10 @@ class MusicScoreDataset(Dataset):
                 offset_measure = file_measures.loc[offset_mc]
                 offset_beat = offset_measure.act_dur
 
-        onset_level = rhythmic_utils.get_metrical_level(chord.onset, onset_measure)
-        offset_level  = rhythmic_utils.get_metrical_level(offset_beat, offset_measure)
-        duration = rhythmic_utils.get_range_length((chord.mc, chord.onset), (offset_mc, offset_beat), file_measures)
+        onset_level = ru.get_metrical_level(chord.onset, onset_measure)
+        offset_level = ru.get_metrical_level(offset_beat, offset_measure)
+        duration = ru.get_range_length((chord.mc, chord.onset), (offset_mc, offset_beat),
+                                       file_measures)
 
         # Create rhythmic vector
         data['rhythm'] = np.array([onset_level, offset_level, duration], dtype=float)
