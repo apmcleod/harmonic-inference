@@ -7,8 +7,10 @@ from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import torch.nn.functional as f
 
+from model_interface import Model
 
-class ChordClassifierModel():
+
+class ChordClassifierModel(Model):
     #TODO: Design interface
     pass
 
