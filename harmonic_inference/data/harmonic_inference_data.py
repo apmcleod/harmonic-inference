@@ -434,7 +434,7 @@ class MusicScoreDataset(Dataset):
                 if self.cache:
                     self.data_points[index] = sample
                 data.append(sample)
-            except Exception:
+            except: # pylint: disable=bare-except
                 print(f'Error at index {index}:')
                 traceback.print_exc()
 

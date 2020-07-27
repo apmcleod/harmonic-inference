@@ -1,10 +1,16 @@
-"""Models for harmonic inference datasets."""
+"""Models that generate probability distributions over chord classifications of a given input."""
+from typing import Collection
 
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import torch.nn.functional as f
+
+
+class ChordClassifierModel():
+    #TODO: Design interface
+    pass
 
 
 class MusicScoreModel(nn.Module):
@@ -46,6 +52,7 @@ class MusicScoreModel(nn.Module):
                 Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_dim)))
 
     def forward(self, notes, lengths):
+        # pylint: disable=arguments-differ
         batch_size = notes.shape[0]
         if self.input_mask is not None:
             notes *= self.input_mask
@@ -148,6 +155,7 @@ class TranspositionInvariantCNNClassifier(nn.Module):
         self.dropouts = nn.ModuleList([nn.Dropout(dropout) for i in range(num_hidden + 1)])
 
     def forward(self, data):
+        # pylint: disable=arguments-differ
         if self.input_mask is not None:
             data *= self.input_mask
 
@@ -187,8 +195,10 @@ class TransformerEncoder(nn.Module):
 
     def __init__(self):
         super().__init__()
+        self.todo = True
 
     def forward(self, data):
+        # pylint: disable=arguments-differ
         pass
 
 
@@ -213,7 +223,8 @@ class MusicScoreJointModel(nn.Module):
         self.encoder = encoder
         self.classifier = classifier
 
-    def forward(self, data, stages):
+    def forward(self, data: torch.tensor, stages: Collection[int]) -> torch.tensor:
+        # pylint: disable=arguments-differ
         """
         Forward pass one or both modules.
 
