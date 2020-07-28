@@ -2,6 +2,15 @@
 from enum import Enum
 
 
+class PieceType(Enum):
+    """
+    The type of input data represented by a Piece. Either score, midi, or audio.
+    """
+    SCORE = 0
+    MIDI = 1
+    AUDIO = 2
+
+
 class PitchType(Enum):
     """
     An Enum representing the way pitches (or tonics, or chord roots) are represented.

@@ -8,10 +8,40 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import torch.nn.functional as f
 
 from model_interface import Model
+from harmonic_inference.data.data_types import PieceType, PitchType
 
 
 class ChordClassifierModel(Model):
+    """
+    The base type for all Chord Classifier Models, which take as input sets of frames from Pieces,
+    and output chord probabilities for them.
+    """
+    def __init__(self, input_type: PieceType, output_type: PitchType):
+        """
+        Create a new base ChordClassifierModel with the given input and output formats.
+
+        Parameters
+        ----------
+        input_type : PieceType
+            The input type this model is expecting.
+        output_type : PitchType
+            The type of chord this model will output.
+        """
+
     def get_chord_probs(self, input_data):
+        """
+        Return a distribution over chords given some input data.
+
+        Parameters
+        ----------
+        input_data
+            The observed data to classify as a single chord.
+
+        Returns
+        -------
+        probabilities
+            The probability of the input being classified as each chord.
+        """
         raise NotImplementedError
 
 

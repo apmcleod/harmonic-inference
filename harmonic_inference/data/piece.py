@@ -1,14 +1,5 @@
 """A class storing a musical piece from score, midi, or audio format."""
-from enum import Enum
-
-
-class PieceType(Enum):
-    """
-    The type of input data represented by a Piece. Either score, midi, or audio.
-    """
-    SCORE = 0
-    MIDI = 1
-    AUDIO = 2
+from data_types import PieceType
 
 
 class Piece():

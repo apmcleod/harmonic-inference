@@ -1,8 +1,9 @@
 """Models that generate probability distributions over the next key in a sequence."""
+from model_interface import Model
 from harmonic_inference.data.data_types import PitchType
 
 
-class KeySequenceModel():
+class KeySequenceModel(Model):
     """
     The base class for all Key Sequence Models, which model the sequence of keys of a Piece.
     """
