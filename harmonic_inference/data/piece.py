@@ -1,9 +1,10 @@
 """A class storing a musical piece from score, midi, or audio format."""
 from enum import Enum
 
-class DataType(Enum):
+
+class PieceType(Enum):
     """
-    An enum indicating the type of data stored by a given Piece. Either score, midi, or audio.
+    The type of input data represented by a Piece. Either score, midi, or audio.
     """
     SCORE = 0
     MIDI = 1
@@ -14,7 +15,7 @@ class Piece():
     """
     A single musical piece, which can be from score, midi, or audio.
     """
-    def __init__(self, data_type: DataType):
+    def __init__(self, data_type: PieceType):
         # pylint: disable=invalid-name
         self.DATA_TYPE = data_type
 

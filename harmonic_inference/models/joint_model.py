@@ -1,5 +1,6 @@
 """Combined models that output a key/chord sequence given an input score, midi, or audio."""
 from typing import Dict, Iterable
+import itertools
 
 from model_interface import Model
 from chord_classifier_models import ChordClassifierModel
@@ -143,22 +144,40 @@ class HarmonicInferenceModel(Model):
         self.key_transition_model.load_state(state['key_transition_model_state'])
         self.log_prob = state['log_prob']
 
-    def set_priors(self, piece: Piece):
+    def initialize(self, piece: Piece) -> Iterable[Dict]:
         """
-        Set any priors for each model based on the Piece.
+        Initialize each model based on the Piece.
 
         Parameters
         ----------
         piece : Piece
             The input Piece which will be decoded.
         """
-        self.chord_classifier.set_priors(piece)
-        self.chord_sequence_model.set_priors(piece)
-        self.chord_transition_model.set_priors(piece)
-        self.key_sequence_model.set_priors(piece)
-        self.key_transition_model.set_priors(piece)
+        new_states_cc = self.chord_classifier.initialize(piece)
+        new_states_csm = self.chord_sequence_model.initialize(piece)
+        new_states_ctm = self.chord_transition_model.initialize(piece)
+        new_states_ksm = self.key_sequence_model.initialize(piece)
+        new_states_ktm = self.key_transition_model.initialize(piece)
 
-    def transition(self, frame) -> Iterable[Dict]:
+        new_states = []
+        for cc_state, csm_state, ctm_state, ksm_state, ktm_state in itertools.product(
+                new_states_cc, new_states_csm, new_states_ctm, new_states_ksm, new_states_ktm):
+            state = {
+                'chord_classifier_state': cc_state,
+                'chord_sequence_model_state': csm_state,
+                'chord_transition_model_state': ctm_state,
+                'key_sequence_model_state': ksm_state,
+                'key_transition_model_state': ktm_state,
+                'log_prob': (cc_state['log_prob'] + csm_state['log_prob'] + ctm_state['log_prob'] +
+                             ksm_state['log_prob'] + ktm_state['log_prob'])
+            }
+            new_states.append(state)
+
+        return new_states
+
+
+
+    def process_frame(self, frame) -> Iterable[Dict]:
         """
         Get an Iterable of possible next model states given the current model and the input frame.
 
@@ -172,7 +191,13 @@ class HarmonicInferenceModel(Model):
         Iterable[Dict]
             An iterable of possible states that this model will transition into given the frame.
         """
-        # TODO: Implement
+        new_states = []
+
+        transition_prob = self.chord_transition_model.get_transition_prob(frame)
+
+        no_transition_state = self.get_state()
+        no_transition_state['chord_transition_model_state'] = no_transition
+        no_transition_state['log_prob'] += no_transition.log_prob
 
 
 
@@ -199,9 +224,11 @@ def perform_inference(piece: Piece, model: HarmonicInferenceModel, beam_size: in
     assert piece.DATA_TYPE == model.DATA_TYPE
 
     beam = Beam(beam_size)
-    beam.add(model.get_state())
 
-    model.set_priors(piece)
+    for state in model.initialize(piece):
+        beam.add(state)
+
+    beam.cut_to_size()
 
     for frame in piece:
         new_beam = Beam(beam_size)
@@ -209,10 +236,11 @@ def perform_inference(piece: Piece, model: HarmonicInferenceModel, beam_size: in
         for state in beam:
             model.load_state(state)
 
-            for new_state in model.transition(frame):
+            for new_state in model.process_frame(frame):
                 new_beam.add(new_state)
 
         new_beam.cut_to_size()
         beam = new_beam
 
+    model.log_prob(beam.get_top_state())
     return beam.get_top_state()

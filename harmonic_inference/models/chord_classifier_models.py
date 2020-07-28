@@ -11,8 +11,8 @@ from model_interface import Model
 
 
 class ChordClassifierModel(Model):
-    #TODO: Design interface
-    pass
+    def get_chord_probs(self, input_data):
+        raise NotImplementedError
 
 
 class MusicScoreModel(nn.Module):
