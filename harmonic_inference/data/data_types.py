@@ -1,4 +1,4 @@
-"""Data types for model input and output formats."""
+"""Data types and converters for model input and output formats."""
 from enum import Enum
 
 
@@ -14,9 +14,15 @@ class PieceType(Enum):
 class PitchType(Enum):
     """
     An Enum representing the way pitches (or tonics, or chord roots) are represented.
-    Either TPC (tonal pitch class) or MIDI, and absolute or relative.
+    Either TPC (tonal pitch class) or MIDI.
     """
-    TPC_ABSOLUTE = 0
-    TPC_RELATIVE = 1
-    MIDI_ABSOLUTE = 2
-    MIDI_RELATIVE = 3
+    TPC = 0
+    MIDI = 1
+
+
+class RelativeType(Enum):
+    """
+    Whether a given type is absolute or relative.
+    """
+    ABSOLUTE = 0
+    RELATIVE = 1

@@ -1,8 +1,6 @@
 """Combined models that output a key/chord sequence given an input score, midi, or audio."""
-from typing import Dict, Iterable
-import itertools
+from typing import List, Tuple
 
-from model_interface import Model
 from chord_classifier_models import ChordClassifierModel
 from chord_sequence_models import ChordSequenceModel
 from chord_transition_models import ChordTransitionModel
@@ -62,7 +60,7 @@ class Beam():
         self.beam = sorted(self.beam, key=lambda s: s['log_prob'], reverse=True)[:self.beam_size]
 
 
-class HarmonicInferenceModel(Model):
+class HarmonicInferenceModel():
     """
     A model to perform harmonic inference on an input score, midi, or audio piece.
     """
@@ -95,152 +93,73 @@ class HarmonicInferenceModel(Model):
         key_transition_model : KeyTransitionModel
             A model that outputs a probability at each input step of a chord change.
         """
-        # pylint: disable=invalid-name
-        self.DATA_TYPE = chord_classifier.DATA_TYPE
-
         self.chord_classifier = chord_classifier
         self.chord_sequence_model = chord_sequence_model
         self.chord_transition_model = chord_transition_model
         self.key_sequence_model = key_sequence_model
         self.key_transition_model = key_transition_model
 
-        self.log_prob = (self.chord_classifier.log_prob + self.chord_sequence_model.log_prob +
-                         self.chord_transition_model.log_prob + self.key_sequence_model.log_prob +
-                         self.key_transition_model.log_prob)
+        # Ensure all types match
+        assert self.chord_classifier.INPUT_TYPE == self.chord_transition_model.DATA_TYPE, (
+            "Chord Classifier input type does not match Chord Transition Model data type"
+        )
+        assert self.chord_classifier.OUTPUT_TYPE == self.chord_sequence_model.DATA_TYPE, (
+            "Chord Classifier output type does not match Chord Sequence Model data type"
+        )
+        assert self.chord_sequence_model.DATA_TYPE == self.key_transition_model.DATA_TYPE, (
+            "Chord Sequence Model data type does not match Key Transition Model data type"
+        )
+        assert self.chord_sequence_model.DATA_TYPE == self.key_sequence_model.INPUT_TYPE, (
+            "Chord Sequence Model data type does not match Key Transition Model input type"
+        )
 
-    def get_state(self) -> Dict:
-        """
-        Get the state of this model as a dict of the states of its component models.
+        # pylint: disable=invalid-name
+        self.INPUT_TYPE = self.chord_classifier.INPUT_TYPE
+        # pylint: disable=invalid-name
+        self.CHORD_OUTPUT_TYPE = self.chord_sequence_model.DATA_TYPE
+        # pylint: disable=invalid-name
+        self.KEY_OUTPUT_TYPE = self.key_sequence_model.OUTPUT_TYPE
 
-        Returns
-        -------
-        state : Dict
-            The state of this model as a dict of the states of its component models,
-            plus the log_prob of the overall state.
+    def get_all_chord_boundaries(self, piece: Piece,
+                                 threshold: float = 0.1) -> List[Tuple[int, int]]:
         """
-        state = {
-            'chord_classifier_state': self.chord_classifier.get_state(),
-            'chord_sequence_model_state': self.chord_sequence_model.get_state(),
-            'chord_transition_model_state': self.chord_transition_model.get_state(),
-            'key_sequence_model_state': self.key_sequence_model.get_state(),
-            'key_transition_model_state': self.key_transition_model.get_state(),
-            'log_prob': self.log_prob
-        }
-        return state
-
-    def load_state(self, state: Dict):
-        """
-        Load the given state into this model.
-
-        Parameters
-        ----------
-        state : Dict
-            A state returned by this model's get_state() function.
-        """
-        self.chord_classifier.load_state(state['chord_classifier_state'])
-        self.chord_sequence_model.load_state(state['chord_sequence_model_state'])
-        self.chord_transition_model.load_state(state['chord_transition_model_state'])
-        self.key_sequence_model.load_state(state['key_sequence_model_state'])
-        self.key_transition_model.load_state(state['key_transition_model_state'])
-        self.log_prob = state['log_prob']
-
-    def initialize(self, piece: Piece) -> Iterable[Dict]:
-        """
-        Initialize each model based on the Piece.
+        Get a list of all chord boundaries that the Chord Transition Model believes to be possible
+        given the input Piece.
 
         Parameters
         ----------
         piece : Piece
-            The input Piece which will be decoded.
-        """
-        new_states_cc = self.chord_classifier.initialize(piece)
-        new_states_csm = self.chord_sequence_model.initialize(piece)
-        new_states_ctm = self.chord_transition_model.initialize(piece)
-        new_states_ksm = self.key_sequence_model.initialize(piece)
-        new_states_ktm = self.key_transition_model.initialize(piece)
-
-        new_states = []
-        for cc_state, csm_state, ctm_state, ksm_state, ktm_state in itertools.product(
-                new_states_cc, new_states_csm, new_states_ctm, new_states_ksm, new_states_ktm):
-            state = {
-                'chord_classifier_state': cc_state,
-                'chord_sequence_model_state': csm_state,
-                'chord_transition_model_state': ctm_state,
-                'key_sequence_model_state': ksm_state,
-                'key_transition_model_state': ktm_state,
-                'log_prob': (cc_state['log_prob'] + csm_state['log_prob'] + ctm_state['log_prob'] +
-                             ksm_state['log_prob'] + ktm_state['log_prob'])
-            }
-            new_states.append(state)
-
-        return new_states
-
-
-
-    def process_frame(self, frame) -> Iterable[Dict]:
-        """
-        Get an Iterable of possible next model states given the current model and the input frame.
-
-        Parameters
-        ----------
-        frame
-            The next input frame of the Piece we are decoding.
+            An input musical piece, either score, midi, or audio.
+        threshold : float
+            The threshold to allow for a branch during decoding. If the model's output is on the
+            range [ctm_threshold, 1 - ctm_threshold], it will branch.
 
         Returns
         -------
-        Iterable[Dict]
-            An iterable of possible states that this model will transition into given the frame.
+        List[Tuple[int, int, float]]
+            A list of chord boundaries, each represented as a tuple (start, end) of indexes into
+            piece, where the chord lies on the range [start, end).
         """
-        new_states = []
 
-        transition_prob = self.chord_transition_model.get_transition_prob(frame)
+    def perform_inference(self, piece: Piece, ctm_threshold: float = 0.1):
+        """
+        Perform harmonic inference on an input musical piece.
 
-        no_transition_state = self.get_state()
-        no_transition_state['chord_transition_model_state'] = no_transition
-        no_transition_state['log_prob'] += no_transition.log_prob
+        Parameters
+        ----------
+        input_piece : Piece
+            An input musical piece, either score, midi, or audio.
+        ctm_threshold : float
+            The threshold to allow for a branch during Chord Transition Model decoding. If the
+            model's output is on the range [ctm_threshold, 1 - ctm_threshold], it will branch.
 
+        Returns
+        -------
+        harmony : list
+            The inferred harmonic structure of the piece.
+        """
+        assert piece.DATA_TYPE == self.INPUT_TYPE
 
-
-def perform_inference(piece: Piece, model: HarmonicInferenceModel, beam_size: int = 50):
-    """
-    Perform harmonic inference on an input musical piece.
-
-    Parameters
-    ----------
-    input_piece : Piece
-        An input musical piece, either score, midi, or audio.
-
-    model : HarmonicInferenceModel
-        A joint model for performing harmonic inference.
-
-    beam_size : int
-        The beam size to use for beam search decoding.
-
-    Returns
-    -------
-    harmony : list
-        The inferred harmonic structure of the piece.
-    """
-    assert piece.DATA_TYPE == model.DATA_TYPE
-
-    beam = Beam(beam_size)
-
-    for state in model.initialize(piece):
-        beam.add(state)
-
-    beam.cut_to_size()
-
-    for frame in piece:
-        new_beam = Beam(beam_size)
-
-        for state in beam:
-            model.load_state(state)
-
-            for new_state in model.process_frame(frame):
-                new_beam.add(new_state)
-
-        new_beam.cut_to_size()
-        beam = new_beam
-
-    model.log_prob(beam.get_top_state())
-    return beam.get_top_state()
+        all_chord_boundaries = self.chord_transition_model.get_all_chord_boundaries(
+            piece, threshold=ctm_threshold
+        )
