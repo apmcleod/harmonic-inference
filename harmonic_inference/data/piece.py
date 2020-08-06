@@ -2,6 +2,7 @@
 from typing import Union, Tuple
 from fractions import Fraction
 from .data_types import *
+from harmonic_inference.utils import harmonic_utils as hu
 
 
 position = Union[float, Tuple[int, Fraction]]
@@ -17,6 +18,7 @@ class Note():
         self.onset = onset
         self.duration = duration
         self.offset = offset
+        self.pitch_type = pitch_type
 
     @staticmethod
     def from_series(note_row: pd.Series, measures_df: pd.DataFrame, pitch_type: PitchType) -> Note:
@@ -28,28 +30,63 @@ class Chord():
     A musical chord, with a root and base note.
     """
     def __init__(self, root: int, bass: int, quality: ChordQuality, inversion: int,
-                 pitch_type: PitchType):
+                 onset: position, offset: position, duration: position, pitch_type: PitchType):
         self.root = root
         self.bass = bass
         self.quality = quality
+        self.inversion = inversion
+        self.onset = onset
+        self.offset = offset
+        self.duration = duration
+        self.pitch_type = pitch_type
 
     @staticmethod
     def from_series(chord_row: pd.Series, measures_df: pd.DataFrame,
                     pitch_type: PitchType) -> Chord:
-        pass
+        key = Key.from_series(chord_row, pitch_type)
+        root_interval = hu.get_interval_from_numeral(chord_row['root'], key.mode,
+                                                     pitch_type=pitch_type)
+        root = hu.transpose(key.tonic, chord_row.root, pitch_type=pitch_type)
+
+        # Bass step is listed relative to local key (not applied dominant)
+        local_key = from_series(chord_row, pitch_type, do_relative=False)
+        bass_interval = hu.get_interval_from_number(chord_row['bass_step'], local_key.mode,
+                                                    pitch_type=pitch_type)
+        bass = hu.transpose(local_key.tonic, bass_interval, pitch_type=pitch_type)
+
+        # TODO: Quality, inversion, metrical stuff
 
 
 class Key():
     """
-    A musical key, with tonic and model
+    A musical key, with tonic and mode.
     """
     def __init__(self, tonic: int, mode: KeyMode, tonic_type: PitchType):
         self.tonic = tonic
         self.mode = mode
+        self.tonic_type = tonic_type
 
     @staticmethod
-    def from_series(chord_row: pd.Series, tonic_type: PitchType) -> Key:
-        pass
+    def from_series(chord_row: pd.Series, tonic_type: PitchType, do_relative: bool = True) -> Key:
+        global_tonic = hu.get_pitch_from_string(chord_row['globalkey'], pitch_type=tonic_type)
+        global_mode = KeyMode.MINOR if chord_row['globalminor'] else KeyMode.MAJOR
+
+        local_mode = KeyMode.MINOR if chord_row['localminor'] else KeyMode.MAJOR
+        local_transposition = hu.get_interval_from_numeral(chord_row['key'], global_mode,
+                                                           pitch_type=tonic_type)
+        local_tonic = hu.transpose_pitch(global_tonic, local_transposition, pitch_type=tonic_type)
+
+        # Treat applied dominants (and other slash chords) as new keys
+        relative = chord_row['relative_root']
+        if do_relative and not pd.isna(relative):
+            relative_mode = KeyMode.MINOR if relative[-1].islower() else KeyMode.MAJOR
+            relative_transposition = hu.get_interval_from_numeral(relative, local_mode,
+                                                                  pitch_type=tonic_type)
+            relative_tonic = hu.transpose_pitch(local_tonic, relative_transposition,
+                                                pitch_type=tonic_type)
+            local_mode, local_tonic = relative_mode, relative_tonic
+
+        return Key(local_tonic, local_mode, tonic_type)
 
 
 class Piece():
