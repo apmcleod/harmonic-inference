@@ -20,9 +20,27 @@ class PitchType(Enum):
     MIDI = 1
 
 
-class RelativeType(Enum):
+class ChordQuality(Enum):
     """
-    Whether a given type is absolute or relative.
+    The types of chords that are supported.
     """
-    ABSOLUTE = 0
-    RELATIVE = 1
+    MAJOR = 0
+    MINOR = 1
+    DIMINISHED = 2
+    AUGMENTED = 3
+    MAJ_MAJ7 = 4
+    MAJ_MIN7 = 5
+    MIN_MAJ7 = 6
+    MIN_MIN7 = 7
+    DIM7 = 8
+    HALF_DIM7 = 9
+    AUG_MIN7 = 10
+    AUG_MAJ7 = 11
+
+
+class KeyMode(Enum):
+    """
+    The modes that are supported for keys.
+    """
+    MAJOR = 0
+    MINOR = 1
