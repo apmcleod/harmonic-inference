@@ -23,8 +23,12 @@ class Note():
 
     @staticmethod
     def from_series(note_row: pd.Series, measures_df: pd.DataFrame, pitch_type: PitchType) -> Note:
-        pass
-        # TODO: Implement
+        pitch = note_row.tpc if pitch_type == PitchType.TPC else note_row.midi % 12
+
+        onset = (note_row.mc, note_row.onset)
+        offset = (note_row.offset_mc, note_row.offset_beat)
+
+        return Note(pitch, note_row.octaves, onset, note_row.duration, offset, pitch_type)
 
 
 class Chord():
@@ -60,8 +64,11 @@ class Chord():
                                        chord_row['figbass'])
         inversion = hu.get_chord_inversion(chord_type, chord_row['figbass'])
 
-        return Chord(root, bass, chord_type, inversion, (chord_row.mc, chord_row.onset),
-                     (chord_row.mc_next, chord_row.onset_next), chord_row.chord_length, pitch_type)
+        onset = (chord_row.mc, chord_row.onset)
+        offset = (chord_row.mc_next, chord_row.onset_next)
+
+        return Chord(root, bass, chord_type, inversion, onset, offset, chord_row.chord_length,
+                     pitch_type)
 
 
 class Key():
