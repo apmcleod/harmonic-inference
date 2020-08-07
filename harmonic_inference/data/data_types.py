@@ -20,7 +20,7 @@ class PitchType(Enum):
     MIDI = 1
 
 
-class ChordQuality(Enum):
+class ChordType(Enum):
     """
     The types of chords that are supported.
     """

@@ -15,7 +15,7 @@ from torch.utils.data import Dataset
 from torch.utils.data.dataloader import default_collate
 from torch.nn.utils.rnn import pad_sequence
 
-from corpus_reading import read_dump
+from .corpus_reading import read_dump
 from harmonic_inference.utils import corpus_utils as cu
 from harmonic_inference.utils import rhythmic_utils as ru
 from harmonic_inference.utils import harmonic_utils as hu
