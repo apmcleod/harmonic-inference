@@ -5,15 +5,37 @@ from .data_types import *
 from harmonic_inference.utils import harmonic_utils as hu
 
 
-position = Union[float, Tuple[int, Fraction]]
-
-
 class Note():
     """
     A representation of a musical Note, with pitch, onset, duration, and offset.
     """
-    def __init__(self, pitch: int, octave: int, onset: position, duration: Fraction,
-                 offset: position, pitch_type: PitchType):
+    def __init__(self, pitch_class: int, octave: int, onset: Union[float, Tuple[int, Fraction]],
+                 duration: Union[float, Fraction], offset: Union[float, Tuple[int, Fraction]],
+                 pitch_type: PitchType):
+        """
+        Create a new musical Note.
+
+        Parameters
+        ----------
+        pitch_class : int
+            An integer representing pitch class either as semitones above C (if pitch_type is MIDI;
+            with B#, C = 0), or as tonal pitch class (if pitch_type is TPC; with C = 0, G = 1, etc.
+            around the circle of fifths).
+        octave : int
+            An integer representing the octave in which the note lies.
+        onset : Union[float, Tuple[int, Fraction]]
+            The onset position of this Note. Either a float (representing time in seconds), or an
+            (int, Fraction) tuple (representing measure count and beat in whole notes).
+        duration : Union[float, Fraction]
+            The duration of this Note. Either a float (representing time in seconds), ar a Fraction
+            (representing whole notes).
+        offset : Union[float, Tuple[int, Fraction]]
+            The onset position of this Note. Either a float (representing time in seconds), or an
+            (int, Fraction) tuple (representing measure count and beat in whole notes).
+        pitch_type : PitchType
+            The PitchType in which this note's pitch_class is stored. If this is TPC, the
+            pitch_class can be later converted into MIDI, but not vice versa.
+        """
         self.pitch = pitch
         self.octave = octave
         self.onset = onset
@@ -36,7 +58,39 @@ class Chord():
     A musical chord, with a root and base note.
     """
     def __init__(self, root: int, bass: int, chord_type: ChordType, inversion: int,
-                 onset: position, offset: position, duration: Fraction, pitch_type: PitchType):
+                 onset: Union[float, Tuple[int, Fraction]],
+                 offset: Union[float, Tuple[int, Fraction]],
+                 duration: Union[float, Fraction], pitch_type: PitchType):
+        """
+        Create a new musical chord object.
+
+        Parameters
+        ----------
+        root : int
+            An integer representing pitch class of this chord's root either as semitones above C
+            (if pitch_type is MIDI; with B#, C = 0), or as tonal pitch class (if pitch_type is TPC;
+            with C = 0, G = 1, etc. around the circle of fifths).
+        bass : int
+            An integer representing the bass note of this chord, either as semitones above C
+            (if pitch_type is MIDI; with B#, C = 0), or as tonal pitch class (if pitch_type is TPC;
+            with C = 0, G = 1, etc. around the circle of fifths).
+        chord_type : ChordType
+            The type of chord this is (major, minor, diminished, etc.)
+        inversion : int
+            The inversion this chord is in.
+        onset : Union[float, Tuple[int, Fraction]]
+            The onset position of this Chord. Either a float (representing time in seconds), or an
+            (int, Fraction) tuple (representing measure count and beat in whole notes).
+        offset : Union[float, Tuple[int, Fraction]]
+            The offset position of this Chord. Either a float (representing time in seconds), or an
+            (int, Fraction) tuple (representing measure count and beat in whole notes).
+        duration : Union[float, Fraction]
+            The duration of this Chord. Either a float (representing time in seconds), ar a
+            Fraction (representing whole notes).
+        pitch_type : PitchType
+            The PitchType in which this chord's root and bass note are stored. If this is TPC, the
+            values can be later converted into MIDI, but not vice versa.
+        """
         self.root = root
         self.bass = bass
         self.quality = quality
@@ -76,6 +130,22 @@ class Key():
     A musical key, with tonic and mode.
     """
     def __init__(self, tonic: int, mode: KeyMode, tonic_type: PitchType):
+        """
+        Create a new musical key object.
+
+        Parameters
+        ----------
+        tonic : int
+            An integer representing the pitch class of the tonic of this key. If tonic_type is
+            TPC, this is stored as a tonal pitch class (with C = 0, G = 1, etc. around the circle
+            of fifths). If tonic_type is MIDI, this is stored as semitones above C
+            (with C, B# = 0).
+        mode : KeyMode
+            The mode of this key.
+        tonic_type : PitchType
+            The PitchType in which this key's tonic is stored. If this is TPC, the
+            tonic can be later converted into MIDI type, but not vice versa.
+        """
         self.tonic = tonic
         self.mode = mode
         self.tonic_type = tonic_type
@@ -131,7 +201,20 @@ class ScorePiece(Piece):
     """
     A single musical piece, in score format.
     """
-    def __init__(self, notes_df, chords_df, measures_df):
+
+    def __init__(self, notes_df: pd.DataFrame, chords_df: pd.DataFrame, measures_df: pd.DataFrame):
+        """
+        Create a ScorePiece object from the given 3 pandas DataFrames.
+
+        Parameters
+        ----------
+        notes_df : pd.DataFrame
+            A DataFrame containing information about the notes contained in the piece.
+        chords_df : pd.DataFrame
+            A DataFrame containing information about the chords contained in the piece.
+        measures_df : pd.DataFrame
+            A DataFrame containing information about the measures contained in the piece.
+        """
         super().__init__(PieceType.SCORE)
         self.notes = [
             Note.from_series(note, measures_df, PitchType.TPC)
