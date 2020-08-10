@@ -1,8 +1,9 @@
 """Utility functions for getting harmonic and pitch information from the corpus DataFrames."""
-
 from typing import List
 import pandas as pd
 import numpy as np
+
+from harmonic_inference.data.data_types import  KeyMode, PitchType
 
 
 MAX_PITCH_DEFAULT = 127
@@ -345,3 +346,64 @@ def get_chord_type_string(is_major: bool, form: str = None, figbass: str = None)
     triad = 'M' if is_major else 'm'
     seventh = 'M' if form == 'M' else 'm'
     return f"{triad}{seventh}7"
+
+
+SCALE_INTERVALS = {
+    KeyMode.MAJOR: {
+        PitchType.TPC: [0, 0, 2, 4, -1, 1, 3, 5],
+        PitchType.MIDI: [0, 0, 2, 4, 5, 7, 9, 11],
+    },
+    KeyMode.MINOR: {
+        PitchType.TPC: [0, 0, 2, -3, -1, 1, -4, -2],
+        PitchType.MIDI: [0, 0, 2, 3, 5, 7, 8, 10]
+    }
+}
+
+ACCIDENTAL_ADJUSTMENT = {
+    PitchType.TPC: 7,
+    PitchType.MIDI: 1
+}
+
+
+def get_interval_from_numeral(numeral: str, mode: KeyMode, pitch_type: PitchType) -> int:
+    """
+    Get an interval from a roman numeral, suffixed with flats or sharps.
+
+    Parameters
+    ----------
+    numeral : str
+        The numeral of an interval, with suffixes indicating flats (b) or sharps (#).
+    mode : KeyMode
+        The mode of the current key, since intervals are listed relative to scale degrees.
+    pitch_type : PitchType
+        The type of interval to return. Either TPC (to return circle of fifths difference) or MIDI
+        (for semitones).
+
+    Returns
+    -------
+    interval : int
+        The interval above the root note the given numeral lies.
+    """
+    accidental_adjustment, numeral = get_accidental_adjustment(numeral, in_front=False)
+
+    interval = SCALE_INTERVALS[mode][pitch_type][NUMERAL_TO_NUMBER[numeral.upper()]]
+    interval += accidental_adjustment * SEMITONE_ADJUSTMENT[pitch_type]
+
+    return interval
+
+
+hu.transpose_pitch(key.tonic, chord_row.root, pitch_type=pitch_type)
+
+
+hu.get_interval_from_number(chord_row['bass_step'], local_key.mode,
+                                                    pitch_type=pitch_type)
+
+
+chord_type = hu.get_chord_type(chord_row['numeral'].isupper(), chord_row['form'],
+                                       chord_row['figbass'])
+
+
+inversion = hu.get_chord_inversion(chord_type, chord_row['figbass'])
+
+
+hu.get_pitch_from_string(chord_row['globalkey'], pitch_type=tonic_type)
