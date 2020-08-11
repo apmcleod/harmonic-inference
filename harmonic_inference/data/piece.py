@@ -1,5 +1,5 @@
 """A class storing a musical piece from score, midi, or audio format."""
-from typing import Union, Tuple
+from typing import Union, Tuple, List
 from fractions import Fraction
 from .data_types import *
 from harmonic_inference.utils import harmonic_utils as hu
@@ -181,23 +181,74 @@ class Piece():
     """
     A single musical piece, which can be from score, midi, or audio.
     """
+
     def __init__(self, data_type: PieceType):
+        """
+        Create a new musical Piece object of the given data type.
+
+        Parameters
+        ----------
+        data_type : PieceType
+            The data type of the piece.
+        """
         # pylint: disable=invalid-name
         self.DATA_TYPE = data_type
 
-    def get_inputs(self):
+    def get_inputs(self) -> List:
+        """
+        Get a list of the inputs for this Piece.
+
+        Returns
+        -------
+        inputs : List
+            A List of the inputs for this musical piece.
+        """
         raise NotImplementedError
 
-    def get_chord_change_indices(self):
+    def get_chord_change_indices(self) -> List[int]:
+        """
+        Get a List of the indexes (into the input list) at which there are chord changes.
+
+        Returns
+        -------
+        chord_change_indices : List[int]
+            The indices (into the inputs list) at which there is a chord change.
+        """
         raise NotImplementedError
 
-    def get_chords(self):
+    def get_chords(self) -> List[Chord]:
+        """
+        Get a List of the chords in this piece.
+
+        Returns
+        -------
+        chords : List[Chord]
+            The chords present in this piece. The ith chord occurs for the inputs between
+            chord_change_index i (inclusive) and i+1 (exclusive).
+        """
         raise NotImplementedError
 
-    def get_key_change_indices(self):
+    def get_key_change_indices(self) -> List[int]:
+        """
+        Get a List of the indexes (into the chord list) at which there are key changes.
+
+        Returns
+        -------
+        key_change_indices : List[int]
+            The indices (into the chords list) at which there is a key change.
+        """
         raise NotImplementedError
 
-    def get_keys(self):
+    def get_keys(self) -> List[Key]:
+        """
+        Get a List of the keys in this piece.
+
+        Returns
+        -------
+        keys : List[Key]
+            The keys present in this piece. The ith key occurs for the chords between
+            key_change_index i (inclusive) and i+1 (exclusive).
+        """
         raise NotImplementedError
 
 
@@ -249,17 +300,17 @@ class ScorePiece(Piece):
             for _, chord in chords_df.loc[self.key_changes].iterrows()
         ]
 
-    def get_inputs(self):
+    def get_inputs(self) -> List[Note]:
         return self.notes
 
-    def get_chord_change_indices(self):
+    def get_chord_change_indices(self) -> List[int]:
         return self.chord_changes
 
-    def get_chords(self):
+    def get_chords(self) -> List[Chord]:
         return self.chords
 
-    def get_key_change_indices(self):
+    def get_key_change_indices(self) -> List[int]:
         return self.key_changes
 
-    def get_keys(self):
+    def get_keys(self) -> List[Key]:
         return self.keys

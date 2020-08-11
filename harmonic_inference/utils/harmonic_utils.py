@@ -379,13 +379,13 @@ TPC_C = 15
 
 STRING_TO_PITCH = {
     PitchType.TPC: {
-        'A': 18,
-        'B': 20,
-        'C': 15,
-        'D': 17,
-        'E': 19,
-        'F': 14,
-        'G': 16
+        'A': TPC_C + 3,
+        'B': TPC_C + 5,
+        'C': TPC_C,
+        'D': TPC_C + 2,
+        'E': TPC_C + 4,
+        'F': TPC_C - 1,
+        'G': TPC_C + 1
     },
     PitchType.MIDI: {
         'C': 0,
