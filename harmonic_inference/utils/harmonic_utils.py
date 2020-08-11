@@ -30,6 +30,10 @@ STRING_TO_PITCH = {
     }
 }
 
+for note_string in ['A', 'B', 'C', 'D', 'E', 'F', 'G']:
+    for pitch_type in PitchType:
+        STRING_TO_PITCH[pitch_type][note_string.lower()] = STRING_TO_PITCH[pitch_type][note_string]
+
 
 SCALE_INTERVALS = {
     KeyMode.MAJOR: {
@@ -278,6 +282,57 @@ def get_vector_from_chord_type(chord_type: ChordType, pitch_type: PitchType) -> 
     chord_vector = np.zeros(NUM_PITCHES[pitch_type])
     chord_vector[CHORD_PITCHES[pitch_type][chord_type]] = 1
     return chord_vector
+
+
+def get_interval_from_numeral(numeral: str, mode: KeyMode, pitch_type: PitchType) -> int:
+    """
+    Get the interval from the key tonic to the given scale degree numeral.
+
+    Parameters
+    ----------
+    numeral : str
+        Usually an upper or lowercase roman numeral, prepended by accidentals. Can also be
+        Ger, It, or Fr, for augmented 6th chord symbols.
+    mode : KeyMode
+        The mode of the key from which to measure the scale degree.
+    pitch_type : PitchType
+        The type of interval to return. Either TPC (to return circle of fifths difference) or MIDI
+        (for semitones).
+
+    Returns
+    -------
+    interval : int
+        The interval from the key tonic to the scale degree numeral.
+    """
+    if numeral in ['Ger', 'It', 'Fr']:
+        # TODO: Special processing
+        return 0
+    return get_interval_from_scale_degree(numeral, True, True, mode, pitch_type)
+
+
+def get_interval_from_bass_step(bass_step: str, mode: KeyMode, pitch_type: PitchType) -> int:
+    """
+    Get the interval from the tonic of the current key to the given bass step.
+
+    Parameters
+    ----------
+    bass_step : str
+        The bass step. Usually a number pre-pended with accidentals. Can also be Error or Unclear.
+    mode : KeyMode
+        The mode of the key from which to measure the scale degree.
+    pitch_type : PitchType
+        The type of interval to return. Either TPC (to return circle of fifths difference) or MIDI
+        (for semitones).
+
+    Returns
+    -------
+    interval : int
+        The interval from the key tonic to the bass note.
+    """
+    if bass_step in ['Error', 'Unclear']:
+        # TODO: Special processing
+        return 0
+    return get_interval_from_scale_degree(bass_step, False, True, mode, pitch_type)
 
 
 def get_interval_from_scale_degree(scale_degree: str, numeral: bool, accidentals_prefixed: bool,
