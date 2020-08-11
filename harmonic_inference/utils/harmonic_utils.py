@@ -306,11 +306,11 @@ def get_interval_from_scale_degree(scale_degree: str, numeral: bool, accidentals
     interval : int
         The interval above the root note the given numeral lies.
     """
-    accidental_adjustment, numeral = get_accidental_adjustment(numeral,
-                                                               in_front=accidentals_prefixed)
+    accidental_adjustment, scale_degree = get_accidental_adjustment(scale_degree,
+                                                                    in_front=accidentals_prefixed)
 
-    interval = SCALE_INTERVALS[mode][pitch_type][SCALE_DEGREE_TO_NUMBER[numeral]]
-    interval += accidental_adjustment * SEMITONE_ADJUSTMENT[pitch_type]
+    interval = SCALE_INTERVALS[mode][pitch_type][SCALE_DEGREE_TO_NUMBER[scale_degree]]
+    interval += accidental_adjustment * ACCIDENTAL_ADJUSTMENT[pitch_type]
 
     return interval
 
@@ -464,6 +464,6 @@ def get_pitch_from_string(pitch_string: str, pitch_type: PitchType) -> int:
     accidental_adjustment, pitch_string = get_accidental_adjustment(pitch_string, in_front=False)
 
     pitch = STRING_TO_PITCH[pitch_type][pitch_string]
-    pitch += accidental_adjustment * SEMITONE_ADJUSTMENT[pitch_type]
+    pitch += accidental_adjustment * ACCIDENTAL_ADJUSTMENT[pitch_type]
 
     return pitch

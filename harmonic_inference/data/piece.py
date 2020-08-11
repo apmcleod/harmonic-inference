@@ -39,7 +39,7 @@ class Note():
             The PitchType in which this note's pitch_class is stored. If this is TPC, the
             pitch_class can be later converted into MIDI, but not vice versa.
         """
-        self.pitch = pitch
+        self.pitch_class = pitch_class
         self.octave = octave
         self.onset = onset
         self.duration = duration
@@ -96,7 +96,7 @@ class Chord():
         """
         self.root = root
         self.bass = bass
-        self.quality = quality
+        self.chord_type = chord_type
         self.inversion = inversion
         self.onset = onset
         self.offset = offset
@@ -112,9 +112,9 @@ class Chord():
         root = hu.transpose_pitch(key.tonic, root_interval, pitch_type=pitch_type)
 
         # Bass step is listed relative to local key (not applied dominant)
-        local_key = from_series(chord_row, pitch_type, do_relative=False)
+        local_key = Key.from_series(chord_row, pitch_type, do_relative=False)
         bass_interval = hu.get_interval_from_scale_degree(
-            chord_row['bass_step'], False, False, local_key.mode, pitch_type=pitch_type
+            chord_row['bass_step'], False, True, local_key.mode, pitch_type=pitch_type
         )
         bass = hu.transpose_pitch(local_key.tonic, bass_interval, pitch_type=pitch_type)
 
@@ -166,7 +166,7 @@ class Key():
         local_tonic = hu.transpose_pitch(global_tonic, local_transposition, pitch_type=tonic_type)
 
         # Treat applied dominants (and other slash chords) as new keys
-        relative = chord_row['relative_root']
+        relative = chord_row['relativeroot']
         if do_relative and not pd.isna(relative):
             relative_mode = KeyMode.MINOR if relative[-1].islower() else KeyMode.MAJOR
             relative_transposition = hu.get_interval_from_scale_degree(
