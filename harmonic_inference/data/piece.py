@@ -45,7 +45,7 @@ class Note():
 
     @staticmethod
     def from_series(note_row: pd.Series, measures_df: pd.DataFrame, pitch_type: PitchType) -> Note:
-        pitch = note_row.tpc if pitch_type == PitchType.TPC else note_row.midi % 12
+        pitch = note_row.tpc + hu.TPC_C if pitch_type == PitchType.TPC else note_row.midi % 12
 
         onset = (note_row.mc, note_row.onset)
         offset = (note_row.offset_mc, note_row.offset_beat)
@@ -104,19 +104,21 @@ class Chord():
     def from_series(chord_row: pd.Series, measures_df: pd.DataFrame,
                     pitch_type: PitchType) -> Chord:
         key = Key.from_series(chord_row, pitch_type)
-        root_interval = hu.get_interval_from_numeral(chord_row['numeral'], key.mode,
-                                                     pitch_type=pitch_type)
-        root = hu.transpose(key.tonic, chord_row.root, pitch_type=pitch_type)
+        root_interval = hu.get_interval_from_scale_degree(
+            chord_row['numeral'], True, True, key.mode, pitch_type=pitch_type
+        )
+        root = hu.transpose_pitch(key.tonic, root_interval, pitch_type=pitch_type)
 
         # Bass step is listed relative to local key (not applied dominant)
         local_key = from_series(chord_row, pitch_type, do_relative=False)
-        bass_interval = hu.get_interval_from_number(chord_row['bass_step'], local_key.mode,
-                                                    pitch_type=pitch_type)
-        bass = hu.transpose(local_key.tonic, bass_interval, pitch_type=pitch_type)
+        bass_interval = hu.get_interval_from_scale_degree(
+            chord_row['bass_step'], False, False, local_key.mode, pitch_type=pitch_type
+        )
+        bass = hu.transpose_pitch(local_key.tonic, bass_interval, pitch_type=pitch_type)
 
         chord_type = hu.get_chord_type(chord_row['numeral'].isupper(), chord_row['form'],
                                        chord_row['figbass'])
-        inversion = hu.get_chord_inversion(chord_type, chord_row['figbass'])
+        inversion = hu.get_chord_inversion(chord_row['figbass'])
 
         onset = (chord_row.mc, chord_row.onset)
         offset = (chord_row.mc_next, chord_row.onset_next)
@@ -156,16 +158,18 @@ class Key():
         global_mode = KeyMode.MINOR if chord_row['globalminor'] else KeyMode.MAJOR
 
         local_mode = KeyMode.MINOR if chord_row['localminor'] else KeyMode.MAJOR
-        local_transposition = hu.get_interval_from_numeral(chord_row['key'], global_mode,
-                                                           pitch_type=tonic_type)
+        local_transposition = hu.get_interval_from_scale_degree(
+            chord_row['key'], True, True, global_mode, pitch_type=tonic_type
+        )
         local_tonic = hu.transpose_pitch(global_tonic, local_transposition, pitch_type=tonic_type)
 
         # Treat applied dominants (and other slash chords) as new keys
         relative = chord_row['relative_root']
         if do_relative and not pd.isna(relative):
             relative_mode = KeyMode.MINOR if relative[-1].islower() else KeyMode.MAJOR
-            relative_transposition = hu.get_interval_from_numeral(relative, local_mode,
-                                                                  pitch_type=tonic_type)
+            relative_transposition = hu.get_interval_from_scale_degree(
+                relative, True, True, local_mode, pitch_type=tonic_type
+            )
             relative_tonic = hu.transpose_pitch(local_tonic, relative_transposition,
                                                 pitch_type=tonic_type)
             local_mode, local_tonic = relative_mode, relative_tonic

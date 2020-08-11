@@ -3,7 +3,7 @@ from typing import List
 import pandas as pd
 import numpy as np
 
-from harmonic_inference.data.data_types import  KeyMode, PitchType
+from harmonic_inference.data.data_types import  KeyMode, PitchType, ChordType
 
 
 MAX_PITCH_DEFAULT = 127
@@ -13,14 +13,28 @@ PITCHES_PER_OCTAVE = 12
 MAJOR_SCALE = [0, 0, 2, 4, 5, 7, 9, 11]
 MINOR_SCALE = [0, 0, 2, 3, 5, 7, 8, 10]
 
-NUMERAL_TO_NUMBER = {
+STRING_TO_NUMBER = {
     'I':   1,
     'II':  2,
     'III': 3,
     'IV':  4,
     'V':   5,
     'VI':  6,
-    'VII': 7
+    'VII': 7,
+    'i':   1,
+    'ii':  2,
+    'iii': 3,
+    'iv':  4,
+    'v':   5,
+    'vi':  6,
+    'vii': 7,
+    '1':   1,
+    '2':   2,
+    '3':   3,
+    '4':   4,
+    '5':   5,
+    '6':   6,
+    '7':   7
 }
 
 NOTE_TO_INDEX = {
@@ -156,9 +170,9 @@ def get_numeral_semitones(numeral: str, is_major: bool) -> (int, bool):
         numeral = numeral.lower()
         semitones = MINOR_SCALE[6]
     elif is_major:
-        semitones = MAJOR_SCALE[NUMERAL_TO_NUMBER[numeral.upper()]]
+        semitones = MAJOR_SCALE[STRING_TO_NUMBER[numeral]]
     else:
-        semitones = MINOR_SCALE[NUMERAL_TO_NUMBER[numeral.upper()]]
+        semitones = MINOR_SCALE[STRING_TO_NUMBER[numeral]]
 
     return semitones + adjustment, numeral.isupper()
 
@@ -359,22 +373,61 @@ SCALE_INTERVALS = {
     }
 }
 
+
+TPC_C = 15
+
+
+STRING_TO_PITCH = {
+    PitchType.TPC: {
+        'A': 18,
+        'B': 20,
+        'C': 15,
+        'D': 17,
+        'E': 19,
+        'F': 14,
+        'G': 16
+    },
+    PitchType.MIDI: {
+        'C': 0,
+        'D': 2,
+        'E': 4,
+        'F': 5,
+        'G': 7,
+        'A': 9,
+        'B': 11
+    }
+}
+
+
 ACCIDENTAL_ADJUSTMENT = {
     PitchType.TPC: 7,
     PitchType.MIDI: 1
 }
 
 
-def get_interval_from_numeral(numeral: str, mode: KeyMode, pitch_type: PitchType) -> int:
+NUM_PITCHES = {
+    PitchType.TPC: 35,
+    PitchType.MIDI: 12
+}
+
+
+def get_interval_from_scale_degree(scale_degree: str, numeral: bool, accidentals_prefixed: bool,
+                                   mode: KeyMode, pitch_type: PitchType) -> int:
     """
-    Get an interval from a roman numeral, suffixed with flats or sharps.
+    Get an interval from the string of a scale degree, prefixed or suffixed with flats or sharps.
 
     Parameters
     ----------
-    numeral : str
-        The numeral of an interval, with suffixes indicating flats (b) or sharps (#).
+    scale_degree : str
+        A string of a scale degree, either as a roman numeral or a number, with any accidentals
+        suffixed or prefixed as 'b' (flats) or '#' (sharps).
+    numeral : bool
+        True if the scale degree is given as a roman numeral. False if it is given as a number.
+    accidentals_prefixed : bool
+        True if the given scale degree might be prefixed with accidentals. False if they can be
+        suffixed.
     mode : KeyMode
-        The mode of the current key, since intervals are listed relative to scale degrees.
+        The mode of the key from which to measure the scale degree.
     pitch_type : PitchType
         The type of interval to return. Either TPC (to return circle of fifths difference) or MIDI
         (for semitones).
@@ -384,26 +437,164 @@ def get_interval_from_numeral(numeral: str, mode: KeyMode, pitch_type: PitchType
     interval : int
         The interval above the root note the given numeral lies.
     """
-    accidental_adjustment, numeral = get_accidental_adjustment(numeral, in_front=False)
+    accidental_adjustment, numeral = get_accidental_adjustment(numeral,
+                                                               in_front=accidentals_prefixed)
 
-    interval = SCALE_INTERVALS[mode][pitch_type][NUMERAL_TO_NUMBER[numeral.upper()]]
+    interval = SCALE_INTERVALS[mode][pitch_type][STRING_TO_NUMBER[numeral]]
     interval += accidental_adjustment * SEMITONE_ADJUSTMENT[pitch_type]
 
     return interval
 
 
-hu.transpose_pitch(key.tonic, chord_row.root, pitch_type=pitch_type)
+def transpose_pitch(pitch: int, interval: int, pitch_type: PitchType) -> int:
+    """
+    Transpose the given pitch by the given interval, and then mod the result to ensure it is in
+    the valid range of the given pitch type.
+
+    Parameters
+    ----------
+    pitch : int
+        The original pitch.
+    interval : int
+        The amount to transpose the given pitch by.
+    pitch_type : PitchType
+        The pitch type. If MIDI, the returned pitch will be on the range [0, 12), and the given
+        interval is interpreted as semitones. If TPC, the returned pitch will be on the range
+        [0, 35), and the given interval is interpreted as fifths.
+
+    Returns
+    -------
+    pitch : int
+        The given pitch, transposed by the given interval.
+    """
+    return (pitch + interval) % NUM_PITCHES[pitch_type]
 
 
-hu.get_interval_from_number(chord_row['bass_step'], local_key.mode,
-                                                    pitch_type=pitch_type)
+def get_chord_type(is_major: bool, form: str, figbass: str) -> ChordType:
+    """
+    Get the chord type, given some features about the chord.
+
+    Parameters
+    ----------
+    is_major : boolean
+        True if the basic chord (triad) is major. False otherwise. Ignored if
+        the triad is diminished or augmented (in which case, form disambiguates).
+
+    form : string
+        A string representing the form of the chord:
+            'o':  Diminished 7th or triad
+            '%':  Half-diminished 7th chord
+            '+':  Augmented seventh or triad
+            '+M': Augmented major 7th chord
+            'M':  7th chord with a major 7th
+            None: Other chord. Either a 7th chord with a minor 7th, or a major or minor triad.
+
+    figbass : string
+        The figured bass notation for the chord, representing its inversion. Importantly:
+            None: Triad in first inversion
+            '6':  Triad with 3rd in the bass
+            '64': Triad with 5th in the bass
+
+    Returns
+    -------
+    chord_type : ChordType
+        The chord type of the given features. One of:
+            - Major triad
+            - Minor triad
+            - Diminished triad
+            - Augmented triad
+            - Minor seventh chord
+            - Dominant seventh chord
+            - Major seventh chord
+            - Minor major seventh chord
+            - Diminished seventh chord
+            - Half-diminished seventh chord
+            - Augmented seventh chord
+            - Augmented major seventh chord
+    """
+    if pd.isnull(figbass):
+        figbass = None
+    if pd.isnull(form):
+        form = None
+
+    # Triad
+    if figbass in [None, '6', '64']:
+        if form == 'o':
+            return ChordType.DIMINISHED
+        if form == '+':
+            return ChordType.AUGMENTED
+        return ChordType.MAJOR if is_major else ChordType.MINOR
+
+    # Seventh chord
+    if form == 'o':
+        return ChordType.DIM7
+    if form == '%':
+        return ChordType.HALF_DIM7
+    if form == '+':
+        return ChordType.AUG_MIN7
+    if form == '+M':
+        # TODO: Check this
+        return ChordType.AUG_MAJ7
+
+    if is_major:
+        return ChordType.MAJ_MAJ7 if form == 'M' else ChordType.MAJ_MIN7
+    return ChordType.MIN_MAJ7 if form == 'M' else ChordType.MIN_MIN7
 
 
-chord_type = hu.get_chord_type(chord_row['numeral'].isupper(), chord_row['form'],
-                                       chord_row['figbass'])
+INVERSIONS = {
+    '9':  0,
+    '7':  0,
+    '6':  1,
+    '65': 1,
+    '43': 2,
+    '64': 2,
+    '2':  3,
+    '42': 3
+}
 
 
-inversion = hu.get_chord_inversion(chord_type, chord_row['figbass'])
+def get_chord_inversion(figbass: str) -> int:
+    """
+    Get the chord inversion number from a figured bass string.
+
+    Parameters
+    ----------
+    figbass : str
+        The figured bass representation of the chord's inversion.
+
+    Returns
+    -------
+    inversion : int
+        An integer representing the chord inversion. 0 for root position, 1 for 1st inversion, etc.
+    """
+    if pd.isnull(figbass):
+        return 0
+
+    return INVERSIONS[figbass]
 
 
-hu.get_pitch_from_string(chord_row['globalkey'], pitch_type=tonic_type)
+
+
+def get_pitch_from_string(pitch_string: str, pitch_type: PitchType) -> int:
+    """
+    Get the pitch from a pitch string.
+
+    Parameters
+    ----------
+    pitch_string : str
+        The pitch we want. Should be an uppercase letter [A-G], suffixed with some number of
+        flats (b) or sharps (#).
+    pitch_type : PitchType
+        The type of pitch to return. MIDI for C = 0, TPC for C = 15.
+
+    Returns
+    -------
+    pitch : int
+        An integer representing the given pitch string as the given type.
+    """
+    accidental_adjustment, pitch_string = get_accidental_adjustment(pitch_string, in_front=False)
+
+    pitch = STRING_TO_PITCH[pitch_type][pitch_string]
+    pitch += accidental_adjustment * SEMITONE_ADJUSTMENT[pitch_type]
+
+    return pitch
