@@ -6,14 +6,56 @@ import numpy as np
 from harmonic_inference.data.data_types import  KeyMode, PitchType, ChordType
 
 
-MAX_PITCH_DEFAULT = 127
-PITCHES_PER_OCTAVE = 12
+TPC_C = 15
 
-# Scale tone semitone difference from root
-MAJOR_SCALE = [0, 0, 2, 4, 5, 7, 9, 11]
-MINOR_SCALE = [0, 0, 2, 3, 5, 7, 8, 10]
 
-STRING_TO_NUMBER = {
+STRING_TO_PITCH = {
+    PitchType.TPC: {
+        'A': TPC_C + 3,
+        'B': TPC_C + 5,
+        'C': TPC_C,
+        'D': TPC_C + 2,
+        'E': TPC_C + 4,
+        'F': TPC_C - 1,
+        'G': TPC_C + 1
+    },
+    PitchType.MIDI: {
+        'C': 0,
+        'D': 2,
+        'E': 4,
+        'F': 5,
+        'G': 7,
+        'A': 9,
+        'B': 11
+    }
+}
+
+
+SCALE_INTERVALS = {
+    KeyMode.MAJOR: {
+        PitchType.TPC: [0, 0, 2, 4, -1, 1, 3, 5],
+        PitchType.MIDI: [0, 0, 2, 4, 5, 7, 9, 11],
+    },
+    KeyMode.MINOR: {
+        PitchType.TPC: [0, 0, 2, -3, -1, 1, -4, -2],
+        PitchType.MIDI: [0, 0, 2, 3, 5, 7, 8, 10]
+    }
+}
+
+
+ACCIDENTAL_ADJUSTMENT = {
+    PitchType.TPC: 7,
+    PitchType.MIDI: 1
+}
+
+
+NUM_PITCHES = {
+    PitchType.TPC: 35,
+    PitchType.MIDI: 12
+}
+
+
+SCALE_DEGREE_TO_NUMBER = {
     'I':   1,
     'II':  2,
     'III': 3,
@@ -37,62 +79,92 @@ STRING_TO_NUMBER = {
     '7':   7
 }
 
-NOTE_TO_INDEX = {
-    'C': 0,
-    'D': 2,
-    'E': 4,
-    'F': 5,
-    'G': 7,
-    'A': 9,
-    'B': 11
-}
+# Triad types indexes of ones for a C chord of the given type in a one-hot presence vector
+CHORD_PITCHES = {}
+for pitch_type in [PitchType.MIDI, PitchType.TPC]:
+    CHORD_PITCHES[pitch_type] = {
+        ChordType.MAJOR: [
+            STRING_TO_PITCH[pitch_type]['C'],
+            STRING_TO_PITCH[pitch_type]['E'],
+            STRING_TO_PITCH[pitch_type]['G']
+        ],
+        ChordType.MINOR: [
+            STRING_TO_PITCH[pitch_type]['C'],
+            STRING_TO_PITCH[pitch_type]['E'] - ACCIDENTAL_ADJUSTMENT[pitch_type],
+            STRING_TO_PITCH[pitch_type]['G']
+        ],
+        ChordType.DIMINISHED: [
+            STRING_TO_PITCH[pitch_type]['C'],
+            STRING_TO_PITCH[pitch_type]['E'] - ACCIDENTAL_ADJUSTMENT[pitch_type],
+            STRING_TO_PITCH[pitch_type]['G'] - ACCIDENTAL_ADJUSTMENT[pitch_type]
+        ],
+        ChordType.AUGMENTED: [
+            STRING_TO_PITCH[pitch_type]['C'],
+            STRING_TO_PITCH[pitch_type]['E'],
+            STRING_TO_PITCH[pitch_type]['G'] + ACCIDENTAL_ADJUSTMENT[pitch_type]
+        ]
+    }
 
-# Triad types as one-hot semitone presence vectors
-TRIAD_TYPES_SEMITONES = {
-    'M': [1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
-    'm': [1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
-    'o': [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
-    '+': [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]
-}
-TRIAD_TYPES_SEMITONES['%'] = TRIAD_TYPES_SEMITONES['o'] # Half-diminished
+    # Add major triad 7th chords
+    for chord in [ChordType.MAJ_MAJ7, ChordType.MAJ_MIN7]:
+        CHORD_PITCHES[pitch_type][chord] = CHORD_PITCHES[pitch_type][ChordType.MAJOR].copy()
 
-# Seventh types as semitone distance above root
-SEVENTH_TYPES_SEMITONES = {
-    'M': 11,
-    'm': 10,
-    'o': 9
-}
-SEVENTH_TYPES_SEMITONES['+'] = SEVENTH_TYPES_SEMITONES['m'] # Augmented
-SEVENTH_TYPES_SEMITONES['%'] = SEVENTH_TYPES_SEMITONES['m'] # Half-diminished
+    # Add minor triad 7th chords
+    for chord in [ChordType.MIN_MAJ7, ChordType.MIN_MIN7]:
+        CHORD_PITCHES[pitch_type][chord] = CHORD_PITCHES[pitch_type][ChordType.MINOR].copy()
+
+    # Add diminished triad 7th chords
+    for chord in [ChordType.DIM7, ChordType.HALF_DIM7]:
+        CHORD_PITCHES[pitch_type][chord] = CHORD_PITCHES[pitch_type][ChordType.DIMINISHED].copy()
+
+    # Add augmented triad 7th chords
+    for chord in [ChordType.AUG_MAJ7, ChordType.AUG_MIN7]:
+        CHORD_PITCHES[pitch_type][chord] = CHORD_PITCHES[pitch_type][ChordType.AUGMENTED].copy()
+
+    # Add major 7ths
+    for chord in [ChordType.MAJ_MAJ7, ChordType.MIN_MAJ7, ChordType.AUG_MAJ7]:
+        CHORD_PITCHES[pitch_type][chord].append(STRING_TO_PITCH[pitch_type]['B'])
+
+    # Add minor 7ths
+    for chord in [ChordType.MAJ_MIN7, ChordType.MIN_MIN7, ChordType.HALF_DIM7, ChordType.AUG_MIN7]:
+        CHORD_PITCHES[pitch_type][chord].append(
+            STRING_TO_PITCH[pitch_type]['B'] - ACCIDENTAL_ADJUSTMENT[pitch_type]
+        )
+
+    # Add diminished 7ths
+    for chord in [ChordType.DIMINISHED]:
+        CHORD_PITCHES[pitch_type][chord].append(
+            STRING_TO_PITCH[pitch_type]['B'] - 2 * ACCIDENTAL_ADJUSTMENT[pitch_type]
+        )
 
 
-CHORD_TYPES = [
-    'M',
-    'm',
-    'o',
-    '+',
-    'mm7',
-    'Mm7',
-    'MM7',
-    'mM7',
-    'o7',
-    '%7',
-    '+7'
-]
 
 
-def get_one_hot_labels() -> List[str]:
+def get_one_hot_labels(pitch_type: PitchType) -> List[str]:
     """
     Get the human-readable label of every one-hot chord value.
 
+    Parameters
+    ----------
+    pitch_type : PitchType
+        The pitch type representation being used.
+
     Returns
     -------
-    labels : list
+    labels : List[String]
         A List, where labels[0] is the String interpretation of the one-hot chord label 0, etc.
     """
+    roots = []
+    if pitch_type == PitchType.MIDI:
+        roots = ['C', 'C#/Db', 'D', 'D#/Eb', 'E', 'F', 'F#/Gb', 'G', 'G#/Ab', 'A', 'A#/Bb', 'B']
+    elif pitch_type == PitchType.TPC:
+        for accidental in ['bb', 'b', '', '#', '##']:
+            for root in ['F', 'C', 'G', 'D', 'A', 'E', 'B']:
+                roots.append(f'{root}{accidental}')
+
     labels = []
-    for chord_type in CHORD_TYPES:
-        for root in ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']:
+    for chord_type in ChordType:
+        for root in roots:
             labels.append(f'{root}:{chord_type}')
 
     return labels
@@ -143,272 +215,69 @@ def get_accidental_adjustment(string: str, in_front: bool = True) -> (int, str):
 
 
 
-def get_numeral_semitones(numeral: str, is_major: bool) -> (int, bool):
+def transpose_chord_vector(chord_vector: List[int], interval: int,
+                           pitch_type: PitchType) -> List[int]:
     """
-    Convert the numeral of a chord tonic to a semitone offset, and return whether it is major
-    or minor.
+    Transpose a chord vector by a given interval.
 
     Parameters
     ----------
-    numeral : string
-        The numeral of a chord, like I, bii, etc.
-
-    is_major : boolean
-        True if the current key is major. False otherwise.
-
-    Returns
-    -------
-    semitones : int
-         The number of semitones above the key tonic the given chord is.
-
-    is_major : boolean
-        True if the chord is major (upper-case). False otherwise.
-    """
-    adjustment, numeral = get_accidental_adjustment(numeral)
-
-    if numeral.upper() in ['GER', 'IT', 'FR']:
-        numeral = numeral.lower()
-        semitones = MINOR_SCALE[6]
-    elif is_major:
-        semitones = MAJOR_SCALE[STRING_TO_NUMBER[numeral]]
-    else:
-        semitones = MINOR_SCALE[STRING_TO_NUMBER[numeral]]
-
-    return semitones + adjustment, numeral.isupper()
-
-
-
-def get_bass_step_semitones(bass_step: str, is_major: bool) -> int:
-    """
-    Get the given bass step in semitones.
-
-    Parameters
-    ----------
-    bass_step : string
-        The bass step of a chord, 1, b7, etc.
-
-    is_major : boolean
-        True if the current key is major. False otherwise.
-
-    Returns
-    -------
-    semitones : int
-        The number of semitones above the chord root the given bass step is.
-        None if the data is malformed ("Error" or "Unclear").
-    """
-    adjustment, bass_step = get_accidental_adjustment(bass_step)
-
-    try:
-        if is_major:
-            semitones = MAJOR_SCALE[int(bass_step)]
-        else:
-            semitones = MINOR_SCALE[int(bass_step)]
-        return semitones + adjustment
-    except ValueError:
-        return None
-
-
-
-def get_key(key: str) -> (int, bool):
-    """
-    Get the tonic index of a given key string.
-
-    Parameters
-    ----------
-    key : string
-        The key, C, db, etc.
-
-    Returns
-    -------
-    tonic_index : int
-        The tonic index of the key, with 0 = C, 1 = C#/Db, etc.
-
-    is_major : boolean
-        True if the given key is major (the tonic is upper-case). False otherwise.
-    """
-    adjustment, key = get_accidental_adjustment(key, in_front=False)
-
-    is_major = key.isupper()
-    if is_major:
-        tonic_index = NOTE_TO_INDEX[key]
-    else:
-        tonic_index = NOTE_TO_INDEX[key.upper()]
-
-    return tonic_index + adjustment, is_major
-
-
-
-def transpose_chord_vector(chord_vector: List[int], transposition: int) -> List[int]:
-    """
-    Transpose a chord vector by a certain number of semitones.
-
-    Parameters
-    ----------
-    chord_vector : list(int)
+    chord_vector : List[int]
         A binary vector representation of the given chord type, where 1 indicates
-        the presence of a note in the given chord type, and 0 represents non-presence.
-        The vector is length 12. The root may be in any position.
+        the presence of a pitch in the given chord type, and 0 represents non-presence.
+        The vector is length 12.
 
-    transposition : int
-        Rotate the vector by the given amount. If the chord's root was previously at
-        index 0, the returned vector will have the root at index (0 + transposition) % 12.
+    interval : int
+        The interval to transpose the given chord vector by, either in semitones (if pitch_type
+        is MIDI) or in fifths (if pitch_type is TPC).
+
+    pitch_type : int
+        The pitch type representation to use. If MIDI, the transposition will roll the given
+        chord vector. Otherwise, it will only shift values (but if any ones move to an index
+        < 0 or >= NUM_PITCHES[TPC], they are removed from the returned vector.
 
     Returns
     -------
     transposed_chord_vector : list(int)
         The input vector, with each chord tone transposed by the given amount.
     """
-    if isinstance(chord_vector, list):
-        # Equivalent to np.roll(chord_vector, transposition), but without np conversion.
-        return chord_vector[-transposition:] + chord_vector[:-transposition]
-    return np.roll(chord_vector, transposition)
+    # For MIDI, roll the vector
+    if pitch_type == PitchType.MIDI:
+        return np.roll(np.array(chord_vector), interval)
+
+    # For TPC, it is a shift without wraparound
+    result = np.empty_like(chord_vector)
+    if interval > 0:
+        result[:interval] = 0
+        result[interval:] = chord_vector[:-interval]
+    elif num < 0:
+        result[interval:] = 0
+        result[:interval] = chord_vector[-interval:]
+    else:
+        result[:] = chord_vector
+    return result
 
 
-
-def get_vector_from_chord_type(type_string: str) -> List[int]:
+def get_vector_from_chord_type(chord_type: ChordType, pitch_type: PitchType) -> List[int]:
     """
-    Convert a chord type string into a vector representation of semitone presence.
+    Convert a chord type string into a one-hot vector representation of pitch presence.
 
     Parameters
     ----------
-    type_string : string
-        A type of chord. One of:
-            'M':   Major triad
-            'm':   Minor triad
-            'o':   Diminished triad
-            '+':   Augmented triad
-            'mm7': Minor seventh chord
-            'Mm7': Dominant seventh chord
-            'MM7': Major seventh chord
-            'mM7': Minor major seventh chord
-            'o7':  Diminished seventh chord
-            '%7':  Half-diminished seventh chord
-            '+7':  Augmented seventh chord
+    chord_type : ChordType
+        The type of chord whose pitch vector to return.
+    pitch_type : PitchType
+        The type of pitch vector to return.
 
     Returns
     -------
-    chord_vector : list(int)
-        A binary vector representation of the given chord type, where 1 indicates
-        the presence of a note in the given chord type, and 0 represents non-presence.
-        The vector is length 12, where chord_vector[0] is the root note, chord_vector[1]
-        is a half step up from the root, etc.
+    chord_vector : List[int]
+        A one-hot vector of the pitches present in a chord of the given chord type
+        with root C in the given pitch representation.
     """
-    chord_vector = TRIAD_TYPES_SEMITONES[type_string[0]].copy()
-
-    if type_string[-1] == '7':
-        chord_vector[SEVENTH_TYPES_SEMITONES[type_string[-2]]] = 1
-
+    chord_vector = np.zeros(NUM_PITCHES[pitch_type])
+    chord_vector[CHORD_PITCHES[pitch_type][chord_type]] = 1
     return chord_vector
-
-
-
-def get_chord_type_string(is_major: bool, form: str = None, figbass: str = None) -> str:
-    """
-    Get the chord type string, given some features about the chord.
-
-    Parameters
-    ----------
-    is_major : boolean
-        True if the basic chord (triad) is major. False otherwise. Ignored if
-        the triad is diminished or augmented (in which case, form disambiguates).
-
-    form : string
-        A string representing the form of the chord:
-            'o':  Diminished 7th or triad
-            '%':  Half-diminished 7th chord
-            '+':  Augmented seventh or triad
-            'M':  7th chord with a major 7th
-            None: Other chord. Either a 7th chord with a minor 7th, or a major or minor triad.
-
-    figbass : string
-        The figured bass notation for the chord, representing its inversion. Importantly:
-            None: Triad in first inversion
-            '6':  Triad with 3rd in the bass
-            '64': Triad with 5th in the bass
-
-    Returns
-    -------
-    chord_type : string
-        A string representing the chord type of this chord. One of:
-            'M':   Major triad
-            'm':   Minor triad
-            'o':   Diminished triad
-            '+':   Augmented triad
-            'mm7': Minor seventh chord
-            'Mm7': Dominant seventh chord
-            'MM7': Major seventh chord
-            'mM7': Minor major seventh chord
-            'o7':  Diminished seventh chord
-            '%7':  Half-diminished seventh chord
-            '+7':  Augmented seventh chord
-    """
-    if pd.isnull(figbass):
-        figbass = None
-    if pd.isnull(form):
-        form = None
-
-    # Triad
-    if figbass in [None, '6', '64']:
-        if form in ['o', '+']:
-            return form
-        return 'M' if is_major else 'm'
-
-    # Seventh chord
-    if form in ['o', '%', '+']:
-        return f"{form}7"
-
-    triad = 'M' if is_major else 'm'
-    seventh = 'M' if form == 'M' else 'm'
-    return f"{triad}{seventh}7"
-
-
-SCALE_INTERVALS = {
-    KeyMode.MAJOR: {
-        PitchType.TPC: [0, 0, 2, 4, -1, 1, 3, 5],
-        PitchType.MIDI: [0, 0, 2, 4, 5, 7, 9, 11],
-    },
-    KeyMode.MINOR: {
-        PitchType.TPC: [0, 0, 2, -3, -1, 1, -4, -2],
-        PitchType.MIDI: [0, 0, 2, 3, 5, 7, 8, 10]
-    }
-}
-
-
-TPC_C = 15
-
-
-STRING_TO_PITCH = {
-    PitchType.TPC: {
-        'A': TPC_C + 3,
-        'B': TPC_C + 5,
-        'C': TPC_C,
-        'D': TPC_C + 2,
-        'E': TPC_C + 4,
-        'F': TPC_C - 1,
-        'G': TPC_C + 1
-    },
-    PitchType.MIDI: {
-        'C': 0,
-        'D': 2,
-        'E': 4,
-        'F': 5,
-        'G': 7,
-        'A': 9,
-        'B': 11
-    }
-}
-
-
-ACCIDENTAL_ADJUSTMENT = {
-    PitchType.TPC: 7,
-    PitchType.MIDI: 1
-}
-
-
-NUM_PITCHES = {
-    PitchType.TPC: 35,
-    PitchType.MIDI: 12
-}
 
 
 def get_interval_from_scale_degree(scale_degree: str, numeral: bool, accidentals_prefixed: bool,
@@ -440,7 +309,7 @@ def get_interval_from_scale_degree(scale_degree: str, numeral: bool, accidentals
     accidental_adjustment, numeral = get_accidental_adjustment(numeral,
                                                                in_front=accidentals_prefixed)
 
-    interval = SCALE_INTERVALS[mode][pitch_type][STRING_TO_NUMBER[numeral]]
+    interval = SCALE_INTERVALS[mode][pitch_type][SCALE_DEGREE_TO_NUMBER[numeral]]
     interval += accidental_adjustment * SEMITONE_ADJUSTMENT[pitch_type]
 
     return interval
