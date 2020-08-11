@@ -1,6 +1,9 @@
 """A class storing a musical piece from score, midi, or audio format."""
 from typing import Union, Tuple, List
 from fractions import Fraction
+
+import pandas as pd
+
 from .data_types import *
 from harmonic_inference.utils import harmonic_utils as hu
 
@@ -44,7 +47,7 @@ class Note():
         self.pitch_type = pitch_type
 
     @staticmethod
-    def from_series(note_row: pd.Series, measures_df: pd.DataFrame, pitch_type: PitchType) -> Note:
+    def from_series(note_row: pd.Series, measures_df: pd.DataFrame, pitch_type: PitchType):
         pitch = note_row.tpc + hu.TPC_C if pitch_type == PitchType.TPC else note_row.midi % 12
 
         onset = (note_row.mc, note_row.onset)
@@ -101,8 +104,7 @@ class Chord():
         self.pitch_type = pitch_type
 
     @staticmethod
-    def from_series(chord_row: pd.Series, measures_df: pd.DataFrame,
-                    pitch_type: PitchType) -> Chord:
+    def from_series(chord_row: pd.Series, measures_df: pd.DataFrame, pitch_type: PitchType):
         key = Key.from_series(chord_row, pitch_type)
         root_interval = hu.get_interval_from_scale_degree(
             chord_row['numeral'], True, True, key.mode, pitch_type=pitch_type
@@ -153,7 +155,7 @@ class Key():
         self.tonic_type = tonic_type
 
     @staticmethod
-    def from_series(chord_row: pd.Series, tonic_type: PitchType, do_relative: bool = True) -> Key:
+    def from_series(chord_row: pd.Series, tonic_type: PitchType, do_relative: bool = True):
         global_tonic = hu.get_pitch_from_string(chord_row['globalkey'], pitch_type=tonic_type)
         global_mode = KeyMode.MINOR if chord_row['globalminor'] else KeyMode.MAJOR
 
