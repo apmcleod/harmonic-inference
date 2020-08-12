@@ -10,71 +10,70 @@ import pandas as pd
 
 
 # Helper functions to be used as converters, handlling empty strings
-parse_lists_of_int = lambda l: [int(mc) for mc in l.strip('[]').split(', ') if mc != '']
-parse_tuples = lambda t: tuple(i.strip("\',") for i in t.strip("() ").split(", ") if i != '')
-parse_lists_of_str_tuples = lambda l: [tuple(t.split(',')) for t in re.findall(r'\((.+?)\)', l)]
-parse_lists_of_int_tuples = lambda l: [tuple(int(i) for i in t.split(','))
-                                       for t in re.findall(r'\((.+?)\)', l)]
-frac_or_empty = lambda val: '' if val == '' else Fraction(val)
+str2inttuple = lambda l: tuple() if l == '' else tuple(int(s) for s in l.split(', '))
+str2strtuple = lambda l: tuple() if l == '' else tuple(str(s) for s in l.split(', '))
+iterable2str = lambda iterable: ', '.join(str(s) for s in iterable)
+def int2bool(s):
+    try:
+        return bool(int(s))
+    except:
+        return s
 
 
-
-# Data types for the different columns in the tsvs
-DTYPES = {'bass_step': 'string',
-          'barline': 'string',
-          'beat': 'Int64',
-          'beats': 'string',
-          'changes': 'string',
-          'chord': 'string',
-          'chords': 'string',
-          'dont_count': 'Int64',
-          'figbass': 'string',
-          'form': 'string',
-          'globalkey': 'string',
-          'gracenote': 'string',
-          'key': 'string',
-          'keysig': 'Int64',
-          'marker': 'string',
-          'mc': 'Int64',
-          'mc_next': 'Int64',
-          'midi': 'Int64',
-          'mn': 'Int64',
-          'next_chord_id': 'Int64',
-          'note_names': 'string',
-          'numbering_offset': 'Int64',
-          'numeral': 'string',
-          'octaves': 'Int64',
-          'overlapping': 'Int64',
-          'pedal': 'string',
-          'phraseend': 'string',
-          'relativeroot': 'string',
-          'repeats': 'string',
-          'section': 'Int64',
-          'staff': 'Int64',
-          'tied': 'Int64',
-          'timesig': 'string',
-          'tpc': 'Int64',
-          'voice': 'Int64',
-          'voices': 'Int64',
-          'volta': 'Int64'}
+CONVERTERS = {
+    'added_tones': str2inttuple,
+    'act_dur': Fraction,
+    'chord_tones': str2inttuple,
+    'globalkey_is_minor': int2bool,
+    'localkey_is_minor': int2bool,
+    'next': str2inttuple,
+    'nominal_duration': Fraction,
+    'offset': Fraction,
+    'onset': Fraction,
+    'duration': Fraction,
+    'scalar': Fraction
+}
 
 
-# Converters for different data types
-CONVERTERS = {'act_dur': frac_or_empty,
-              'beatsize': frac_or_empty,
-              'cn': parse_lists_of_int_tuples,
-              'ncn': parse_lists_of_int_tuples,
-              'chord_length':frac_or_empty,
-              'chord_tones': parse_lists_of_int,
-              'duration':frac_or_empty,
-              'next': parse_lists_of_int,
-              'nominal_duration': frac_or_empty,
-              'offset': frac_or_empty,
-              'onset':frac_or_empty,
-              'onset_next':frac_or_empty,
-              'scalar':frac_or_empty,
-              'subbeat': frac_or_empty,}
-
+DTYPES = {
+    'alt_label': str,
+    'barline': str,
+    'bass_note': 'Int64',
+    'cadence': str,
+    'cadences_id': 'Int64',
+    'changes': str,
+    'chord': str,
+    'chord_type': str,
+    'dont_count': 'Int64',
+    'figbass': str,
+    'form': str,
+    'globalkey': str,
+    'gracenote': str,
+    'harmonies_id': 'Int64',
+    'keysig': int,
+    'label': str,
+    'localkey': str,
+    'mc': int,
+    'midi': int,
+    'mn': int,
+    'notes_id': 'Int64',
+    'numbering_offset': 'Int64',
+    'numeral': str,
+    'pedal': str,
+    'playthrough': int,
+    'phraseend': str,
+    'relativeroot': str,
+    'repeats': str,
+    'root': 'Int64',
+    'special': str,
+    'staff': int,
+    'tied': 'Int64',
+    'timesig': str,
+    'tpc': int,
+    'voice': int,
+    'voices': int,
+    'volta': 'Int64'
+}
 
 
 def read_dump(file: str, index_col: Union[int, Iterable] = (0, 1), converters: Dict = None,

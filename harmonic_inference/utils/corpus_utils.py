@@ -26,9 +26,11 @@ def remove_repeats(measures: pd.DataFrame) -> pd.DataFrame:
     measures = measures.copy()
     next_lengths = measures.next.apply(len)
 
-    last_measures = next_lengths == 0 # Default case
-    last_measures |= (np.roll(measures.index.get_level_values('id').to_numpy(), -1) !=
-                      measures.index.get_level_values('id'))
+    last_measures = (next_lengths == 0) | [-1 in n for n in measures.next] # Default case
+    last_measures |= (np.roll(measures.index.get_level_values('file_id').to_numpy(), -1) !=
+                      measures.index.get_level_values('file_id'))
+
+    next_lengths[last_measures] = 0
 
     measures.loc[next_lengths > 1, 'next'] = [
         max(next_mc) for next_mc in measures.loc[next_lengths > 1, 'next'].to_numpy()
@@ -93,9 +95,8 @@ def get_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> (List[int], List
         measures = remove_repeats(measures)
 
     # Index measures in the order of notes
-    note_measures = measures.loc[
-        pd.MultiIndex.from_arrays((notes.index.get_level_values('id'), notes.mc))
-    ]
+    note_measures = measures.loc[notes.index.get_level_values('file_id')]
+    note_measures = note_measures.loc[note_measures.mc == notes.mc]
 
     # Find the last measures of each piece
     last_measures = measures.next.isnull() # Default case
@@ -113,6 +114,7 @@ def get_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> (List[int], List
 
     # Loop through, fixing those notes that still go beyond the end of their measure
     while new_measures.any():
+        print(len(new_measures))
         # Update offset position in 2 steps
         # First: save lists of only the changed values for faster computation
         changed_offset_beats = (offset_beat[new_measures] -
@@ -126,8 +128,10 @@ def get_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> (List[int], List
 
         # Updated measure info for changed note 'mc's
         changed_note_measures = measures.loc[
-            pd.MultiIndex.from_arrays((to_change_note_measures.index.get_level_values('id'),
-                                       changed_offset_mcs), names=['id', 'mc'])
+            to_change_note_measures.index.get_level_values('file_id')
+        ]
+        changed_note_measures = changed_note_measures.loc[
+            changed_note_measures.mc == changed_offset_mcs
         ]
         note_last_measures = last_measures.loc[changed_note_measures.index]
 
