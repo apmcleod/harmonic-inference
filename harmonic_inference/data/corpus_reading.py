@@ -2,6 +2,9 @@
 import re
 from typing import Iterable, Dict, Union
 from fractions import Fraction
+from glob import glob
+from tqdm import tqdm
+from pathlib import Path
 
 import pandas as pd
 
@@ -109,3 +112,63 @@ def read_dump(file: str, index_col: Union[int, Iterable] = (0, 1), converters: D
         conv.update(converters)
     return pd.read_csv(file, sep='\t', index_col=index_col, dtype=types, converters=conv,
                        **kwargs)
+
+
+def aggregate_annotation_dfs(annotations_path: Path, out_dir: Path):
+    """
+    Aggregate all annotations from a corpus directory into 4 combined tsvs in an out directory.
+    The resulting tsv will be: files.tsv, chords.tsv, notes.tsv, and measures.tsv.
+
+    Parameters
+    ----------
+    annotations_path : Path
+        The path of the corpus annotations. Annotations should lie in directories:
+        annotations_path/*/{harmonies/notes/measures}/*.tsv
+    out_dir : Path
+        The directory to write the output tsvs into.
+    """
+    files_dict = {
+        'corpus_name': [],
+        'file_name': []
+    }
+
+    chord_df_list = []
+    note_df_list = []
+    measure_df_list = []
+
+    for file_string in tqdm(glob(str(Path(annotations_path, '*/harmonies/*.tsv')))):
+        file_path = Path(file_string)
+        base_path = file_path.parent.parent
+        corpus_name = base_path.name
+        file_name = file_path.name
+
+        try:
+            chord_df = pd.read_csv(Path(base_path, 'harmonies', file_name), dtype=str, sep='\t')
+            note_df = pd.read_csv(Path(base_path, 'notes', file_name), dtype=str, sep='\t')
+            measure_df = pd.read_csv(Path(base_path, 'measures', file_name), dtype=str, sep='\t')
+        except:
+            print("Error parsing file " + file_name)
+            continue
+
+        files_dict['corpus_name'].append(corpus_name)
+        files_dict['file_name'].append(file_name)
+
+        chord_df_list.append(chord_df)
+        note_df_list.append(note_df)
+        measure_df_list.append(measure_df)
+
+    # Write out aggregated tsvs
+    if not out_dir.exists():
+        out_dir.mkdir(parents=True, exists_ok=True)
+
+    files_df = pd.DataFrame(files_dict)
+    files_df.to_csv(Path(out_dir, 'files.tsv'), sep='\t')
+
+    chords_df = pd.concat(chord_df_list, keys=files_df.index, axis=0, names=['file_id', 'chord_id'])
+    chords_df.to_csv(Path(out_dir, 'chords.tsv'), sep='\t')
+
+    notes_df = pd.concat(note_df_list, keys=files_df.index, axis=0, names=['file_id', 'chord_id'])
+    notes_df.to_csv(Path(out_dir, 'notes.tsv'), sep='\t')
+
+    measures_df = pd.concat(measure_df_list, keys=list(files_df.index), axis=0, names=['file_id', 'chord_id'])
+    measures_df.to_csv(Path(out_dir, 'measures.tsv'), sep='\t')
