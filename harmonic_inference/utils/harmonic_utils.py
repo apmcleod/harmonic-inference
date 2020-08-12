@@ -305,8 +305,7 @@ def get_interval_from_numeral(numeral: str, mode: KeyMode, pitch_type: PitchType
         The interval from the key tonic to the scale degree numeral.
     """
     if numeral in ['Ger', 'It', 'Fr']:
-        # TODO: Special processing
-        return 0
+        numeral = 'vi' if mode == KeyMode.MINOR else 'bvi'
     return get_interval_from_scale_degree(numeral, True, True, mode, pitch_type)
 
 
@@ -331,7 +330,7 @@ def get_interval_from_bass_step(bass_step: str, mode: KeyMode, pitch_type: Pitch
     """
     if bass_step in ['Error', 'Unclear']:
         # TODO: Special processing
-        return 0
+        return -1
     return get_interval_from_scale_degree(bass_step, False, True, mode, pitch_type)
 
 
