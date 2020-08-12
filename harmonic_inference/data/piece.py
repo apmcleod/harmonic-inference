@@ -46,6 +46,10 @@ class Note():
         self.offset = offset
         self.pitch_type = pitch_type
 
+    def __str__(self):
+        return (f'{hu.get_pitch_string(self.pitch_class, self.pitch_type)}{self.octave}: '
+                f'{self.onset}--{self.offset}')
+
     @staticmethod
     def from_series(note_row: pd.Series, measures_df: pd.DataFrame, pitch_type: PitchType):
         pitch = note_row.tpc + hu.TPC_C if pitch_type == PitchType.TPC else note_row.midi % 12
@@ -103,6 +107,22 @@ class Chord():
         self.duration = duration
         self.pitch_type = pitch_type
 
+    def __str__(self):
+        if self.inversion == 0:
+            inversion_str = 'root position'
+        elif self.inversion == 1:
+            inversion_str = '1st inversion'
+        elif self.inversion == 2:
+            inversion_str = '2nd inversion'
+        elif self.inversion == 3:
+            inversion_str = '3rd inversion'
+        else:
+            inversion_str = f'{self.inversion}th inversion'
+
+        return (f'{hu.get_pitch_string(self.root, self.pitch_type)}:{self.chord_type} '
+                f'{inversion_str} BASS={hu.get_pitch_string(self.bass, self.pitch_type)}: '
+                f'{self.onset}--{self.offset}')
+
     @staticmethod
     def from_series(chord_row: pd.Series, measures_df: pd.DataFrame, pitch_type: PitchType):
         key = Key.from_series(chord_row, pitch_type)
@@ -118,9 +138,10 @@ class Chord():
         )
         bass = hu.transpose_pitch(local_key.tonic, bass_interval, pitch_type=pitch_type)
 
-        chord_type = hu.get_chord_type(chord_row['numeral'][-1].isupper(), chord_row['form'],
+        chord_type = hu.get_chord_type(chord_row['numeral'], chord_row['form'],
                                        chord_row['figbass'])
-        inversion = hu.get_chord_inversion(chord_row['figbass'])
+        is_augmented_6 = chord_type in [ChordType.ITALIAN, ChordType.FRENCH, ChordType.GERMAN]
+        inversion = hu.get_chord_inversion(chord_row['figbass'], is_augmented_6=is_augmented_6)
 
         onset = (chord_row.mc, chord_row.onset)
         offset = (chord_row.mc_next, chord_row.onset_next)
@@ -153,6 +174,9 @@ class Key():
         self.tonic = tonic
         self.mode = mode
         self.tonic_type = tonic_type
+
+    def __str__(self):
+        return f'{hu.get_pitch_string(self.tonic, self.tonic_type)} {self.mode}'
 
     @staticmethod
     def from_series(chord_row: pd.Series, tonic_type: PitchType, do_relative: bool = True):

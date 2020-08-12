@@ -7,6 +7,7 @@ from harmonic_inference.data.data_types import  KeyMode, PitchType, ChordType
 
 
 TPC_C = 15
+TPC_NATURAL_PITCHES = 7
 
 
 STRING_TO_PITCH = {
@@ -29,6 +30,13 @@ STRING_TO_PITCH = {
         'B': 11
     }
 }
+
+
+PITCH_TO_STRING = {
+    PitchType.MIDI: ['C', 'C#/Db', 'D', 'D#/Eb', 'E', 'F', 'F#/Gb', 'G', 'G#/Ab', 'A', 'A#/Bb', 'B'],
+    PitchType.TPC: {index: string for string, index in  STRING_TO_PITCH[PitchType.TPC].items()}
+}
+
 
 for note_string in ['A', 'B', 'C', 'D', 'E', 'F', 'G']:
     for pitch_type in PitchType:
@@ -141,7 +149,62 @@ for pitch_type in [PitchType.MIDI, PitchType.TPC]:
             STRING_TO_PITCH[pitch_type]['B'] - 2 * ACCIDENTAL_ADJUSTMENT[pitch_type]
         )
 
+    # Add augmented 6th chords
+    CHORD_PITCHES[pitch_type][ChordType.ITALIAN] = [
+        STRING_TO_PITCH[pitch_type]['A'] - ACCIDENTAL_ADJUSTMENT[pitch_type],
+        STRING_TO_PITCH[pitch_type]['C'],
+        STRING_TO_PITCH[pitch_type]['F'] + ACCIDENTAL_ADJUSTMENT[pitch_type]
+    ]
 
+    CHORD_PITCHES[pitch_type][ChordType.FRENCH] = [
+        STRING_TO_PITCH[pitch_type]['A'] - ACCIDENTAL_ADJUSTMENT[pitch_type],
+        STRING_TO_PITCH[pitch_type]['C'],
+        STRING_TO_PITCH[pitch_type]['D'],
+        STRING_TO_PITCH[pitch_type]['F'] + ACCIDENTAL_ADJUSTMENT[pitch_type]
+    ]
+
+    CHORD_PITCHES[pitch_type][ChordType.FRENCH] = [
+        STRING_TO_PITCH[pitch_type]['A'] - ACCIDENTAL_ADJUSTMENT[pitch_type],
+        STRING_TO_PITCH[pitch_type]['C'],
+        STRING_TO_PITCH[pitch_type]['E'] - ACCIDENTAL_ADJUSTMENT[pitch_type],
+        STRING_TO_PITCH[pitch_type]['F'] + ACCIDENTAL_ADJUSTMENT[pitch_type]
+    ]
+
+
+
+def get_pitch_string(pitch: int, pitch_type: PitchType) -> str:
+    """
+    Get the string representation of a pitch.
+
+    Parameters
+    ----------
+    pitch : int
+        The pitch to convert to a string.
+    pitch_type : PitchType
+        The type of pitch this is.
+
+    Returns
+    -------
+    pitch_string : str
+        A string representation of the given pitch.
+    """
+    if pitch_type == PitchType.MIDI:
+        return PITCH_TO_STRING[PitchType.MIDI][pitch % NUM_PITCHES[PitchType.MIDI]]
+
+    accidental = 0
+    accidental_string = '#'
+    while pitch < min(PITCH_TO_STRING[PitchType.TPC].keys()):
+        pitch += TPC_NATURAL_PITCHES
+        accidental -= 1
+    while pitch > max(PITCH_TO_STRING[PitchType.TPC].keys()):
+        pitch -= TPC_NATURAL_PITCHES
+        accidental += 1
+
+    if accidental < 0:
+        accidental_string = 'b'
+        accidental = -accidental
+
+    return PITCH_TO_STRING[PitchType.TPC][pitch] + (accidental_string * accidental)
 
 
 def get_one_hot_labels(pitch_type: PitchType) -> List[str]:
@@ -160,7 +223,7 @@ def get_one_hot_labels(pitch_type: PitchType) -> List[str]:
     """
     roots = []
     if pitch_type == PitchType.MIDI:
-        roots = ['C', 'C#/Db', 'D', 'D#/Eb', 'E', 'F', 'F#/Gb', 'G', 'G#/Ab', 'A', 'A#/Bb', 'B']
+        roots = MIDI_PITCH_NAMES
     elif pitch_type == PitchType.TPC:
         for accidental in ['bb', 'b', '', '#', '##']:
             for root in ['F', 'C', 'G', 'D', 'A', 'E', 'B']:
@@ -305,7 +368,7 @@ def get_interval_from_numeral(numeral: str, mode: KeyMode, pitch_type: PitchType
         The interval from the key tonic to the scale degree numeral.
     """
     if numeral in ['Ger', 'It', 'Fr']:
-        numeral = 'vi' if mode == KeyMode.MINOR else 'bvi'
+        numeral = '#iv'
     return get_interval_from_scale_degree(numeral, True, True, mode, pitch_type)
 
 
@@ -371,8 +434,7 @@ def get_interval_from_scale_degree(scale_degree: str, numeral: bool, accidentals
 
 def transpose_pitch(pitch: int, interval: int, pitch_type: PitchType) -> int:
     """
-    Transpose the given pitch by the given interval, and then mod the result to ensure it is in
-    the valid range of the given pitch type.
+    Transpose the given pitch by the given interval.
 
     Parameters
     ----------
@@ -382,23 +444,38 @@ def transpose_pitch(pitch: int, interval: int, pitch_type: PitchType) -> int:
         The amount to transpose the given pitch by.
     pitch_type : PitchType
         The pitch type. If MIDI, the returned pitch will be on the range [0, 12), and the given
-        interval is interpreted as semitones. If TPC, the returned pitch will be on the range
-        [0, 35), and the given interval is interpreted as fifths.
+        interval is interpreted as semitones, which is modded to fall in the range. If TPC, the
+        returned pitch must be on the range [0, 35), and the given interval is interpreted as
+        fifths. This is not modded. Rather, an exception is raised if the returned pitch would be
+        outside of the TPC range.
 
     Returns
     -------
     pitch : int
         The given pitch, transposed by the given interval.
     """
-    return (pitch + interval) % NUM_PITCHES[pitch_type]
+    if pitch_type == PitchType.MIDI:
+        return (pitch + interval) % NUM_PITCHES[PitchType.MIDI]
+    pitch = pitch + interval
+
+    if pitch < 0 or pitch >= NUM_PITCHES[PitchType.TPC]:
+        raise ValueError(f"pitch_type is TPC but transposed pitch {pitch} lies outside of TPC "
+                         "range.")
+
+    return pitch
 
 
-def get_chord_type(is_major: bool, form: str, figbass: str) -> ChordType:
+def get_chord_type(numeral: str, form: str, figbass: str) -> ChordType:
     """
     Get the chord type, given some features about the chord.
 
     Parameters
     ----------
+    numeral : str
+        The numeral of the chord. Used for special processing of Augmented 6 chords
+        (It, Fr, or Ger). Also used to determine if the chord is major (if the last character
+        of the numeral string is uppercase).
+
     is_major : boolean
         True if the basic chord (triad) is major. False otherwise. Ignored if
         the triad is diminished or augmented (in which case, form disambiguates).
@@ -434,7 +511,18 @@ def get_chord_type(is_major: bool, form: str, figbass: str) -> ChordType:
             - Half-diminished seventh chord
             - Augmented seventh chord
             - Augmented major seventh chord
+            - Italian augmented 6th chord
+            - French augmented 6th chord
+            - German augmented 6th chord
     """
+    if numeral == 'It':
+        return ChordType.ITALIAN
+    if numeral == 'Fr':
+        return ChordType.FRENCH
+    if numeral == 'Ger':
+        return ChordType.GERMAN
+
+    is_major = numeral[-1].isupper()
     if pd.isnull(figbass):
         figbass = None
     if pd.isnull(form):
@@ -476,14 +564,17 @@ INVERSIONS = {
 }
 
 
-def get_chord_inversion(figbass: str) -> int:
+def get_chord_inversion(figbass: str, is_augmented_6: bool = False) -> int:
     """
     Get the chord inversion number from a figured bass string.
 
     Parameters
     ----------
     figbass : str
-        The figured bass representation of the chord's inversion.
+        The figured bass representation of the chord.
+    is_augmented_6 : bool
+        True if this chord is an augmented 6th chord (It, Fr, or Ger), in which case, the
+        figured bass to inversion mapping is slightly different.
 
     Returns
     -------
@@ -492,6 +583,15 @@ def get_chord_inversion(figbass: str) -> int:
     """
     if pd.isnull(figbass):
         return 0
+
+    if is_augmented_6:
+        if figbass == '6':
+            return 1
+        if figbass == '65':
+            return 2
+        if figbass == '43':
+            return 3
+        raise ValueError(f"Unsupported figured bass {figbass} for augmented 6th chord.")
 
     return INVERSIONS[figbass]
 

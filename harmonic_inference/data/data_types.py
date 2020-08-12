@@ -36,6 +36,9 @@ class ChordType(Enum):
     HALF_DIM7 = 9
     AUG_MIN7 = 10
     AUG_MAJ7 = 11
+    ITALIAN = 12
+    FRENCH = 13
+    GERMAN = 14
 
 
 class KeyMode(Enum):
