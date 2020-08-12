@@ -167,8 +167,8 @@ def aggregate_annotation_dfs(annotations_path: Path, out_dir: Path):
     chords_df = pd.concat(chord_df_list, keys=files_df.index, axis=0, names=['file_id', 'chord_id'])
     chords_df.to_csv(Path(out_dir, 'chords.tsv'), sep='\t')
 
-    notes_df = pd.concat(note_df_list, keys=files_df.index, axis=0, names=['file_id', 'chord_id'])
+    notes_df = pd.concat(note_df_list, keys=files_df.index, axis=0, names=['file_id', 'note_id'])
     notes_df.to_csv(Path(out_dir, 'notes.tsv'), sep='\t')
 
-    measures_df = pd.concat(measure_df_list, keys=list(files_df.index), axis=0, names=['file_id', 'chord_id'])
+    measures_df = pd.concat(measure_df_list, keys=list(files_df.index), axis=0, names=['file_id', 'measure_id'])
     measures_df.to_csv(Path(out_dir, 'measures.tsv'), sep='\t')
