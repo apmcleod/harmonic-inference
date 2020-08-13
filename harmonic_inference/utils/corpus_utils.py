@@ -44,7 +44,7 @@ def remove_repeats(measures: pd.DataFrame) -> pd.DataFrame:
 
 
 
-def get_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> (List[int], List[Fraction]):
+def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFrame:
     """
     Get the offset positions ('mc' measure count and beat) for each note. If the offset is
     on a downbeat, the returned offset is at the following measure at beat 0; UNLESS the note
@@ -55,7 +55,7 @@ def get_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> (List[int], List
     ----------
     notes : pd.DataFrame
         The notes whose offset positions we want. Must have at least these columns:
-            'id' (index, int): The piece id from which this note comes.
+            'file_id' (index, int): The file id from which this note comes.
             'mc' (int): The 'measure count' index of the onset of each note. This is used
                 to index into the given measures DataFrame.
             'onset' (Fraction): The onset time of each note, in whole notes, relative to the
@@ -66,82 +66,81 @@ def get_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> (List[int], List
 
     measures : pd.DataFrame
         A DataFrame containing information about each measure. Must have at least these columns:
-            'id' (index, int): The piece id from which this measure comes.
+            'file_id' (index, int): The file id from which this measure comes.
             'mc' (index, int): The 'measure count' index of this measure. Used by notes to index
                 into this DataFrame.
             'act_dur' (Fraction): The duration of this measure, in whole notes. Note that this
                 can be different from 'timesig', because of, e.g., partial measures near repeats.
-            'next' (list(int)): The 'mc' of the measure that follows this one. This may contain
+            'next' (tuple(int) or int): The 'mc' of the measure that follows this one. This may contain
                 multiple 'mc's in the case of a repeat, but it is recommended to either
                 unroll or eliminate repeats before running get_offsets, which will result in
-                only 1- or 0-length lists in this column. In the case of a longer list, the last
+                only ints or Nones in this column. In the case of a longer list, the last
                 'mc' in the list (measures['next'][-1]) is treated as the next mc and a warning is
                 printed. This functionality is similar to eliminating repeats, although the
                 underlying measures DataFrame is not changed.
 
     Returns
     -------
-    offset_mc : list(int)
-        A list of the 'mc' measure count of the offset for each of the notes in the given notes
-        DataFrame.
-
-    offset_beat : list(Fraction)
-        A list of the beat times of the offset of each of the notes in the given notes DataFrame,
-        measured in whole notes after the beginning of the corresponding offset_mc.
+    notes_with_offsets : pd.DataFrame
+        A copy of the given notes DataFrame with two additional columns: 'offset_mc' (int) and
+        'offset_beat' (Fraction) denoting the offset position of each note.
     """
     if isinstance(measures.iloc[0].next, list):
         warnings.warn("Repeats have not been unrolled or removed. Calculating offsets as if they "
-                      "were removed (by using only the last 'next' pointer for each measure).")
+                      "were removed.")
         measures = remove_repeats(measures)
 
-    # Index measures in the order of notes
-    note_measures = measures.loc[notes.index.get_level_values('file_id')]
-    note_measures = note_measures.loc[note_measures.mc == notes.mc]
+    measures = measures.loc[:, ['mc', 'act_dur', 'next']]
 
-    # Find the last measures of each piece
-    last_measures = measures.next.isnull() # Default case
+    # Join notes to their onset measures
+    note_measures = pd.merge(
+        notes.loc[:, ['mc', 'onset', 'duration']], measures,
+        how='left', on=['file_id', 'mc'])
+    note_measures.index = notes.index
 
-    # Get last_measures for each of our notes
-    note_last_measures = last_measures.loc[note_measures.index]
+    # Find the last measures of each note
+    last_measures = note_measures.next.isnull() # Default case
 
     # Simple offset position calculation
-    offset_mc = notes.mc.to_numpy()
-    offset_beat = (notes.onset + notes.duration).to_numpy()
+    note_measures = note_measures.assign(
+        offset_mc=note_measures.mc, offset_beat=(note_measures.onset + note_measures.duration)
+    )
+    notes_measures = note_measures.loc[:, ['act_dur', 'next', 'offset_mc', 'offset_beat']]
 
     # Find which offsets go beyond the end of their current measure, (if it isn't the last measure)
-    new_measures = ((offset_beat >= note_measures.act_dur) & ~note_last_measures).to_numpy()
+    new_measures = (
+        (note_measures.offset_beat >= note_measures.act_dur) & ~last_measures
+    ).to_numpy()
     to_change_note_measures = note_measures.loc[new_measures]
 
     # Loop through, fixing those notes that still go beyond the end of their measure
     while new_measures.any():
-        print(len(new_measures))
         # Update offset position in 2 steps
         # First: save lists of only the changed values for faster computation
-        changed_offset_beats = (offset_beat[new_measures] -
-                                to_change_note_measures.act_dur).to_numpy()
+        changed_offset_beats = (
+            to_change_note_measures.offset_beat - to_change_note_measures.act_dur
+        ).to_numpy()
         # Get the next mc for each changing measure
         changed_offset_mcs = list(to_change_note_measures.next)
 
         # Second: Update the global offset lists with the changed values
-        offset_beat[new_measures] = changed_offset_beats
-        offset_mc[new_measures] = changed_offset_mcs
+        note_measures.loc[new_measures, 'offset_beat'] = changed_offset_beats
+        note_measures.loc[new_measures, 'offset_mc'] = changed_offset_mcs
 
         # Updated measure info for changed note 'mc's
-        changed_note_measures = measures.loc[
-            to_change_note_measures.index.get_level_values('file_id')
-        ]
-        changed_note_measures = changed_note_measures.loc[
-            changed_note_measures.mc == changed_offset_mcs
-        ]
-        note_last_measures = last_measures.loc[changed_note_measures.index]
+        new_merged = pd.merge(to_change_note_measures, measures, how='left',
+                              left_on=['file_id', 'offset_mc'], right_on=['file_id', 'mc'])
+        new_merged.index = to_change_note_measures.index
+        note_measures.loc[new_measures, ['act_dur', 'next']] = new_merged.loc[:, ['act_dur_y', 'next_y']]
+        last_measures = note_measures.loc[new_measures, 'next'].isnull()
 
         # Check for any notes which still go beyond the end of a measure
-        changed_new_measures = ((changed_offset_beats >= changed_note_measures.act_dur) &
-                                ~note_last_measures).to_numpy()
+        changed_new_measures = ((changed_offset_beats >= note_measures.loc[new_measures, 'act_dur']) &
+                                ~last_measures).to_numpy()
         new_measures[new_measures] = changed_new_measures
-        to_change_note_measures = changed_note_measures.loc[changed_new_measures]
+        to_change_note_measures = note_measures.loc[new_measures]
 
-    return offset_mc, offset_beat
+    return notes.assign(offset_mc=note_measures.offset_mc, offset_beat=note_measures.offset_beat)
 
 
 
@@ -220,13 +219,12 @@ def get_notes_during_chord(chord: pd.Series, notes: pd.DataFrame, onsets_only: b
 
 
 
-def find_matching_tie(note: pd.Series = None, note_id: int = None, note_section: int = None,
-                      note_note_idx: int = None, note_midi: int = None, note_voice: int = None,
+def find_matching_tie(note: pd.Series = None, note_file_id: int = None,
+                      note_note_id: int = None, note_midi: int = None, note_voice: int = None,
                       note_staff: int = None, note_offset_mc: int = None,
                       note_offset_beat: Fraction = None, note_duration: Fraction = None,
                       midi_masks: np.ndarray = None, prefiltered: bool = False,
-                      tied_in_notes: pd.DataFrame = None, tied_in_notes_id: np.ndarray = None,
-                      tied_in_notes_section: np.ndarray = None,
+                      tied_in_notes: pd.DataFrame = None, tied_in_notes_file_id: np.ndarray = None,
                       tied_in_notes_midi: np.ndarray = None,
                       tied_in_notes_voice: np.ndarray = None,
                       tied_in_notes_staff: np.ndarray = None,
@@ -266,14 +264,11 @@ def find_matching_tie(note: pd.Series = None, note_id: int = None, note_section:
         where the first, second, and third values correspond to the note's id, section,
         and note_id values.
 
-    note_id : int
-        The piece_id of the note.
+    note_file_id : int
+        The file_id of the note.
 
-    note_section : int
-        The section of the note.
-
-    note_note_idx : int
-        The note_id (idx) of the note. Used for warning printing.
+    note_note_id : int
+        The note_id of the note. Used for warning printing.
 
     note_midi : int
         The MIDI pitch of the note.
@@ -327,11 +322,8 @@ def find_matching_tie(note: pd.Series = None, note_id: int = None, note_section:
             'id' (index, int): The piece id from which each note comes; and
             'section' (index, int): The section of the piece from which each note comes.
 
-    tied_in_notes_id : np.ndarray(int)
+    tied_in_notes_file_id : np.ndarray(int)
         The piece id's of the searched notes.
-
-    tied_in_notes_section : np.ndarray(int)
-        The sections of the searched notes.
 
     tied_in_notes_midi : np.ndarray(int)
         The MIDI pitches of the searched notes.
@@ -363,15 +355,13 @@ def find_matching_tie(note: pd.Series = None, note_id: int = None, note_section:
         returned.
     """
     # Save note fields into individual variables if they weren't given
-    if None in [note_id, note_section, note_note_idx, note_midi, note_voice, note_offset_mc,
+    if None in [note_file_id, note_note_id, note_midi, note_voice, note_offset_mc,
                 note_offset_beat, note_duration]:
         assert note is not None, "Either note or all note_x parameters are required."
-        if note_id is None:
-            note_id = note.name[0]
-        if note_section is None:
-            note_section = note.name[1]
-        if note_note_idx is None:
-            note_note_idx = note.name[2]
+        if note_file_id is None:
+            note_file_id = note.name[0]
+        if note_note_id is None:
+            note_note_id = note.name[1]
         if note_midi is None:
             note_midi = note.midi
         if note_voice is None:
@@ -388,7 +378,7 @@ def find_matching_tie(note: pd.Series = None, note_id: int = None, note_section:
             tied_in_notes_onset is None or tied_in_notes_staff is None):
 
         assert tied_in_notes is not None, ("Either tied_in_notes or all tied_in_notes_x params "
-                                           "(except _id and _section) are required.")
+                                           "(except _file_id) are required.")
         if tied_in_notes_midi is None:
             tied_in_notes_midi = tied_in_notes.midi.to_numpy()
         if tied_in_notes_mc is None:
@@ -400,18 +390,14 @@ def find_matching_tie(note: pd.Series = None, note_id: int = None, note_section:
         if tied_in_notes_onset is None:
             tied_in_notes_onset = tied_in_notes.onset.to_numpy()
 
-    # Filter by id and section if not prefiltered
+    # Filter by file_id if not prefiltered
     if not prefiltered:
-        if tied_in_notes_id is None or tied_in_notes_section is None:
-            assert tied_in_notes is not None, ("Either tied_in_notes or tied_in_notes_id and "
-                                               "tied_in_notes_section) are required if "
-                                               "prefiltered is False.")
-            if tied_in_notes_id is None:
-                tied_in_notes_id = tied_in_notes.index.get_level_values('id').to_numpy()
-            if tied_in_notes_section is None:
-                tied_in_notes_section = tied_in_notes.index.get_level_values('section').to_numpy()
-        unfiltered_tied_in_notes_mask = np.logical_and(tied_in_notes_id == note_id,
-                                                       tied_in_notes_section == note_section)
+        if tied_in_notes_file_id is None:
+            assert tied_in_notes is not None, ("Either tied_in_notes or tied_in_notes_id required "
+                                               "if prefiltered is False.")
+            if tied_in_notes_file_id is None:
+                tied_in_notes_file_id = tied_in_notes.index.get_level_values('file_id').to_numpy()
+        unfiltered_tied_in_notes_mask = tied_in_notes_file_id == note_file_id
         tied_in_notes_midi = tied_in_notes_midi[unfiltered_tied_in_notes_mask]
         tied_in_notes_mc = tied_in_notes_mc[unfiltered_tied_in_notes_mask]
         tied_in_notes_voice = tied_in_notes_voice[unfiltered_tied_in_notes_mask]
@@ -448,14 +434,14 @@ def find_matching_tie(note: pd.Series = None, note_id: int = None, note_section:
 
     # Error -- no match found
     if not np.any(matching_notes_mask):
-        warnings.warn(f"No matching tied note found for note index ({note_id}, {note_section}, "
-                      f"{note_note_idx}) and duration {note_duration}. Returning None.")
+        warnings.warn(f"No matching tied note found for note index ({note_file_id}, "
+                      f"{note_note_id}) and duration {note_duration}. Returning None.")
         return None
 
     # Error -- multiple matches found
     if np.sum(matching_notes_mask) > 1:
-        warnings.warn(f"Multiple matching tied notes found for note index ({note_id}, "
-                      f"{note_section}, {note_note_idx}) and duration {note_duration}. "
+        warnings.warn(f"Multiple matching tied notes found for note index ({note_file_id}, "
+                      f"{note_note_id}) and duration {note_duration}. "
                       "Returning the first.")
 
     # Return the first note on success or matches > 1
@@ -478,7 +464,6 @@ def merge_ties(notes: pd.DataFrame, measures: pd.DataFrame = None) -> pd.DataFra
         A pandas DataFrame containing the notes to be merged together. This should include at least
         the following columns:
             'id' (index, int): The piece id from which each note comes.
-            'section' (index, int): The section of the piece from which each note comes.
             'mc' (int): The 'measure count' index of the onset of each note.
             'onset' (Fraction): The onset time of each note, in whole notes, relative to the
                 beginning of the given mc.
@@ -516,8 +501,7 @@ def merge_ties(notes: pd.DataFrame, measures: pd.DataFrame = None) -> pd.DataFra
     if not all([column in notes.columns for column in ['offset_beat', 'offset_mc']]):
         assert measures is not None, ("measures must be given if offset_beat and offset_mc "
                                       "are not in notes")
-        offset_mc, offset_beat = get_offsets(notes, measures)
-        notes = notes.assign(offset_mc=offset_mc, offset_beat=offset_beat)
+        notes = add_note_offsets(notes, measures)
 
     # Tied in and out notes
     tied_out_mask = notes.tied == 1
@@ -541,8 +525,7 @@ def merge_ties(notes: pd.DataFrame, measures: pd.DataFrame = None) -> pd.DataFra
     tied_in_notes = tied_in_notes.drop(index=to_remove)
 
     # Get important columns into numpy arrays for MUCH faster processing
-    tied_in_notes_id = tied_in_notes.index.get_level_values('id').to_numpy()
-    tied_in_notes_section = tied_in_notes.index.get_level_values('section').to_numpy()
+    tied_in_notes_file_id = tied_in_notes.index.get_level_values('file_id').to_numpy()
     tied_in_notes_midi = tied_in_notes.midi.to_numpy()
     tied_in_notes_mc = tied_in_notes.mc.to_numpy()
     tied_in_notes_voice = tied_in_notes.voice.to_numpy()
@@ -553,9 +536,8 @@ def merge_ties(notes: pd.DataFrame, measures: pd.DataFrame = None) -> pd.DataFra
     tied_in_notes_offset_beat = tied_in_notes.offset_beat.to_numpy()
     tied_in_notes_tied = tied_in_notes.tied.to_numpy()
 
-    tied_out_notes_id = tied_out_notes.index.get_level_values('id').to_numpy()
-    tied_out_notes_section = tied_out_notes.index.get_level_values('section').to_numpy()
-    tied_out_notes_note_idx = tied_out_notes.index.get_level_values('ix').to_numpy()
+    tied_out_notes_file_id = tied_out_notes.index.get_level_values('file_id').to_numpy()
+    tied_out_notes_note_id = tied_out_notes.index.get_level_values('note_id').to_numpy()
     tied_out_notes_midi = tied_out_notes.midi.to_numpy()
     tied_out_notes_voice = tied_out_notes.voice.to_numpy()
     tied_out_notes_staff = tied_out_notes.staff.to_numpy()
@@ -565,12 +547,11 @@ def merge_ties(notes: pd.DataFrame, measures: pd.DataFrame = None) -> pd.DataFra
 
     # Some iteration tracking and other helper variables
     prev_index = -1
-    prev_section = -1
     max_midi = tied_out_notes.midi.max()
 
     # Loop through and fix the duration and offset every tied out note
-    for iloc_idx, (note_id, note_section, note_note_idx, note_midi, note_voice, note_staff) in (
-            enumerate(zip(tied_out_notes_id, tied_out_notes_section, tied_out_notes_note_idx,
+    for iloc_idx, (note_file_id, note_note_id, note_midi, note_voice, note_staff) in (
+            enumerate(zip(tied_out_notes_file_id, tied_out_notes_note_id,
                           tied_out_notes_midi, tied_out_notes_voice, tied_out_notes_staff))):
 
         # These are not in the iterator because they will be updated in the loop
@@ -578,12 +559,10 @@ def merge_ties(notes: pd.DataFrame, measures: pd.DataFrame = None) -> pd.DataFra
         note_offset_beat = tied_out_notes_offset_beat[iloc_idx]
         note_duration = tied_out_notes_duration[iloc_idx]
 
-        # Pre-filter notes within (index, section) for speed
-        if prev_index != note_id or prev_section != note_section:
-            prev_index = note_id
-            prev_section = note_section
-            tied_in_notes_mask = np.logical_and(tied_in_notes_id == note_id,
-                                                tied_in_notes_section == note_section)
+        # Pre-filter notes within (file_id) for speed
+        if prev_index != note_file_id:
+            prev_index = note_file_id
+            tied_in_notes_mask = tied_in_notes_file_id == note_file_id
             midi_masks = np.full(max_midi + 1, None)
 
         # Add new notes until an end tie is reached (where tied == -1)
@@ -591,7 +570,7 @@ def merge_ties(notes: pd.DataFrame, measures: pd.DataFrame = None) -> pd.DataFra
             tied_note_index = find_matching_tie(
                 note_midi=note_midi, note_voice=note_voice, note_offset_mc=note_offset_mc,
                 note_offset_beat=note_offset_beat, note_duration=note_duration,
-                note_id=note_id, note_section=note_section, note_note_idx=note_note_idx,
+                note_file_id=note_file_id, note_note_id=note_note_id,
                 note_staff=note_staff,
                 tied_in_notes=None, prefiltered=True, midi_masks=midi_masks,
                 tied_in_notes_midi=tied_in_notes_midi[tied_in_notes_mask],
@@ -625,4 +604,26 @@ def merge_ties(notes: pd.DataFrame, measures: pd.DataFrame = None) -> pd.DataFra
     tied_out_notes.offset_beat = tied_out_notes_offset_beat
 
     # Return final results (unchanged notes and updated notes)
-    return pd.DataFrame(notes.loc[notes.tied.isna() | (notes.index.isin(tied_out_notes.index))])
+    new_notes = notes.copy()
+    new_notes.loc[tied_out_notes.index] = tied_out_notes
+    return pd.DataFrame(new_notes.loc[notes.tied.isna() | (notes.index.isin(tied_out_notes.index))])
+
+
+from harmonic_inference.data.corpus_reading import read_dump
+from pathlib import Path
+
+files_df = read_dump(Path('corpus_data', 'files.tsv'), index_col=0)
+measures_df = read_dump(Path('corpus_data', 'measures.tsv'))
+chords_df = read_dump(Path('corpus_data', 'chords.tsv'))
+notes_df = read_dump(Path('corpus_data', 'notes.tsv'))
+
+# Remove measure repeats
+if isinstance(measures_df.iloc[0].next, tuple):
+    measures_df = remove_repeats(measures_df)
+
+# Add offsets
+if not all([column in notes_df.columns for column in ['offset_beat', 'offset_mc']]):
+    notes_df = add_note_offsets(notes_df, measures_df)
+
+# Merge ties
+merged_df = merge_ties(notes_df, measures=measures_df)
