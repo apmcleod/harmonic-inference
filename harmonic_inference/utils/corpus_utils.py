@@ -1,10 +1,13 @@
 """Utility functions for working with the corpus data."""
-
 from typing import List
 from fractions import Fraction
 import warnings
+
 import pandas as pd
 import numpy as np
+from tqdm import tqdm
+
+import harmonic_inference.utils.rhythmic_utils as ru
 
 
 
@@ -42,6 +45,78 @@ def remove_repeats(measures: pd.DataFrame) -> pd.DataFrame:
 
     return measures
 
+
+
+def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add 'mc_next' (int), 'onset_next' (Fraction), and 'duration' (Fraction) columns to the given
+    chords DataFrame, indicating the metrical position of the next chord as well as the duration
+    for each chord. The last chord of each piece will be assigned 'mc_next' of the last measure
+    of the piece, and 'onset_next' as the 'act_dur' of that measure. Its 'duration' will be
+    calculated to that position.
+
+    Parameters
+    ----------
+    chords : pd.DataFrame
+        A DataFrame, indexed by 'file_id' (int), including at least 'mc' (int) and 'onset'
+        (Fraction) columns.
+    measures : pd.DataFrame
+        A DataFrame, indexed by 'file_id' (int), including at least 'mc' (int) and 'act_dur'
+        (Fraction) columns.
+
+    Returns
+    -------
+    chords : pd.DataFrame
+        A copy of the given chords DataFrame, with 'mc_next' (int), 'onset_next' (Fraction),
+        and 'duration' (Fraction) columns added.
+    """
+    if isinstance(measures.iloc[0].next, list) or isinstance(measures.iloc[0].next, tuple):
+        warnings.warn("Repeats have not been unrolled or removed. Calculating offsets as if they "
+                      "were removed.")
+        measures = remove_repeats(measures)
+
+    # In most cases, next is a simple shift
+    chords = chords.assign(mc_next=chords.mc.shift(-1).astype('Int64'),
+                           onset_next=chords.onset.shift(-1))
+
+    # For the last chord of each piece, it is more complicated
+    last_chords = chords.loc[
+        chords.index.get_level_values('file_id') !=
+        np.roll(chords.index.get_level_values('file_id'), -1)
+    ]
+    last_measures = measures.loc[measures.next.isnull()]
+    last_merged = pd.merge(
+        last_chords, last_measures,
+        how='left', left_on=['file_id'], right_on=['file_id']
+    )
+    last_merged.index = last_chords.index
+
+    # Last chord "next" pointer is end of last measure in piece
+    chords.loc[last_chords.index, 'mc_next'] = last_merged.mc_y
+    chords.loc[last_chords.index, 'onset_next'] = last_merged.act_dur
+
+    # Naive duration calculation works if no measure change
+    chords.loc[:, 'duration'] = chords.onset_next - chords.onset
+
+    # Fix for when next chord is in next measure
+    full_merge = pd.merge(chords, measures, how='left', left_on=['file_id', 'mc'],
+                          right_on=['file_id', 'mc'])
+    full_merge.index = chords.index
+    next_measure_mask = full_merge.next == full_merge.mc_next
+    next_measure_onset = chords.onset_next - chords.onset + full_merge.act_dur
+    chords.loc[next_measure_mask, 'duration'] = next_measure_onset[next_measure_mask]
+
+    # Fix for further measure changes
+    # This is slow, but there are only few, so not worth the complication
+    tqdm.pandas()
+    new_measure = (chords.mc != chords.mc_next) & ~next_measure_mask
+    chords.loc[new_measure, 'duration'] = chords.loc[new_measure].progress_apply(
+        lambda chord: ru.get_range_length((chord.mc, chord.onset),
+                                          (chord.mc_next, chord.onset_next), measures),
+        axis=1
+    )
+
+    return chords
 
 
 def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFrame:
@@ -85,7 +160,7 @@ def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFram
         A copy of the given notes DataFrame with two additional columns: 'offset_mc' (int) and
         'offset_beat' (Fraction) denoting the offset position of each note.
     """
-    if isinstance(measures.iloc[0].next, list):
+    if isinstance(measures.iloc[0].next, list) or isinstance(measures.iloc[0].next, tuple):
         warnings.warn("Repeats have not been unrolled or removed. Calculating offsets as if they "
                       "were removed.")
         measures = remove_repeats(measures)
@@ -607,23 +682,3 @@ def merge_ties(notes: pd.DataFrame, measures: pd.DataFrame = None) -> pd.DataFra
     new_notes = notes.copy()
     new_notes.loc[tied_out_notes.index] = tied_out_notes
     return pd.DataFrame(new_notes.loc[notes.tied.isna() | (notes.index.isin(tied_out_notes.index))])
-
-
-from harmonic_inference.data.corpus_reading import read_dump
-from pathlib import Path
-
-files_df = read_dump(Path('corpus_data', 'files.tsv'), index_col=0)
-measures_df = read_dump(Path('corpus_data', 'measures.tsv'))
-chords_df = read_dump(Path('corpus_data', 'chords.tsv'))
-notes_df = read_dump(Path('corpus_data', 'notes.tsv'))
-
-# Remove measure repeats
-if isinstance(measures_df.iloc[0].next, tuple):
-    measures_df = remove_repeats(measures_df)
-
-# Add offsets
-if not all([column in notes_df.columns for column in ['offset_beat', 'offset_mc']]):
-    notes_df = add_note_offsets(notes_df, measures_df)
-
-# Merge ties
-merged_df = merge_ties(notes_df, measures=measures_df)

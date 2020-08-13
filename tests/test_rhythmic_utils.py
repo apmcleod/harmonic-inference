@@ -25,7 +25,7 @@ def test_get_range_length():
 
                     measures = pd.DataFrame({'mc': mc_current,
                                              'next': next_mc,
-                                             'act_dur': act_dur}).set_index('mc')
+                                             'act_dur': act_dur})
 
                     length = ru.get_range_length(start, end, measures)
                     if start_mc == end_mc:
@@ -63,7 +63,7 @@ def test_get_range_length():
                     if end_mc > start_mc:
                         measures = pd.DataFrame({'mc': mc_current,
                                                  'next': next,
-                                                 'act_dur': act_dur}).set_index('mc')
+                                                 'act_dur': act_dur})
 
                         # One measure
                         measures.loc[start_mc, 'next'] = end_mc
@@ -97,7 +97,7 @@ def test_get_rhythmic_info_as_proportion_of_range():
     act_dur = [Fraction(3, 2)] * NUM_MEASURES
     measures = pd.DataFrame({'mc': mc_current,
                              'next': next_mc,
-                             'act_dur': act_dur}).set_index('mc')
+                             'act_dur': act_dur})
 
     # Note equal to range
     for note_onset in [0, Fraction(1, 2), Fraction(3, 2)]:

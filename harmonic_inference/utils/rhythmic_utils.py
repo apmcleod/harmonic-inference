@@ -1,13 +1,12 @@
 """Utility functions for getting rhythmic or metrical information from the corpus DataFrames."""
-
 from typing import TypeVar, Tuple
 from fractions import Fraction
+
 import pandas as pd
 
-Beat = TypeVar(Tuple[int, Fraction])
-TripleFraction = TypeVar(Fraction, Fraction, Fraction)
 
-def get_range_length(range_start: Beat, range_end: Beat, measures: pd.DataFrame) -> Fraction:
+def get_range_length(range_start: Tuple[int, Fraction], range_end: Tuple[int, Fraction],
+                     measures: pd.DataFrame) -> Fraction:
     """
     Get the length of a range in whole notes.
 
@@ -20,7 +19,7 @@ def get_range_length(range_start: Beat, range_end: Beat, measures: pd.DataFrame)
         A tuple of (mc, beat) values of the end of the range.
 
     measures : pd.DataFrame
-        A DataFrame containing the measures info for this particulad piece id.
+        A DataFrame containing the measures info for this particular piece.
 
     Returns
     -------
@@ -34,13 +33,13 @@ def get_range_length(range_start: Beat, range_end: Beat, measures: pd.DataFrame)
         return end_beat - start_beat
 
     # Start looping at end of start_mc
-    length, current_mc = measures.loc[start_mc, ['act_dur', 'next']]
+    length, current_mc = measures.loc[measures.mc == start_mc, ['act_dur', 'next']].values[0]
     length -= start_beat
 
     # Loop until reaching end_mc
     while current_mc != end_mc and current_mc is not None:
-        length += measures.loc[current_mc, 'act_dur']
-        current_mc = measures.loc[current_mc, 'next']
+        length += measures.loc[measures.mc == current_mc, 'act_dur'].values[0]
+        current_mc = measures.loc[measures.mc == current_mc, 'next'].values[0]
 
     # Add remainder
     length += end_beat
@@ -50,9 +49,9 @@ def get_range_length(range_start: Beat, range_end: Beat, measures: pd.DataFrame)
 
 
 
-def get_rhythmic_info_as_proportion_of_range(note: pd.Series, range_start: Beat,
-                                             range_end: Beat, measures: pd.DataFrame,
-                                             range_len: Fraction = None) -> TripleFraction:
+def get_rhythmic_info_as_proportion_of_range(
+        note: pd.Series, range_start: Tuple[int, Fraction], range_end: Tuple[int, Fraction],
+        measures: pd.DataFrame, range_len: Fraction = None) -> [Fraction, Fraction, Fraction]:
     """
     Get a note's onset, offset, and duration as a proportion of the given range.
 
@@ -96,7 +95,7 @@ def get_rhythmic_info_as_proportion_of_range(note: pd.Series, range_start: Beat,
 
 
 
-def get_metrical_level_lengths(timesig: str) -> TripleFraction:
+def get_metrical_level_lengths(timesig: str) -> [Fraction, Fraction, Fraction]:
     """
     Get the lengths of the beat and subbeat levels of the given time signature.
 

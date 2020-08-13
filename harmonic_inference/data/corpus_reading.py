@@ -113,19 +113,24 @@ def read_dump(file: str, index_col: Union[int, Iterable] = (0, 1), converters: D
                        **kwargs)
 
 
-def aggregate_annotation_dfs(annotations_path: Path, out_dir: Path):
+def aggregate_annotation_dfs(annotations_path: Union[Path, str], out_dir: Union[Path, str]):
     """
     Aggregate all annotations from a corpus directory into 4 combined tsvs in an out directory.
     The resulting tsv will be: files.tsv, chords.tsv, notes.tsv, and measures.tsv.
 
     Parameters
     ----------
-    annotations_path : Path
+    annotations_path : Union[Path, str]
         The path of the corpus annotations. Annotations should lie in directories:
         annotations_path/*/{harmonies/notes/measures}/*.tsv
-    out_dir : Path
+    out_dir : Union[Path, str]
         The directory to write the output tsvs into.
     """
+    if isinstance(annotations_path, str):
+        annotations_path = Path(annotations_path)
+    if isinstance(out_dir, str):
+        out_dir = Path(out_dir)
+
     files_dict = {
         'corpus_name': [],
         'file_name': []
@@ -163,11 +168,17 @@ def aggregate_annotation_dfs(annotations_path: Path, out_dir: Path):
     files_df = pd.DataFrame(files_dict)
     files_df.to_csv(Path(out_dir, 'files.tsv'), sep='\t')
 
-    chords_df = pd.concat(chord_df_list, keys=files_df.index, axis=0, names=['file_id', 'chord_id'])
+    chords_df = pd.concat(
+        chord_df_list, keys=files_df.index, axis=0, names=['file_id', 'chord_id']
+    )
     chords_df.to_csv(Path(out_dir, 'chords.tsv'), sep='\t')
 
-    notes_df = pd.concat(note_df_list, keys=files_df.index, axis=0, names=['file_id', 'note_id'])
+    notes_df = pd.concat(
+        note_df_list, keys=files_df.index, axis=0, names=['file_id', 'note_id']
+    )
     notes_df.to_csv(Path(out_dir, 'notes.tsv'), sep='\t')
 
-    measures_df = pd.concat(measure_df_list, keys=list(files_df.index), axis=0, names=['file_id', 'measure_id'])
+    measures_df = pd.concat(
+        measure_df_list, keys=list(files_df.index), axis=0, names=['file_id', 'measure_id']
+    )
     measures_df.to_csv(Path(out_dir, 'measures.tsv'), sep='\t')
