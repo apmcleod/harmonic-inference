@@ -98,25 +98,33 @@ def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.
     # Naive duration calculation works if no measure change
     chords.loc[:, 'duration'] = chords.onset_next - chords.onset
 
-    # Fix for when next chord is in next measure
-    full_merge = pd.merge(chords, measures, how='left', left_on=['file_id', 'mc'],
-                          right_on=['file_id', 'mc'])
-    full_merge.index = chords.index
-    next_measure_mask = full_merge.next == full_merge.mc_next
-    next_measure_onset = chords.onset_next - chords.onset + full_merge.act_dur
-    chords.loc[next_measure_mask, 'duration'] = next_measure_onset[next_measure_mask]
+    # Boolean mask for which chord durations to still check
+    # Sometimes, the "mc_next" is unreachable due to removing repeats
+    # The is_null call checks for those cases
+    to_check = ~((chords.mc == chords.mc_next) | chords.mc.isnull())
 
-    # Fix for further measure changes
-    # This is slow, but there are only few, so not worth the complication
-    tqdm.pandas()
-    new_measure = (chords.mc != chords.mc_next) & ~next_measure_mask
-    chords.loc[new_measure, 'duration'] = chords.loc[new_measure].progress_apply(
-        lambda chord: ru.get_range_length((chord.mc, chord.onset),
-                                          (chord.mc_next, chord.onset_next), measures),
-        axis=1
-    )
+    # Tracking location for the current mc (we will iteratively advance by measure)
+    chords.loc[:, 'mc_current'] = chords.mc
 
-    return chords
+    # Fix remaining durations iteratively by measure
+    while to_check.any():
+        # Merge remaining incorrect chords with the current measures
+        full_merge = pd.merge(
+            chords.loc[to_check], measures, how='left', left_on=['file_id', 'mc_current'],
+            right_on=['file_id', 'mc']
+        )
+        full_merge.index = chords.loc[to_check].index
+
+        # Advance 1 measure in chords
+        chords.loc[to_check, ['duration', 'mc_current']] = list(zip(
+            *[full_merge.duration + full_merge.act_dur, full_merge.next]
+        ))
+
+        # Update to_check mask
+        to_check.loc[to_check] = ~((full_merge.next == full_merge.mc_next) |
+                                   full_merge.next.isnull())
+
+    return chords.drop('mc_current', axis='columns')
 
 
 def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFrame:
