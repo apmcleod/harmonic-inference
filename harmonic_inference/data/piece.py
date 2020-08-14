@@ -1,6 +1,7 @@
 """A class storing a musical piece from score, midi, or audio format."""
 from typing import Union, Tuple, List
 from fractions import Fraction
+import logging
 
 import pandas as pd
 
@@ -52,12 +53,20 @@ class Note():
 
     @staticmethod
     def from_series(note_row: pd.Series, measures_df: pd.DataFrame, pitch_type: PitchType):
-        pitch = note_row.tpc + hu.TPC_C if pitch_type == PitchType.TPC else note_row.midi % 12
+        try:
+            pitch = (note_row.tpc + hu.TPC_C if pitch_type == PitchType.TPC else
+                    note_row.midi % hu.NUM_PITCHES[PitchType.MIDI])
+            octave = note_row.midi // hu.NUM_PITCHES[PitchType.MIDI]
 
-        onset = (note_row.mc, note_row.onset)
-        offset = (note_row.offset_mc, note_row.offset_beat)
+            onset = (note_row.mc, note_row.onset)
+            offset = (note_row.offset_mc, note_row.offset_beat)
 
-        return Note(pitch, note_row.octaves, onset, note_row.duration, offset, pitch_type)
+            return Note(pitch, octave, onset, note_row.duration, offset, pitch_type)
+
+        except BaseException as e:
+            logging.error(f"Error parsing note from row {note_row}")
+            logging.exception(e)
+            return None
 
 
 class Chord():
@@ -125,29 +134,44 @@ class Chord():
 
     @staticmethod
     def from_series(chord_row: pd.Series, measures_df: pd.DataFrame, pitch_type: PitchType):
-        key = Key.from_series(chord_row, pitch_type)
-        root_interval = hu.get_interval_from_numeral(
-            chord_row['numeral'], key.mode, pitch_type=pitch_type
-        )
-        root = hu.transpose_pitch(key.tonic, root_interval, pitch_type=pitch_type)
+        try:
+            if chord_row['numeral'] == '@none' or pd.isnull(chord_row['numeral']):
+                # Handle "No Chord" symbol
+                root = 0
+                bass = 0
+                inversion = 0
+                chord_type = None
+                raise ValueError("")
 
-        # Bass step is listed relative to local key (not applied dominant)
-        local_key = Key.from_series(chord_row, pitch_type, do_relative=False)
-        bass_interval = hu.get_interval_from_bass_step(
-            chord_row['bass_step'], local_key.mode, pitch_type=pitch_type
-        )
-        bass = hu.transpose_pitch(local_key.tonic, bass_interval, pitch_type=pitch_type)
+            else:
+                # Root and bass note are relative to local key (not applied dominant)
+                local_key = Key.from_series(chord_row, pitch_type, do_relative=False)
 
-        chord_type = hu.get_chord_type(chord_row['numeral'], chord_row['form'],
-                                       chord_row['figbass'])
-        is_augmented_6 = chord_type in [ChordType.ITALIAN, ChordType.FRENCH, ChordType.GERMAN]
-        inversion = hu.get_chord_inversion(chord_row['figbass'], is_augmented_6=is_augmented_6)
+                # Root note of chord, absolute
+                root_interval = (chord_row['root'] if pitch_type == PitchType.TPC else
+                                hu.tpc_to_midi_interval(chord_row['bass_note'] + hu.TPC_C))
+                root = hu.transpose_pitch(local_key.tonic, root_interval, pitch_type=pitch_type)
 
-        onset = (chord_row.mc, chord_row.onset)
-        offset = (chord_row.mc_next, chord_row.onset_next)
+                # Bass note of chord, absolute
+                bass_interval = (chord_row['bass_note'] if pitch_type == PitchType.TPC else
+                                hu.tpc_to_midi(chord_row['bass_note'] + hu.TPC_C))
+                bass = hu.transpose_pitch(local_key.tonic, bass_interval, pitch_type=pitch_type)
 
-        return Chord(root, bass, chord_type, inversion, onset, offset, chord_row.chord_length,
-                     pitch_type)
+                # Additional chord info
+                chord_type = hu.get_chord_type_from_string(chord_row['chord_type'])
+                inversion = hu.get_chord_inversion(chord_row['figbass'])
+
+            # Rhythmic info - Even "No Chord" symbols have these.
+            onset = (chord_row.mc, chord_row.onset)
+            offset = (chord_row.mc_next, chord_row.onset_next)
+            duration = chord_row.duration
+
+            return Chord(root, bass, chord_type, inversion, onset, offset, duration, pitch_type)
+
+        except BaseException as e:
+            logging.error(f"Error parsing chord from row {chord_row}")
+            logging.exception(e)
+            return None
 
 
 class Key():
@@ -180,27 +204,38 @@ class Key():
 
     @staticmethod
     def from_series(chord_row: pd.Series, tonic_type: PitchType, do_relative: bool = True):
-        global_tonic = hu.get_pitch_from_string(chord_row['globalkey'], pitch_type=tonic_type)
-        global_mode = KeyMode.MINOR if chord_row['globalminor'] else KeyMode.MAJOR
+        try:
+            # Global key, absolute
+            global_tonic = hu.get_pitch_from_string(chord_row['globalkey'], pitch_type=tonic_type)
+            global_mode = KeyMode.MINOR if chord_row['globalkey_is_minor'] else KeyMode.MAJOR
 
-        local_mode = KeyMode.MINOR if chord_row['localminor'] else KeyMode.MAJOR
-        local_transposition = hu.get_interval_from_numeral(
-            chord_row['key'], global_mode, pitch_type=tonic_type
-        )
-        local_tonic = hu.transpose_pitch(global_tonic, local_transposition, pitch_type=tonic_type)
-
-        # Treat applied dominants (and other slash chords) as new keys
-        relative = chord_row['relativeroot']
-        if do_relative and not pd.isna(relative):
-            relative_mode = KeyMode.MINOR if relative[-1].islower() else KeyMode.MAJOR
-            relative_transposition = hu.get_interval_from_numeral(
-                relative, local_mode, pitch_type=tonic_type
+            # Local key is listed relative to global. We want it absolute.
+            local_mode = KeyMode.MINOR if chord_row['localkey_is_minor'] else KeyMode.MAJOR
+            local_transposition = hu.get_interval_from_numeral(
+                chord_row['localkey'], global_mode, pitch_type=tonic_type
             )
-            relative_tonic = hu.transpose_pitch(local_tonic, relative_transposition,
-                                                pitch_type=tonic_type)
-            local_mode, local_tonic = relative_mode, relative_tonic
+            local_tonic = hu.transpose_pitch(global_tonic, local_transposition, pitch_type=tonic_type)
 
-        return Key(local_tonic, local_mode, tonic_type)
+            # Treat applied dominants (and other slash chords) as new keys
+            relative = chord_row['relativeroot']
+            if do_relative and not pd.isna(relative):
+                if '/' in relative:
+                    logging.error("Doubly relative chords are not supported yet.")
+                # Relativeroot is listed relative to local key. We want it absolute.
+                relative_mode = KeyMode.MINOR if relative[-1].islower() else KeyMode.MAJOR
+                relative_transposition = hu.get_interval_from_numeral(
+                    relative, local_mode, pitch_type=tonic_type
+                )
+                relative_tonic = hu.transpose_pitch(local_tonic, relative_transposition,
+                                                    pitch_type=tonic_type)
+                local_mode, local_tonic = relative_mode, relative_tonic
+
+            return Key(local_tonic, local_mode, tonic_type)
+
+        except BaseException as e:
+            logging.error(f"Error parsing key from row {chord_row}")
+            logging.exception(e)
+            return None
 
 
 class Piece():
@@ -298,13 +333,17 @@ class ScorePiece(Piece):
         """
         super().__init__(PieceType.SCORE)
         self.notes = [
-            Note.from_series(note, measures_df, PitchType.TPC)
-            for _, note in notes_df.iterrows()
+            note for note in notes_df.apply(
+                Note.from_series, axis='columns', measures_df=measures_df,
+                pitch_type=PitchType.TPC
+            ) if note is not None
         ]
 
         self.chords = [
-            Chord.from_series(chord, measures_df, PitchType.TPC)
-            for _, chord in chords_df.iterrows()
+            chord for chord in chords_df.apply(
+                Chord.from_series, axis='columns', measures_df=measures_df,
+                pitch_type=PitchType.TPC
+            ) if chord is not None
         ]
 
         self.chord_changes = [0] * len(self.chords)
@@ -315,15 +354,16 @@ class ScorePiece(Piece):
             else:
                 note_index += 1
 
-        key_cols = chords_df.loc[:, ['globalkey', 'globalminor', 'localminor', 'key',
-                                     'relativeroot']]
+        key_cols = chords_df.loc[:, ['globalkey', 'globalkey_is_minor', 'localkey_is_minor',
+                                     'localkey', 'relativeroot']]
         key_cols = key_cols.fillna('-1')
         changes = key_cols.ne(key_cols.shift()).fillna(True)
 
         self.key_changes = changes.loc[changes.any(axis=1)].index.to_list()
         self.keys = [
-            Key.from_series(chord, PitchType.TPC, do_relative=True)
-            for _, chord in chords_df.loc[self.key_changes].iterrows()
+            key for key in chords_df.loc[self.key_changes].apply(
+                Key.from_series, axis='columns', tonic_type=PitchType.TPC, do_relative=True
+            ) if key is not None
         ]
 
     def get_inputs(self) -> List[Note]:

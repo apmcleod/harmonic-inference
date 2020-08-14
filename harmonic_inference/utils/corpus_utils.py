@@ -75,9 +75,17 @@ def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.
                       "were removed.")
         measures = remove_repeats(measures)
 
+    # Fix for measure offsets
+    full_merge = pd.merge(
+        chords, measures, how='left', left_on=['file_id', 'mc'], right_on=['file_id', 'mc']
+    )
+    full_merge.index = chords.index
+    chords.loc[:, 'on_fixed'] = full_merge.onset - full_merge.offset
+
     # In most cases, next is a simple shift
     chords = chords.assign(mc_next=chords.mc.shift(-1).astype('Int64'),
-                           onset_next=chords.onset.shift(-1))
+                           onset_next=chords.onset.shift(-1),
+                           on_next_fixed=chords.on_fixed.shift(-1))
 
     # For the last chord of each piece, it is more complicated
     last_chords = chords.loc[
@@ -93,10 +101,11 @@ def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.
 
     # Last chord "next" pointer is end of last measure in piece
     chords.loc[last_chords.index, 'mc_next'] = last_merged.mc_y
-    chords.loc[last_chords.index, 'onset_next'] = last_merged.act_dur
+    chords.loc[last_chords.index, 'onset_next'] = last_merged.act_dur + last_merged.offset
+    chords.loc[last_chords.index, 'on_next_fixed'] = last_merged.on_fixed
 
     # Naive duration calculation works if no measure change
-    chords.loc[:, 'duration'] = chords.onset_next - chords.onset
+    chords.loc[:, 'duration'] = chords.on_next_fixed - chords.on_fixed
 
     # Boolean mask for which chord durations to still check
     # Sometimes, the "mc_next" is unreachable due to removing repeats
@@ -124,7 +133,7 @@ def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.
         to_check.loc[to_check] = ~((full_merge.next == full_merge.mc_next) |
                                    full_merge.next.isnull())
 
-    return chords.drop('mc_current', axis='columns')
+    return chords.drop(['mc_current', 'on_fixed', 'on_next_fixed'], axis='columns')
 
 
 def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFrame:

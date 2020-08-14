@@ -57,17 +57,6 @@ def test_get_numeral_semitones():
                     f"Output is_major incorrect for inputs {numeral_lower}, {is_major}"
                 )
 
-    for numeral in ['GER', 'IT', 'FR']:
-        correct_semis = 8
-        for is_major in [True, False]:
-            out_semis, out_is_major = hu.get_numeral_semitones(numeral, is_major)
-            assert out_semis == correct_semis, (
-                f"Output semitones incorrect for inputs {numeral}, {is_major}"
-            )
-            assert not out_is_major, (
-                f"Output is_major incorrect for inputs {numeral_lower}, {is_major}"
-            )
-
 
 def test_get_bass_step_semitones():
     for acc, adj in zip(['b', '', '#'], [-1, 0, 1]):
@@ -80,11 +69,6 @@ def test_get_bass_step_semitones():
                 assert out_semis == semitones[index] + adj, (
                     f"Output semitones incorrect for inputs {step}, {is_major}"
                 )
-
-    for step in ['Error', 'Unclear']:
-        for is_major in [True, False]:
-            out_semis = hu.get_bass_step_semitones(step, is_major)
-            assert out_semis is None, f"Output semitones not None for inputs {step}, {is_major}"
 
 
 

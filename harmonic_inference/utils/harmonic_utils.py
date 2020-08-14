@@ -149,27 +149,6 @@ for pitch_type in [PitchType.MIDI, PitchType.TPC]:
             STRING_TO_PITCH[pitch_type]['B'] - 2 * ACCIDENTAL_ADJUSTMENT[pitch_type]
         )
 
-    # Add augmented 6th chords
-    CHORD_PITCHES[pitch_type][ChordType.ITALIAN] = [
-        STRING_TO_PITCH[pitch_type]['A'] - ACCIDENTAL_ADJUSTMENT[pitch_type],
-        STRING_TO_PITCH[pitch_type]['C'],
-        STRING_TO_PITCH[pitch_type]['F'] + ACCIDENTAL_ADJUSTMENT[pitch_type]
-    ]
-
-    CHORD_PITCHES[pitch_type][ChordType.FRENCH] = [
-        STRING_TO_PITCH[pitch_type]['A'] - ACCIDENTAL_ADJUSTMENT[pitch_type],
-        STRING_TO_PITCH[pitch_type]['C'],
-        STRING_TO_PITCH[pitch_type]['D'],
-        STRING_TO_PITCH[pitch_type]['F'] + ACCIDENTAL_ADJUSTMENT[pitch_type]
-    ]
-
-    CHORD_PITCHES[pitch_type][ChordType.FRENCH] = [
-        STRING_TO_PITCH[pitch_type]['A'] - ACCIDENTAL_ADJUSTMENT[pitch_type],
-        STRING_TO_PITCH[pitch_type]['C'],
-        STRING_TO_PITCH[pitch_type]['E'] - ACCIDENTAL_ADJUSTMENT[pitch_type],
-        STRING_TO_PITCH[pitch_type]['F'] + ACCIDENTAL_ADJUSTMENT[pitch_type]
-    ]
-
 
 
 def get_pitch_string(pitch: int, pitch_type: PitchType) -> str:
@@ -354,8 +333,7 @@ def get_interval_from_numeral(numeral: str, mode: KeyMode, pitch_type: PitchType
     Parameters
     ----------
     numeral : str
-        Usually an upper or lowercase roman numeral, prepended by accidentals. Can also be
-        Ger, It, or Fr, for augmented 6th chord symbols.
+        An upper or lowercase roman numeral, prepended by accidentals.
     mode : KeyMode
         The mode of the key from which to measure the scale degree.
     pitch_type : PitchType
@@ -367,34 +345,7 @@ def get_interval_from_numeral(numeral: str, mode: KeyMode, pitch_type: PitchType
     interval : int
         The interval from the key tonic to the scale degree numeral.
     """
-    if numeral in ['Ger', 'It', 'Fr']:
-        numeral = '#iv'
     return get_interval_from_scale_degree(numeral, True, True, mode, pitch_type)
-
-
-def get_interval_from_bass_step(bass_step: str, mode: KeyMode, pitch_type: PitchType) -> int:
-    """
-    Get the interval from the tonic of the current key to the given bass step.
-
-    Parameters
-    ----------
-    bass_step : str
-        The bass step. Usually a number pre-pended with accidentals. Can also be Error or Unclear.
-    mode : KeyMode
-        The mode of the key from which to measure the scale degree.
-    pitch_type : PitchType
-        The type of interval to return. Either TPC (to return circle of fifths difference) or MIDI
-        (for semitones).
-
-    Returns
-    -------
-    interval : int
-        The interval from the key tonic to the bass note.
-    """
-    if bass_step in ['Error', 'Unclear']:
-        # TODO: Special processing
-        return -1
-    return get_interval_from_scale_degree(bass_step, False, True, mode, pitch_type)
 
 
 def get_interval_from_scale_degree(scale_degree: str, numeral: bool, accidentals_prefixed: bool,
@@ -465,106 +416,39 @@ def transpose_pitch(pitch: int, interval: int, pitch_type: PitchType) -> int:
     return pitch
 
 
-def get_chord_type(numeral: str, form: str, figbass: str) -> ChordType:
-    """
-    Get the chord type, given some features about the chord.
+STRING_TO_CHORD_TYPE = {
+    'M': ChordType.MAJOR,
+    'm': ChordType.MINOR,
+    'o': ChordType.DIMINISHED,
+    '+': ChordType.AUGMENTED,
+    'MM7': ChordType.MAJ_MAJ7,
+    'Mm7': ChordType.MAJ_MIN7,
+    'mM7': ChordType.MIN_MAJ7,
+    'mm7': ChordType.MIN_MIN7,
+    'o7': ChordType.DIM7,
+    '%7': ChordType.HALF_DIM7,
+    '+7': ChordType.AUG_MIN7,
+    '+M7': ChordType.AUG_MAJ7
+}
 
-    Parameters
-    ----------
-    numeral : str
-        The numeral of the chord. Used for special processing of Augmented 6 chords
-        (It, Fr, or Ger). Also used to determine if the chord is major (if the last character
-        of the numeral string is uppercase).
 
-    is_major : boolean
-        True if the basic chord (triad) is major. False otherwise. Ignored if
-        the triad is diminished or augmented (in which case, form disambiguates).
-
-    form : string
-        A string representing the form of the chord:
-            'o':  Diminished 7th or triad
-            '%':  Half-diminished 7th chord
-            '+':  Augmented seventh or triad
-            '+M': Augmented major 7th chord
-            'M':  7th chord with a major 7th
-            None: Other chord. Either a 7th chord with a minor 7th, or a major or minor triad.
-
-    figbass : string
-        The figured bass notation for the chord, representing its inversion. Importantly:
-            None: Triad in first inversion
-            '6':  Triad with 3rd in the bass
-            '64': Triad with 5th in the bass
-
-    Returns
-    -------
-    chord_type : ChordType
-        The chord type of the given features. One of:
-            - Major triad
-            - Minor triad
-            - Diminished triad
-            - Augmented triad
-            - Minor seventh chord
-            - Dominant seventh chord
-            - Major seventh chord
-            - Minor major seventh chord
-            - Diminished seventh chord
-            - Half-diminished seventh chord
-            - Augmented seventh chord
-            - Augmented major seventh chord
-            - Italian augmented 6th chord
-            - French augmented 6th chord
-            - German augmented 6th chord
-    """
-    if numeral == 'It':
-        return ChordType.ITALIAN
-    if numeral == 'Fr':
-        return ChordType.FRENCH
-    if numeral == 'Ger':
-        return ChordType.GERMAN
-
-    is_major = numeral[-1].isupper()
-    if pd.isnull(figbass):
-        figbass = None
-    if pd.isnull(form):
-        form = None
-
-    # Triad
-    if figbass in [None, '6', '64']:
-        if form == 'o':
-            return ChordType.DIMINISHED
-        if form == '+':
-            return ChordType.AUGMENTED
-        return ChordType.MAJOR if is_major else ChordType.MINOR
-
-    # Seventh chord
-    if form == 'o':
-        return ChordType.DIM7
-    if form == '%':
-        return ChordType.HALF_DIM7
-    if form == '+':
-        return ChordType.AUG_MIN7
-    if form == '+M':
-        # TODO: Check this
-        return ChordType.AUG_MAJ7
-
-    if is_major:
-        return ChordType.MAJ_MAJ7 if form == 'M' else ChordType.MAJ_MIN7
-    return ChordType.MIN_MAJ7 if form == 'M' else ChordType.MIN_MIN7
+def get_chord_type_from_string(string : str) -> ChordType:
+    if string not in STRING_TO_CHORD_TYPE:
+        raise ValueError(f"String type {string} not recognized.")
+    return STRING_TO_CHORD_TYPE[string]
 
 
 INVERSIONS = {
-    '9':  0,
     '7':  0,
     '6':  1,
     '65': 1,
     '43': 2,
     '64': 2,
-    '2':  3,
-    '42': 3
+    '2':  3
 }
 
 
-def get_chord_inversion(figbass: str, is_augmented_6: bool = False) -> int:
+def get_chord_inversion(figbass: str) -> int:
     """
     Get the chord inversion number from a figured bass string.
 
@@ -572,9 +456,6 @@ def get_chord_inversion(figbass: str, is_augmented_6: bool = False) -> int:
     ----------
     figbass : str
         The figured bass representation of the chord.
-    is_augmented_6 : bool
-        True if this chord is an augmented 6th chord (It, Fr, or Ger), in which case, the
-        figured bass to inversion mapping is slightly different.
 
     Returns
     -------
@@ -583,17 +464,10 @@ def get_chord_inversion(figbass: str, is_augmented_6: bool = False) -> int:
     """
     if pd.isnull(figbass):
         return 0
-
-    if is_augmented_6:
-        if figbass == '6':
-            return 1
-        if figbass == '65':
-            return 2
-        if figbass == '43':
-            return 3
-        raise ValueError(f"Unsupported figured bass {figbass} for augmented 6th chord.")
-
-    return INVERSIONS[figbass]
+    try:
+        return INVERSIONS[figbass]
+    except:
+        raise ValueError(f"{str} is not a valid figured bass symbol for detecting inversions.")
 
 
 
