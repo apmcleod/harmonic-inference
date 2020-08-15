@@ -137,11 +137,7 @@ class Chord():
         try:
             if chord_row['numeral'] == '@none' or pd.isnull(chord_row['numeral']):
                 # Handle "No Chord" symbol
-                root = 0
-                bass = 0
-                inversion = 0
-                chord_type = None
-                raise ValueError("")
+                return None
 
             else:
                 # Root and bass note are relative to local key (not applied dominant)
@@ -217,18 +213,18 @@ class Key():
             local_tonic = hu.transpose_pitch(global_tonic, local_transposition, pitch_type=tonic_type)
 
             # Treat applied dominants (and other slash chords) as new keys
-            relative = chord_row['relativeroot']
-            if do_relative and not pd.isna(relative):
-                if '/' in relative:
-                    logging.error("Doubly relative chords are not supported yet.")
-                # Relativeroot is listed relative to local key. We want it absolute.
-                relative_mode = KeyMode.MINOR if relative[-1].islower() else KeyMode.MAJOR
-                relative_transposition = hu.get_interval_from_numeral(
-                    relative, local_mode, pitch_type=tonic_type
-                )
-                relative_tonic = hu.transpose_pitch(local_tonic, relative_transposition,
-                                                    pitch_type=tonic_type)
-                local_mode, local_tonic = relative_mode, relative_tonic
+            relative_full = chord_row['relativeroot']
+            if do_relative and not pd.isna(relative_full):
+                # Handle doubly-relative chords iteratively
+                for relative in reversed(relative_full.split('/')):
+                    # Relativeroot is listed relative to local key. We want it absolute.
+                    relative_mode = KeyMode.MINOR if relative[-1].islower() else KeyMode.MAJOR
+                    relative_transposition = hu.get_interval_from_numeral(
+                        relative, local_mode, pitch_type=tonic_type
+                    )
+                    relative_tonic = hu.transpose_pitch(local_tonic, relative_transposition,
+                                                        pitch_type=tonic_type)
+                    local_mode, local_tonic = relative_mode, relative_tonic
 
             return Key(local_tonic, local_mode, tonic_type)
 
