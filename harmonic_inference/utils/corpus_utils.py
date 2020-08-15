@@ -182,7 +182,7 @@ def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFram
                       "were removed.")
         measures = remove_repeats(measures)
 
-    measures = measures.loc[:, ['mc', 'act_dur', 'next']]
+    measures = measures.loc[:, ['mc', 'act_dur', 'next', 'offset']]
 
     # Join notes to their onset measures
     note_measures = pd.merge(
@@ -195,9 +195,9 @@ def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFram
 
     # Simple offset position calculation
     note_measures = note_measures.assign(
-        offset_mc=note_measures.mc, offset_beat=(note_measures.onset + note_measures.duration)
+        offset_mc=note_measures.mc, offset_beat=(note_measures.onset + note_measures.duration -
+                                                 note_measures.offset)
     )
-    notes_measures = note_measures.loc[:, ['act_dur', 'next', 'offset_mc', 'offset_beat']]
 
     # Find which offsets go beyond the end of their current measure, (if it isn't the last measure)
     new_measures = (
@@ -223,16 +223,29 @@ def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFram
         new_merged = pd.merge(to_change_note_measures, measures, how='left',
                               left_on=['file_id', 'offset_mc'], right_on=['file_id', 'mc'])
         new_merged.index = to_change_note_measures.index
-        note_measures.loc[new_measures, ['act_dur', 'next']] = new_merged.loc[:, ['act_dur_y', 'next_y']]
+        note_measures.loc[new_measures, ['act_dur', 'next', 'offset']] = (
+            new_merged.loc[:, ['act_dur_y', 'next_y', 'offset_y']]
+        )
         last_measures = note_measures.loc[new_measures, 'next'].isnull()
 
+        # Fix for notes which end on measure with offset
+        finished = (
+            (note_measures.loc[new_measures, 'offset_beat'] <
+             note_measures.loc[new_measures, 'act_dur']) | last_measures
+        )
+
         # Check for any notes which still go beyond the end of a measure
-        changed_new_measures = ((changed_offset_beats >= note_measures.loc[new_measures, 'act_dur']) &
-                                ~last_measures).to_numpy()
-        new_measures[new_measures] = changed_new_measures
+        new_measures[new_measures] = ~finished
         to_change_note_measures = note_measures.loc[new_measures]
 
-    return notes.assign(offset_mc=note_measures.offset_mc, offset_beat=note_measures.offset_beat)
+    notes = notes.assign(offset_mc=note_measures.offset_mc, offset_beat=note_measures.offset_beat)
+
+    to_fix_merged = pd.merge(notes, measures, how='left',
+                             left_on=['file_id', 'offset_mc'], right_on=['file_id', 'mc'])
+    to_fix_merged.index = notes.index
+
+    notes.offset_beat += to_fix_merged.offset
+    return notes
 
 
 
