@@ -77,9 +77,10 @@ def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.
 
     # Fix for measure offsets
     full_merge = pd.merge(
-        chords, measures, how='left', left_on=['file_id', 'mc'], right_on=['file_id', 'mc']
+        chords.reset_index(), measures, how='left', left_on=['file_id', 'mc'],
+        right_on=['file_id', 'mc']
     )
-    full_merge.index = chords.index
+    full_merge = full_merge.set_index(['file_id', 'chord_id'])
     chords.loc[:, 'on_fixed'] = full_merge.onset - full_merge.offset
 
     # In most cases, next is a simple shift
@@ -94,10 +95,10 @@ def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.
     ]
     last_measures = measures.loc[measures.next.isnull()]
     last_merged = pd.merge(
-        last_chords, last_measures,
+        last_chords.reset_index(), last_measures,
         how='left', left_on=['file_id'], right_on=['file_id']
     )
-    last_merged.index = last_chords.index
+    last_merged = last_merged.set_index(['file_id', 'chord_id'])
 
     # Last chord "next" pointer is end of last measure in piece
     chords.loc[last_chords.index, 'mc_next'] = last_merged.mc_y
@@ -119,10 +120,10 @@ def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.
     while to_check.any():
         # Merge remaining incorrect chords with the current measures
         full_merge = pd.merge(
-            chords.loc[to_check], measures, how='left', left_on=['file_id', 'mc_current'],
-            right_on=['file_id', 'mc']
+            chords.loc[to_check].reset_index(), measures, how='left',
+            left_on=['file_id', 'mc_current'], right_on=['file_id', 'mc']
         )
-        full_merge.index = chords.loc[to_check].index
+        full_merge = full_merge.set_index(['file_id', 'chord_id'])
 
         # Advance 1 measure in chords
         chords.loc[to_check, ['duration', 'mc_current']] = list(zip(
@@ -182,70 +183,78 @@ def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFram
                       "were removed.")
         measures = remove_repeats(measures)
 
+    # Keep only the columns we want in measures for simplicity
     measures = measures.loc[:, ['mc', 'act_dur', 'next', 'offset']]
+    measures.loc[:, 'end'] = measures.act_dur + measures.offset # For faster computation
 
-    # Join notes to their onset measures
+    # Merge "next" to also have next_offset to potentially skip a loop iteration
+    measures = pd.merge(measures.reset_index(), measures, how='left', left_on=['file_id', 'next'],
+                        right_on=['file_id', 'mc'], suffixes=('', '_next'))
+    measures = measures.set_index(['file_id', 'measure_id'])
+
+    # Join notes to their onset measures. Computation will be performed on this combined df
     note_measures = pd.merge(
-        notes.loc[:, ['mc', 'onset', 'duration']], measures,
-        how='left', on=['file_id', 'mc'])
-    note_measures.index = notes.index
+        notes.loc[:, ['mc', 'onset', 'duration']].reset_index(), measures, how='left',
+        on=['file_id', 'mc']
+    )
+    note_measures = note_measures.set_index(['file_id', 'note_id'])
 
-    # Find the last measures of each note
-    last_measures = note_measures.next.isnull() # Default case
-
-    # Simple offset position calculation
+    # Default offset position calculation
     note_measures = note_measures.assign(
-        offset_mc=note_measures.mc, offset_beat=(note_measures.onset + note_measures.duration -
-                                                 note_measures.offset)
+        offset_mc=note_measures.mc, offset_beat=note_measures.onset + note_measures.duration
     )
 
-    # Find which offsets go beyond the end of their current measure, (if it isn't the last measure)
-    new_measures = (
-        (note_measures.offset_beat >= note_measures.act_dur) & ~last_measures
+    # Find which notes are in the last measure of their piece
+    last_measures = note_measures.next.isnull()
+
+    # Fix offsets exactly at end of measure
+    at_end = (note_measures.offset_beat == note_measures.end) & ~last_measures
+    note_measures.loc[at_end, ['offset_mc', 'offset_beat']] = (
+        note_measures.loc[at_end, ['next', 'offset_next']].to_numpy()
+    )
+
+    # Find which offsets go beyond the end of their current measure
+    past_end = (
+        (note_measures.offset_beat > note_measures.end) & ~last_measures & ~at_end
     ).to_numpy()
-    to_change_note_measures = note_measures.loc[new_measures]
+    to_change_note_measures = note_measures.loc[past_end].copy()
 
     # Loop through, fixing those notes that still go beyond the end of their measure
-    while new_measures.any():
-        # Update offset position in 2 steps
-        # First: save lists of only the changed values for faster computation
-        changed_offset_beats = (
-            to_change_note_measures.offset_beat - to_change_note_measures.act_dur
-        ).to_numpy()
-        # Get the next mc for each changing measure
-        changed_offset_mcs = list(to_change_note_measures.next)
-
-        # Second: Update the global offset lists with the changed values
-        note_measures.loc[new_measures, 'offset_beat'] = changed_offset_beats
-        note_measures.loc[new_measures, 'offset_mc'] = changed_offset_mcs
-
-        # Updated measure info for changed note 'mc's
-        new_merged = pd.merge(to_change_note_measures, measures, how='left',
-                              left_on=['file_id', 'offset_mc'], right_on=['file_id', 'mc'])
-        new_merged.index = to_change_note_measures.index
-        note_measures.loc[new_measures, ['act_dur', 'next', 'offset']] = (
-            new_merged.loc[:, ['act_dur_y', 'next_y', 'offset_y']]
+    while len(to_change_note_measures) > 0:
+        # Update offset positions to the next measure
+        note_measures.loc[past_end, 'offset_beat'] = (
+            to_change_note_measures.offset_beat - to_change_note_measures.act_dur +
+            to_change_note_measures.offset_next
         )
-        last_measures = note_measures.loc[new_measures, 'next'].isnull()
+        note_measures.loc[past_end, 'offset_mc'] = to_change_note_measures.next
 
-        # Fix for notes which end on measure with offset
-        finished = (
-            (note_measures.loc[new_measures, 'offset_beat'] <
-             note_measures.loc[new_measures, 'act_dur']) | last_measures
+        # Updated measure info for new "note measures"
+        changed_note_measures = pd.merge(
+            note_measures.loc[past_end, ['offset_beat', 'offset_mc']].reset_index(),
+            measures, how='left', left_on=['file_id', 'offset_mc'], right_on=['file_id', 'mc'])
+        changed_note_measures = changed_note_measures.set_index(['file_id', 'note_id'])
+
+        # Update last measures with new measures
+        last_measures = changed_note_measures.next.isnull()
+
+        # Fix for notes exactly at measure ends
+        at_end = (
+            (changed_note_measures.offset_beat == changed_note_measures.end) & ~last_measures
+        )
+        note_measures.loc[at_end.loc[at_end].index, ['offset_mc', 'offset_beat']] = (
+            changed_note_measures.loc[at_end, ['next', 'offset_next']].to_numpy()
         )
 
         # Check for any notes which still go beyond the end of a measure
-        new_measures[new_measures] = ~finished
-        to_change_note_measures = note_measures.loc[new_measures]
+        changed_past_end = (
+            (changed_note_measures.offset_beat > changed_note_measures.end)
+            & ~last_measures & ~at_end
+        ).to_numpy()
+        past_end[past_end] = changed_past_end
 
-    notes = notes.assign(offset_mc=note_measures.offset_mc, offset_beat=note_measures.offset_beat)
+        to_change_note_measures = changed_note_measures.loc[changed_past_end].copy()
 
-    to_fix_merged = pd.merge(notes, measures, how='left',
-                             left_on=['file_id', 'offset_mc'], right_on=['file_id', 'mc'])
-    to_fix_merged.index = notes.index
-
-    notes.offset_beat += to_fix_merged.offset
-    return notes
+    return notes.assign(offset_mc=note_measures.offset_mc, offset_beat=note_measures.offset_beat)
 
 
 
