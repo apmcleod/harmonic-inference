@@ -11,7 +11,7 @@ from tqdm import tqdm
 import harmonic_inference.utils.rhythmic_utils as ru
 
 
-def remove_repeats(measures: pd.DataFrame) -> pd.DataFrame:
+def remove_repeats(measures: pd.DataFrame, remove_unreachable: bool = True) -> pd.DataFrame:
     """
     Remove repeats from the given measures DataFrame.
 
@@ -19,6 +19,9 @@ def remove_repeats(measures: pd.DataFrame) -> pd.DataFrame:
     ----------
     measures : pd.DataFrame
         The measures data for the entire corpus.
+
+    remove_unreachable : bool
+        Remove rows for measure which are now unreachable.
 
     Returns
     -------
@@ -40,8 +43,30 @@ def remove_repeats(measures: pd.DataFrame) -> pd.DataFrame:
     measures.loc[next_lengths == 1, 'next'] = [
         next_mc[0] for next_mc in measures.loc[next_lengths == 1, 'next'].to_numpy()
     ]
-    measures.loc[last_measures, 'next'] = None
+    measures.loc[last_measures, 'next'] = pd.NA
+    measures.next = measures.next.astype('Int64')
 
+    # Remove measures which are unreachable
+    if remove_unreachable:
+        start_measures = (np.roll(measures.index.get_level_values('file_id').to_numpy(), 1) !=
+                        measures.index.get_level_values('file_id'))
+        start_indices = list(measures.index.to_numpy()[start_measures])
+        mc_type = measures.mc.dtype
+        measures.mc = measures.mc.astype('Int64')
+
+        while True:
+            merged = pd.merge(
+                measures.reset_index(), measures.reset_index(), how='inner',
+                left_on=['file_id', 'next'], right_on=['file_id', 'mc'], suffixes=['', '_next']
+            ).set_index(['file_id', 'measure_id_next'])
+
+            idx = set(list(merged.index.to_numpy()) + start_indices)
+            if len(idx) == len(measures):
+                break
+
+            measures = measures.loc[list(idx)].sort_index()
+
+        measures.mc = measures.mc.astype(mc_type)
     return measures
 
 
@@ -219,8 +244,8 @@ def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFram
     while len(to_change_note_measures) > 0:
         # Update offset positions to the next measure
         note_measures.loc[past_end, 'offset_beat'] = (
-            to_change_note_measures.offset_beat - to_change_note_measures.act_dur +
-            to_change_note_measures.offset_next
+            to_change_note_measures.offset_beat - to_change_note_measures.act_dur -
+            to_change_note_measures.offset + to_change_note_measures.offset_next
         )
         note_measures.loc[past_end, 'offset_mc'] = to_change_note_measures.next
 
@@ -250,7 +275,9 @@ def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFram
 
         to_change_note_measures = changed_note_measures.loc[changed_past_end].copy()
 
-    return notes.assign(offset_mc=note_measures.offset_mc, offset_beat=note_measures.offset_beat)
+    notes = notes.assign(offset_mc=note_measures.offset_mc, offset_beat=note_measures.offset_beat)
+    notes.offset_mc = notes.offset_mc.astype('Int64')
+    return notes
 
 
 
