@@ -33,16 +33,19 @@ def get_range_length(range_start: Tuple[int, Fraction], range_end: Tuple[int, Fr
         return end_beat - start_beat
 
     # Start looping at end of start_mc
-    length, current_mc = measures.loc[measures.mc == start_mc, ['act_dur', 'next']].values[0]
-    length -= start_beat
+    act_dur, offset, current_mc = measures.loc[measures.mc == start_mc,
+                                         ['act_dur', 'offset', 'next']].values[0]
+    length = act_dur + offset - start_beat
 
     # Loop until reaching end_mc
     while current_mc != end_mc and current_mc is not None:
-        length += measures.loc[measures.mc == current_mc, 'act_dur'].values[0]
-        current_mc = measures.loc[measures.mc == current_mc, 'next'].values[0]
+        act_dur, current_mc = measures.loc[measures.mc == current_mc,
+                                           ['act_dur', 'next']].values[0]
+        length += act_dur
 
     # Add remainder
-    length += end_beat
+    final_offset = measures.loc[measures.mc == current_mc, 'offset'].values[0]
+    length += end_beat - final_offset
 
     return length
 

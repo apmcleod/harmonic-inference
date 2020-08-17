@@ -2,14 +2,13 @@
 from typing import List
 from fractions import Fraction
 import warnings
+import logging
 
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
 
 import harmonic_inference.utils.rhythmic_utils as ru
-
-
 
 
 def remove_repeats(measures: pd.DataFrame) -> pd.DataFrame:
@@ -71,8 +70,8 @@ def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.
         and 'duration' (Fraction) columns added.
     """
     if isinstance(measures.iloc[0].next, list) or isinstance(measures.iloc[0].next, tuple):
-        warnings.warn("Repeats have not been unrolled or removed. Calculating offsets as if they "
-                      "were removed.")
+        warnings.warn("Repeats have not been unrolled or removed. They will be unrolled here, but "
+                     "not saved. Unrolling or removing repeats first is faster.")
         measures = remove_repeats(measures)
 
     # Fix for measure offsets
@@ -139,10 +138,8 @@ def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.
 
 def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFrame:
     """
-    Get the offset positions ('mc' measure count and beat) for each note. If the offset is
-    on a downbeat, the returned offset is at the following measure at beat 0; UNLESS the note
-    is in the last measure of a piece, in which case the returned offset is in that measure
-    at a beat equal to the duration of that bar.
+    Add columns 'offset_mc' (int) and 'offset_beat' (Fraction) to the given notes df denoting
+    the offset position of each note.
 
     Parameters
     ----------
@@ -153,9 +150,7 @@ def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFram
                 to index into the given measures DataFrame.
             'onset' (Fraction): The onset time of each note, in whole notes, relative to the
                 beginning of the given mc.
-            'duration' (Fraction): The duration of each note, in whole notes. Notes whose
-                duration goes beyond the end of their mc (e.g., after merging ties) are
-                handled correctly.
+            'duration' (Fraction): The duration of each note, in whole notes.
 
     measures : pd.DataFrame
         A DataFrame containing information about each measure. Must have at least these columns:
@@ -164,13 +159,14 @@ def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFram
                 into this DataFrame.
             'act_dur' (Fraction): The duration of this measure, in whole notes. Note that this
                 can be different from 'timesig', because of, e.g., partial measures near repeats.
-            'next' (tuple(int) or int): The 'mc' of the measure that follows this one. This may contain
-                multiple 'mc's in the case of a repeat, but it is recommended to either
+            'next' (tuple(int) or int): The 'mc' of the measure that follows this one. This may
+                contain multiple 'mc's in the case of a repeat, but it is recommended to either
                 unroll or eliminate repeats before running get_offsets, which will result in
                 only ints or Nones in this column. In the case of a longer list, the last
                 'mc' in the list (measures['next'][-1]) is treated as the next mc and a warning is
                 printed. This functionality is similar to eliminating repeats, although the
                 underlying measures DataFrame is not changed.
+            'offset' (Fraction): The beat, in whole notes, of the beginning of this measure.
 
     Returns
     -------
@@ -179,8 +175,8 @@ def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFram
         'offset_beat' (Fraction) denoting the offset position of each note.
     """
     if isinstance(measures.iloc[0].next, list) or isinstance(measures.iloc[0].next, tuple):
-        warnings.warn("Repeats have not been unrolled or removed. Calculating offsets as if they "
-                      "were removed.")
+        warnings.warn("Repeats have not been unrolled or removed. They will be unrolled here, but "
+                     "not saved. Unrolling or removing repeats first is faster.")
         measures = remove_repeats(measures)
 
     # Keep only the columns we want in measures for simplicity
@@ -330,7 +326,6 @@ def get_notes_during_chord(chord: pd.Series, notes: pd.DataFrame, onsets_only: b
         selected_notes = selected_notes.loc[~selected_notes.overlap.isin([-1, 0])].copy()
 
     return selected_notes
-
 
 
 def find_matching_tie(note: pd.Series = None, note_file_id: int = None,
@@ -548,21 +543,20 @@ def find_matching_tie(note: pd.Series = None, note_file_id: int = None,
 
     # Error -- no match found
     if not np.any(matching_notes_mask):
-        warnings.warn(f"No matching tied note found for note index ({note_file_id}, "
-                      f"{note_note_id}) and duration {note_duration}. Returning None.")
+        logging.warning(f"No matching tied note found for note index ({note_file_id}, "
+                        f"{note_note_id}) and duration {note_duration}. Returning None.")
         return None
 
     # Error -- multiple matches found
     if np.sum(matching_notes_mask) > 1:
-        warnings.warn(f"Multiple matching tied notes found for note index ({note_file_id}, "
-                      f"{note_note_id}) and duration {note_duration}. "
-                      "Returning the first.")
+        logging.warning(f"Multiple matching tied notes found for note index ({note_file_id}, "
+                        f"{note_note_id}) and duration {note_duration}. "
+                        "Returning the first.")
 
     # Return the first note on success or matches > 1
     if not prefiltered:
         return np.argwhere(unfiltered_tied_in_notes_mask)[np.argmax(matching_notes_mask)]
     return np.argmax(matching_notes_mask)
-
 
 
 def merge_ties(notes: pd.DataFrame, measures: pd.DataFrame = None) -> pd.DataFrame:

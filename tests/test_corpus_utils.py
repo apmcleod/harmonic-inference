@@ -39,8 +39,6 @@ def test_remove_repeats():
             mc_current = piece_df.loc[piece_df.mc == mc_current, 'next'].values[0]
 
 
-
-
 def test_get_offsets():
     num_tests = 10000
     indexes = np.random.randint(low=0, high=len(offsets_notes_df), size=num_tests)
@@ -53,8 +51,6 @@ def test_get_offsets():
             f"Note duration {note.duration} not equal to onset offset range {range_len} for "
             f"note {note}"
         )
-
-
 
 
 def test_get_notes_during_chord():
