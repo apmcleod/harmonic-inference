@@ -21,8 +21,19 @@ MEASURES_TSV = 'corpus_data/measures.tsv'
 
 
 def test_remove_repeats():
+    def count_reachable(piece_df, selected_mcs, start_mc):
+        if len(selected_mcs) == 0:
+            return 0
+
+        count = sum([1 for mc in selected_mcs if mc == start_mc])
+        if count == len(selected_mcs):
+            return count
+
+        return count_reachable(piece_df, piece_df.loc[piece_df.next.isin(selected_mcs), 'mc'],
+                               start_mc) + count
+
     measures_df = read_dump(MEASURES_TSV)
-    removed_repeats = cu.remove_repeats(measures_df)
+    removed_repeats = cu.remove_repeats(measures_df, remove_unreachable=True)
 
     # Test well-formedness
     for file_id, piece_df in removed_repeats.groupby('file_id'):
@@ -36,6 +47,27 @@ def test_remove_repeats():
 
         # Check that every measure can be reached except the start_mc
         assert set(piece_df.mc) - set(piece_df.next) == set([piece_df.iloc[0].mc])
+
+
+    removed_repeats_all = cu.remove_repeats(measures_df, remove_unreachable=False)
+    assert len(removed_repeats_all) > len(removed_repeats)
+    removed_repeats = removed_repeats_all
+
+    # Test well-formedness
+    for file_id, piece_df in removed_repeats.groupby('file_id'):
+        piece_df = piece_df.copy()
+
+        assert len(piece_df.loc[piece_df['next'].isnull()]) == 1, "Not exactly 1 mc ends."
+        assert piece_df.next.dtype == 'Int64'
+
+        # Check that every measure can be reached at most once
+        start_mc = piece_df.iloc[0].mc
+        value_counts = piece_df.next.value_counts()
+
+        for mc in value_counts[value_counts > 1].index:
+            assert count_reachable(piece_df, piece_df.loc[piece_df.next == mc, 'mc'], start_mc) <= 1
+
+
 
 
 def test_add_note_offsets():

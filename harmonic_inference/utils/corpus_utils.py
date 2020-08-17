@@ -11,6 +11,29 @@ from tqdm import tqdm
 import harmonic_inference.utils.rhythmic_utils as ru
 
 
+def remove_inactives(dataframe: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFrame:
+    """
+    Remove all rows from the given dataframe which do not have an associated measure in the given
+    measures dataframe.
+
+    Parameters
+    ----------
+    dataframe : pd.DataFrame
+        A DataFrame from which we will remove rows. Must have at least columns 'file_id'
+        (int, index) and 'mc' (int).
+    mesures : pd.DataFrame
+        A DataFrame of valid measures. Must have at least columns 'file_id' (int, index)
+        and 'mc' (int).
+
+    Returns
+    -------
+    new_dataframe : pd.DataFrame
+        A copy of the given dataframe, with any row which does not correspond to a measure
+        from the measures DataFrame removed.
+    """
+    pass
+
+
 def remove_repeats(measures: pd.DataFrame, remove_unreachable: bool = True) -> pd.DataFrame:
     """
     Remove repeats from the given measures DataFrame.
@@ -21,7 +44,7 @@ def remove_repeats(measures: pd.DataFrame, remove_unreachable: bool = True) -> p
         The measures data for the entire corpus.
 
     remove_unreachable : bool
-        Remove rows for measure which are now unreachable.
+        Remove rows for measures which are now unreachable.
 
     Returns
     -------
@@ -31,42 +54,58 @@ def remove_repeats(measures: pd.DataFrame, remove_unreachable: bool = True) -> p
     measures = measures.copy()
     next_lengths = measures.next.apply(len)
 
+    # Find potential last measures of each piece
     last_measures = (next_lengths == 0) | [-1 in n for n in measures.next] # Default case
     last_measures |= (np.roll(measures.index.get_level_values('file_id').to_numpy(), -1) !=
                       measures.index.get_level_values('file_id'))
 
     next_lengths[last_measures] = 0
 
+    # Always hop to the latest measure that might come next
     measures.loc[next_lengths > 1, 'next'] = [
         max(next_mc) for next_mc in measures.loc[next_lengths > 1, 'next'].to_numpy()
     ]
+
+    # Only 1 option
     measures.loc[next_lengths == 1, 'next'] = [
         next_mc[0] for next_mc in measures.loc[next_lengths == 1, 'next'].to_numpy()
     ]
+
+    # Fix the last measures and typing
     measures.loc[last_measures, 'next'] = pd.NA
     measures.next = measures.next.astype('Int64')
 
     # Remove measures which are unreachable
     if remove_unreachable:
+        # Start measures will not be in any next list, but they need to be saved as a special case
         start_measures = (np.roll(measures.index.get_level_values('file_id').to_numpy(), 1) !=
                         measures.index.get_level_values('file_id'))
         start_indices = list(measures.index.to_numpy()[start_measures])
+
+        # Save to reset type later. Needs to be nullable for the merge to work
         mc_type = measures.mc.dtype
         measures.mc = measures.mc.astype('Int64')
 
         while True:
+            # Merge each measure to the next measure
             merged = pd.merge(
                 measures.reset_index(), measures.reset_index(), how='inner',
                 left_on=['file_id', 'next'], right_on=['file_id', 'mc'], suffixes=['', '_next']
             ).set_index(['file_id', 'measure_id_next'])
 
+            # Valid indexes have successfully been merged or are a start index
             idx = set(list(merged.index.to_numpy()) + start_indices)
+
+            # Nothing will change: break
             if len(idx) == len(measures):
                 break
 
+            # Remove measures not in the index list from measures
             measures = measures.loc[list(idx)].sort_index()
 
+        # Reset type
         measures.mc = measures.mc.astype(mc_type)
+
     return measures
 
 
