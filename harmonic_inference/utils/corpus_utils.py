@@ -152,7 +152,7 @@ def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.
         right_on=['file_id', 'mc']
     )
     full_merge = full_merge.set_index(['file_id', 'chord_id'])
-    chords.loc[:, 'on_fixed'] = full_merge.onset - full_merge.offset
+    chords = chords.assign(on_fixed=full_merge.onset - full_merge.offset)
 
     # In most cases, next is a simple shift
     chords = chords.assign(mc_next=chords.mc.shift(-1).astype('Int64'),
@@ -174,7 +174,7 @@ def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.
     # Last chord "next" pointer is end of last measure in piece
     chords.loc[last_chords.index, 'mc_next'] = last_merged.mc_y
     chords.loc[last_chords.index, 'onset_next'] = last_merged.act_dur + last_merged.offset
-    chords.loc[last_chords.index, 'on_next_fixed'] = last_merged.on_fixed
+    chords.loc[last_chords.index, 'on_next_fixed'] = last_merged.act_dur
 
     # Naive duration calculation works if no measure change
     chords.loc[:, 'duration'] = chords.on_next_fixed - chords.on_fixed
@@ -395,6 +395,7 @@ def get_notes_during_chord(chord: pd.Series, notes: pd.DataFrame, onsets_only: b
     selected_notes.loc[ties_in, 'overlap'] = -1
     selected_notes.loc[ties_out, 'overlap'] = 1
     selected_notes.loc[ties_both, 'overlap'] = 0
+    selected_notes.overlap = selected_notes.overlap.astype('Int64')
 
     if onsets_only:
         selected_notes = selected_notes.loc[~selected_notes.overlap.isin([-1, 0])].copy()

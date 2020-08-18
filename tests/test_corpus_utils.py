@@ -1,180 +1,177 @@
-"""Tests for corpu_utils.py"""
+"""Tests for corpus_utils.py"""
 from fractions import Fraction
 from typing import Tuple, List
 
 import pandas as pd
 import numpy as np
 
-from harmonic_inference.utils import rhythmic_utils as ru
-from harmonic_inference.utils import corpus_utils as cu
-from harmonic_inference.data.corpus_reading import read_dump
-
-CHORDS_TSV = 'corpus_data/chords.tsv'
-NOTES_TSV = 'corpus_data/notes.tsv'
-MEASURES_TSV = 'corpus_data/measures.tsv'
-
-measures_df = read_dump(MEASURES_TSV)
-chords_df = read_dump(CHORDS_TSV)
-notes_df = read_dump(NOTES_TSV)
-
-removed_repeats = cu.remove_repeats(measures_df, remove_unreachable=True)
-removed_repeats_with_unreachable = cu.remove_repeats(measures_df, remove_unreachable=False)
-
-# offsets_notes_df = cu.add_note_offsets(notes_df, removed_repeats)
-# merged_notes_df = cu.merge_ties(offsets_notes_df, removed_repeats)
+import harmonic_inference.utils.corpus_utils as cu
+import harmonic_inference.utils.rhythmic_utils as ru
 
 
-def test_remove_unmatched():
-    # Chords
-    chords_df_removed = cu.remove_unmatched(chords_df, removed_repeats)
-    assert chords_df.index.name == chords_df_removed.index.name
-    assert all(chords_df.columns == chords_df_removed.columns)
-    assert len(chords_df_removed) <= len(chords_df)
+measures_dicts = [
+    # No offsets
+    pd.DataFrame({
+        'mc': [1, 2, 3, 4, 5, 6, 7],
+        'act_dur': [Fraction(1),
+                    Fraction(1),
+                    Fraction(1, 2),
+                    Fraction(1),
+                    Fraction(1, 2),
+                    Fraction(1),
+                    Fraction(1, 2)],
+        'offset': [Fraction(0)] * 7,
+        'extra': 0,
+        'next': [(1, 2), (3,), (4,), (5, 6), (6, ), (7, ), (1, 2, 3, -1)]
+    }),
+    # Offsets
+    pd.DataFrame({
+        'mc': [1, 2, 3, 4, 5, 6, 7],
+        'act_dur': [Fraction(1, 2),
+                    Fraction(1, 2),
+                    Fraction(1, 4),
+                    Fraction(1, 2),
+                    Fraction(1, 4),
+                    Fraction(1),
+                    Fraction(1, 4)],
+        'offset': [Fraction(1, 2),
+                    Fraction(1, 2),
+                    Fraction(1, 4),
+                    Fraction(1, 2),
+                    Fraction(1, 4),
+                    Fraction(0),
+                    Fraction(1, 4)],
+        'extra': 0,
+        'next': [(1, 2), (3,), (4,), (6, 5), (6, ), (7, ), (1, 2, -1, 3)]
+    }),
+    pd.DataFrame({ # Alternate offsets
+        'mc': [1, 2, 3, 4, 5, 6, 7],
+        'act_dur': [Fraction(1),
+                    Fraction(1),
+                    Fraction(1, 2),
+                    Fraction(1),
+                    Fraction(1, 2),
+                    Fraction(1),
+                    Fraction(1, 2)],
+        'offset': [Fraction(0),
+                    Fraction(1, 2),
+                    Fraction(1, 4),
+                    Fraction(1, 2),
+                    Fraction(1, 4),
+                    Fraction(0),
+                    Fraction(1, 2)],
+        'extra': 0,
+        'next': [(1, 2, 3), (3,), (4,), (2, 5, 6), (2, 6), (7, ), (1, 2, 3, -1)]
+    })
+]
+measures = pd.concat(
+    measures_dicts, keys=[0, 1, 2], axis=0, names=['file_id', 'measure_id']
+)
+measures.mc = measures.mc.astype('Int64')
 
-    merged = pd.merge(chords_df.reset_index(), removed_repeats, how='inner', on=['file_id', 'mc'])
-    merged = merged.set_index(['file_id', 'chord_id'])
-    assert len(chords_df_removed) == len(merged)
-    assert all(chords_df_removed.index == merged.index)
-
-    assert chords_df.equals(cu.remove_unmatched(chords_df, removed_repeats_with_unreachable))
-
-    # Notes
-    notes_df_removed = cu.remove_unmatched(notes_df, removed_repeats)
-    assert notes_df.index.name == notes_df_removed.index.name
-    assert all(notes_df.columns == notes_df_removed.columns)
-    assert len(notes_df_removed) <= len(notes_df)
-
-    merged = pd.merge(notes_df.reset_index(), removed_repeats, how='inner', on=['file_id', 'mc'])
-    merged = merged.set_index(['file_id', 'note_id'])
-    assert len(notes_df_removed) == len(merged)
-    assert all(notes_df_removed.index == merged.index)
-
-    assert notes_df.equals(cu.remove_unmatched(notes_df, removed_repeats_with_unreachable))
+removed_repeats = cu.remove_repeats(measures, remove_unreachable=True)
+removed_repeats_with_unreachable = cu.remove_repeats(measures, remove_unreachable=False)
 
 
 def test_remove_repeats():
-    def count_reachable(piece_df: pd.DataFrame, selected_mcs: List[int], start_mc: int) -> int:
-        """
-        Get a count of the ways to reach the given list of mcs from the start measure.
-
-        Parameters
-        ----------
-        piece_df : pd.DataFrame
-            The measures df of a single piece.
-        selected_mcs : List[int]
-            A list of mcs whose count to return.
-        start_mc : int
-            The starting measure mc of this piece.
-
-        Returns
-        -------
-        count : int
-            The number of different ways to reach any mc in the given selected_mcs list from the
-            start measure.
-        """
-        if len(selected_mcs) == 0:
-            return 0
-
-        count = sum([1 for mc in selected_mcs if mc == start_mc])
-        if count == len(selected_mcs):
-            return count
-
-        return count_reachable(piece_df, piece_df.loc[piece_df.next.isin(selected_mcs), 'mc'],
-                               start_mc) + count
-
     # Test well-formedness
-    for file_id, piece_df in removed_repeats.groupby('file_id'):
-        piece_df = piece_df.copy()
+    assert removed_repeats.next.dtype == 'Int64'
+    assert all(measures.columns == removed_repeats.columns)
+    assert measures.index.name == removed_repeats.index.name
+    columns = list(set(measures.columns) - set(['next']))
+    assert measures.loc[removed_repeats.index, columns].equals(removed_repeats.loc[:, columns])
 
-        assert len(piece_df.loc[piece_df['next'].isnull()]) == 1, "Not exactly 1 mc ends."
-        assert piece_df.next.dtype == 'Int64'
+    # Check accuracy
+    assert list(removed_repeats.next.to_numpy()) == [
+        2, 3, 4, 6, 7, pd.NA, 2, 3, 4, 6, 7, pd.NA, 3, 4, 6, 7, pd.NA
+    ]
 
-        # Check that every measure can be reached at most once
-        assert piece_df.next.value_counts().max() == 1
+    # Tests with removed_repeats_with_unreachable
+    assert removed_repeats_with_unreachable.next.dtype == 'Int64'
+    assert all(measures.columns == removed_repeats_with_unreachable.columns)
+    assert measures.index.name == removed_repeats_with_unreachable.index.name
+    columns = list(set(measures.columns) - set(['next']))
+    assert measures.loc[removed_repeats_with_unreachable.index, columns].equals(
+        removed_repeats_with_unreachable.loc[:, columns]
+    )
 
-        # Check that every measure can be reached except the start_mc
-        assert set(piece_df.mc) - set(piece_df.next) == set([piece_df.iloc[0].mc])
-
-        # Check that every measure points forwards (ensures no disjoint loops)
-        assert len(piece_df.loc[piece_df.next <= piece_df.mc]) == 0
-
-    # Test with unreachables
-    assert len(removed_repeats_with_unreachable) > len(removed_repeats)
-
-    # Test well-formedness
-    for file_id, piece_df in removed_repeats_with_unreachable.groupby('file_id'):
-        piece_df = piece_df.copy()
-
-        assert len(piece_df.loc[piece_df['next'].isnull()]) == 1, "Not exactly 1 mc ends."
-        assert piece_df.next.dtype == 'Int64'
-
-        # Check that every measure can be reached at most once
-        start_mc = piece_df.iloc[0].mc
-        value_counts = piece_df.next.value_counts()
-
-        for mc in value_counts[value_counts > 1].index:
-            assert count_reachable(piece_df, piece_df.loc[piece_df.next == mc, 'mc'], start_mc) <= 1
+    # Check accuracy
+    assert list(removed_repeats_with_unreachable.next.to_numpy()) == [
+        2, 3, 4, 6, 6, 7, pd.NA, 2, 3, 4, 6, 6, 7, pd.NA, 3, 3, 4, 6, 6, 7, pd.NA
+    ]
 
 
+def test_remove_unmatched():
+    for id_name in ['chord_id', 'note_id']:
+        df = pd.DataFrame({
+            'file_id': [0, 0, 2, 2, 2],
+            id_name: [0, 1, 0, 1, 2],
+            'mc': [1, 5, 2, 3, 12],
+            'extra': Fraction(2, 3)
+        }).set_index(['file_id', id_name])
+
+        df_matched = cu.remove_unmatched(df, removed_repeats)
+        assert df_matched.equals(pd.DataFrame({
+            'file_id': [0, 2],
+            id_name: [0, 1],
+            'mc': [1, 3],
+            'extra': Fraction(2, 3)
+        }).set_index(['file_id', id_name]))
+
+        df_matched = cu.remove_unmatched(df, removed_repeats_with_unreachable)
+        assert df_matched.equals(pd.DataFrame({
+            'file_id': [0, 0, 2, 2],
+            id_name: [0, 1, 0, 1],
+            'mc': [1, 5, 2, 3],
+            'extra': Fraction(2, 3)
+        }).set_index(['file_id', id_name]))
+
+
+def test_add_chord_metrical_data():
+    chords = pd.DataFrame({
+        'file_id': [0, 0, 0, 2, 2, 2],
+        'onset': [Fraction(1, 2),
+                  Fraction(3, 4),
+                  Fraction(0),
+                  Fraction(3, 4),
+                  Fraction(4, 5),
+                  Fraction(1, 2)],
+        'chord_id': [0, 1, 2, 0, 1, 2],
+        'mc': [1, 1, 2, 2, 2, 5],
+        'extra': Fraction(2, 3)
+    }).set_index(['file_id', 'chord_id'])
+
+    offsets_chords_df = cu.add_chord_metrical_data(chords, removed_repeats_with_unreachable)
+
+    # Check well-formedness, structure, size, etc
+    assert offsets_chords_df.mc_next.dtype == 'Int64'
+    assert isinstance(offsets_chords_df.onset_next.values[0], Fraction)
+    assert isinstance(offsets_chords_df.duration.values[0], Fraction)
+    assert all(offsets_chords_df.index == chords.index)
+    assert set(offsets_chords_df.columns) - set(chords.columns) == set(['mc_next', 'onset_next',
+                                                                        'duration'])
+    assert len(set(chords.columns) - set(offsets_chords_df.columns)) == 0
+    assert len(offsets_chords_df.loc[offsets_chords_df.mc_next.isnull()]) == 0
+    assert len(offsets_chords_df.loc[offsets_chords_df.onset_next.isnull()]) == 0
+
+    # Check accuracy
+    assert offsets_chords_df.loc[:, chords.columns].equals(chords)
+    assert list(offsets_chords_df.duration.to_numpy()) == [Fraction(1, 4),
+                                                           Fraction(1, 4),
+                                                           Fraction(4),
+                                                           Fraction(1, 20),
+                                                           Fraction(79, 20),
+                                                           Fraction(7, 4)]
+    assert list(offsets_chords_df.mc_next.to_numpy()) == [1, 2, 7, 2, 5, 7]
+    assert list(offsets_chords_df.onset_next.to_numpy()) == [Fraction(3, 4),
+                                                             Fraction(0),
+                                                             Fraction(1, 2),
+                                                             Fraction(4, 5),
+                                                             Fraction(1, 2),
+                                                             Fraction(1)]
 
 
 def test_add_note_offsets():
-    measures_dicts = [
-        # No offsets
-        pd.DataFrame({
-            'mc': [1, 2, 3, 4, 5, 6, 7],
-            'act_dur': [Fraction(1),
-                        Fraction(1),
-                        Fraction(1, 2),
-                        Fraction(1),
-                        Fraction(1, 2),
-                        Fraction(1),
-                        Fraction(1, 2)],
-            'offset': [Fraction(0)] * 7,
-            'next': [2, 3, 4, 6, 6, 7, pd.NA]
-        }),
-        # Offsets
-        pd.DataFrame({
-            'mc': [1, 2, 3, 4, 5, 6, 7],
-            'act_dur': [Fraction(1, 2),
-                        Fraction(1, 2),
-                        Fraction(1, 4),
-                        Fraction(1, 2),
-                        Fraction(1, 4),
-                        Fraction(1),
-                        Fraction(1, 4)],
-            'offset': [Fraction(1, 2),
-                       Fraction(1, 2),
-                       Fraction(1, 4),
-                       Fraction(1, 2),
-                       Fraction(1, 4),
-                       Fraction(0),
-                       Fraction(1, 4)],
-            'next': [2, 3, 4, 6, 6, 7, pd.NA]
-        }),
-        pd.DataFrame({ # Alternate offsets
-            'mc': [1, 2, 3, 4, 5, 6, 7],
-            'act_dur': [Fraction(1),
-                        Fraction(1),
-                        Fraction(1, 2),
-                        Fraction(1),
-                        Fraction(1, 2),
-                        Fraction(1),
-                        Fraction(1, 2)],
-            'offset': [Fraction(0),
-                       Fraction(1, 2),
-                       Fraction(1, 4),
-                       Fraction(1, 2),
-                       Fraction(1, 4),
-                       Fraction(0),
-                       Fraction(0)],
-            'next': [2, 3, 4, 6, 6, 7, pd.NA]
-        })
-    ]
-    measures = pd.concat(
-        measures_dicts, keys=[0, 1, 2], axis=0, names=['file_id', 'measure_id']
-    )
-
     def check_result(note: pd.DataFrame, target_offset_mc: int, target_offset_beat: Fraction):
         """
         Check the result of a call to cu.add_note_offsets with assertions.
@@ -182,14 +179,23 @@ def test_add_note_offsets():
         Parameters
         ----------
         note : pd.DataFrame
-            A DataFrame with a single note, including offset_mc and offset_beat columns from
-            cu.add_note_offsets.
+            A DataFrame with a single note, to be passed to add_note_offsets.
         target_offset_mc : int
             The correct offset_mc for the note.
         target_offset_beat : Fraction
             The correct offset_beat for the note.
         """
-        note_offset = cu.add_note_offsets(note, measures)
+        note_offset = cu.add_note_offsets(note, removed_repeats)
+
+        # Check well-formedness, structure, size, etc
+        assert note_offset.offset_mc.dtype == 'Int64'
+        assert isinstance(note_offset.offset_beat.values[0], Fraction)
+        assert all(note_offset.index == note.index)
+        assert set(note_offset.columns) - set(note.columns) == set(['offset_beat',
+                                                                    'offset_mc'])
+        assert len(set(note.columns) - set(note_offset.columns)) == 0
+        assert len(note_offset.loc[note_offset.offset_mc.isnull()]) == 0
+        assert len(note_offset.loc[note_offset.offset_beat.isnull()]) == 0
 
         # Check values
         assert note.equals(note_offset.loc[:, ['mc', 'onset', 'duration']])
@@ -199,7 +205,7 @@ def test_add_note_offsets():
         # Check with rhythmic utils
         assert ru.get_range_length(
             (note.mc.values[0], note.onset.values[0]), (target_offset_mc, target_offset_beat),
-            measures.loc[note.index.get_level_values('file_id')]
+            removed_repeats.loc[note.index.get_level_values('file_id')]
         ) == note.duration.values[0]
 
         # Check types
@@ -309,85 +315,55 @@ def test_add_note_offsets():
 
 
 def test_get_notes_during_chord():
-    def comes_before(t1_loc: Tuple[int, Fraction], t2_loc: Tuple[int, Fraction]) -> bool:
-        t1_mc, t1_beat = t1_loc
-        t2_mc, t2_beat = t2_loc
-        if t1_mc < t2_mc:
-            return True
-        if t1_mc > t2_mc:
-            return False
-        return t1_beat < t2_beat
+    chords = pd.DataFrame({
+        'file_id': [0, 0, 2, 2],
+        'onset': [Fraction(3, 4),
+                  Fraction(1, 2),
+                  Fraction(3, 4),
+                  Fraction(1, 2)],
+        'chord_id': [0, 1, 0, 1],
+        'mc': [2, 4, 2, 4],
+        'extra': Fraction(2, 3)
+    }).set_index(['file_id', 'chord_id'])
+    offsets_chords_df = cu.add_chord_metrical_data(chords, removed_repeats_with_unreachable)
 
-    num_tests = 1000
-    indexes = np.random.randint(low=0, high=len(chords_df), size=num_tests)
-    return_sizes = []
-    return_non_onsets = []
+    # In order: before, tied_into, tied_both, inside, tied_out, after
+    notes = pd.DataFrame({
+        'file_id': [0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2],
+        'note_id': [0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5],
+        'extra': Fraction(2, 3),
+        'mc': [1, 1, 1, 2, 2, 4, 1, 1, 1, 2, 2, 4],
+        'onset': [Fraction(0),
+                  Fraction(0),
+                  Fraction(0),
+                  Fraction(0),
+                  Fraction(0),
+                  Fraction(0),
+                  Fraction(0),
+                  Fraction(0),
+                  Fraction(0),
+                  Fraction(0),
+                  Fraction(0),
+                  Fraction(0)],
+        'duration': [Fraction(0),
+                     Fraction(0),
+                     Fraction(0),
+                     Fraction(0),
+                     Fraction(0),
+                     Fraction(0),
+                     Fraction(0),
+                     Fraction(0),
+                     Fraction(0),
+                     Fraction(0),
+                     Fraction(0),
+                     Fraction(0)]
+    }).set_index(['file_id', 'note_id'])
+    offsets_notes_df = cu.add_note_offsets(notes, removed_repeats_with_unreachable)
 
-    for i in indexes:
-        chord = chords_df.iloc[i]
+    for chord_id, chord in offsets_chords_df.iloc[1::2].iterrows():
         notes = cu.get_notes_during_chord(chord, offsets_notes_df)
-        return_sizes.append(len(notes))
-        return_non_onsets.append(0)
-        for _, note in notes.iterrows():
-            if pd.isna(note.overlap):
-                # Note onset is not before chord
-                assert not comes_before((note.mc, note.onset), (chord.mc, chord.onset))
-                # Note offset is not after chord
-                assert not comes_before((chord.mc_next, chord.onset_next),
-                                        (note.offset_mc, note.offset_beat))
 
-            elif note.overlap == -1:
-                return_non_onsets[-1] += 1
-                # Note onset is before chord
-                assert comes_before((note.mc, note.onset), (chord.mc, chord.onset))
-                # Note offset is not after chord
-                assert not comes_before((chord.mc_next, chord.onset_next),
-                                        (note.offset_mc, note.offset_beat))
-
-            elif note.overlap == 0:
-                return_non_onsets[-1] += 1
-                # Note onset is before chord
-                assert comes_before((note.mc, note.onset), (chord.mc, chord.onset))
-                # Note offset is after chord
-                assert comes_before((chord.mc_next, chord.onset_next),
-                                    (note.offset_mc, note.offset_beat))
-
-            elif note.overlap == 1:
-                # Note onset is not before chord
-                assert not comes_before((note.mc, note.onset), (chord.mc, chord.onset))
-                # Note offset is after chord
-                assert comes_before((chord.mc_next, chord.onset_next),
-                                    (note.offset_mc, note.offset_beat))
-
-            else:
-                assert False, "Invalid overlap value returned: " + str(note.overlap)
-
-    for list_index, i in enumerate(indexes):
-        chord = chords_df.iloc[i]
-        notes = cu.get_notes_during_chord(chord, offsets_notes_df, onsets_only=True)
-        assert len(notes) == return_sizes[list_index] - return_non_onsets[list_index], (
-            "Length of returned df incorrect with onsets_only"
-        )
-        for _, note in notes.iterrows():
-            if pd.isna(note.overlap):
-                # Note onset is not before chord
-                assert not comes_before((note.mc, note.onset), (chord.mc, chord.onset))
-                # Note offset is not after chord
-                assert not comes_before((chord.mc_next, chord.onset_next),
-                                        (note.offset_mc, note.offset_beat))
-
-            elif note.overlap == -1:
-                assert False, "onsets_only returned an overlap -1"
-
-            elif note.overlap == 0:
-                assert False, "onsets_only returned an overlap 0"
-
-            elif note.overlap == 1:
-                # Note onset is not before chord
-                assert not comes_before((note.mc, note.onset), (chord.mc, chord.onset))
-                # Note offset is after chord
-                assert comes_before((chord.mc_next, chord.onset_next),
-                                    (note.offset_mc, note.offset_beat))
-
-            else:
-                assert False, "Invalid overlap value returned: " + str(note.overlap)
+        assert set(notes.columns) == set(list(offsets_notes_df.columns) + ['overlap'])
+        if len(notes) > 0:
+            assert notes.loc[:, offsets_notes_df.columns].equals(offsets_notes_df.loc[notes.index])
+        assert notes.overlap.dtype == 'Int64'

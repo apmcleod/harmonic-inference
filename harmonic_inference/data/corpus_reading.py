@@ -15,9 +15,9 @@ str2strtuple = lambda l: tuple() if l == '' else tuple(str(s) for s in l.split('
 iterable2str = lambda iterable: ', '.join(str(s) for s in iterable)
 def int2bool(s):
     try:
-        return bool(int(s))
+        return pd.BooleanDtype(int(s))
     except:
-        return s
+        return pd.NA
 
 
 CONVERTERS = {
@@ -53,7 +53,7 @@ DTYPES = {
     'keysig': int,
     'label': str,
     'localkey': str,
-    'mc': int,
+    'mc': 'Int64',
     'midi': int,
     'mn': int,
     'notes_id': 'Int64',
