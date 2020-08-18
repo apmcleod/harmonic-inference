@@ -1,6 +1,6 @@
 """Tests for corpu_utils.py"""
 from fractions import Fraction
-from typing import Tuple
+from typing import Tuple, List
 
 import pandas as pd
 import numpy as np
@@ -9,19 +9,69 @@ from harmonic_inference.utils import rhythmic_utils as ru
 from harmonic_inference.utils import corpus_utils as cu
 from harmonic_inference.data.corpus_reading import read_dump
 
-# CHORDS_TSV = 'corpus_data/chords.tsv'
-# NOTES_TSV = 'corpus_data/notes.tsv'
+CHORDS_TSV = 'corpus_data/chords.tsv'
+NOTES_TSV = 'corpus_data/notes.tsv'
 MEASURES_TSV = 'corpus_data/measures.tsv'
 
-# chords_df = read_dump(CHORDS_TSV)
-# notes_df = read_dump(NOTES_TSV)
+measures_df = read_dump(MEASURES_TSV)
+chords_df = read_dump(CHORDS_TSV)
+notes_df = read_dump(NOTES_TSV)
+
+removed_repeats = cu.remove_repeats(measures_df, remove_unreachable=True)
+removed_repeats_with_unreachable = cu.remove_repeats(measures_df, remove_unreachable=False)
 
 # offsets_notes_df = cu.add_note_offsets(notes_df, removed_repeats)
 # merged_notes_df = cu.merge_ties(offsets_notes_df, removed_repeats)
 
 
+def test_remove_unmatched():
+    # Chords
+    chords_df_removed = cu.remove_unmatched(chords_df, removed_repeats)
+    assert chords_df.index.name == chords_df_removed.index.name
+    assert all(chords_df.columns == chords_df_removed.columns)
+    assert len(chords_df_removed) <= len(chords_df)
+
+    merged = pd.merge(chords_df.reset_index(), removed_repeats, how='inner', on=['file_id', 'mc'])
+    merged = merged.set_index(['file_id', 'chord_id'])
+    assert len(chords_df_removed) == len(merged)
+    assert all(chords_df_removed.index == merged.index)
+
+    assert chords_df.equals(cu.remove_unmatched(chords_df, removed_repeats_with_unreachable))
+
+    # Notes
+    notes_df_removed = cu.remove_unmatched(notes_df, removed_repeats)
+    assert notes_df.index.name == notes_df_removed.index.name
+    assert all(notes_df.columns == notes_df_removed.columns)
+    assert len(notes_df_removed) <= len(notes_df)
+
+    merged = pd.merge(notes_df.reset_index(), removed_repeats, how='inner', on=['file_id', 'mc'])
+    merged = merged.set_index(['file_id', 'note_id'])
+    assert len(notes_df_removed) == len(merged)
+    assert all(notes_df_removed.index == merged.index)
+
+    assert notes_df.equals(cu.remove_unmatched(notes_df, removed_repeats_with_unreachable))
+
+
 def test_remove_repeats():
-    def count_reachable(piece_df, selected_mcs, start_mc):
+    def count_reachable(piece_df: pd.DataFrame, selected_mcs: List[int], start_mc: int) -> int:
+        """
+        Get a count of the ways to reach the given list of mcs from the start measure.
+
+        Parameters
+        ----------
+        piece_df : pd.DataFrame
+            The measures df of a single piece.
+        selected_mcs : List[int]
+            A list of mcs whose count to return.
+        start_mc : int
+            The starting measure mc of this piece.
+
+        Returns
+        -------
+        count : int
+            The number of different ways to reach any mc in the given selected_mcs list from the
+            start measure.
+        """
         if len(selected_mcs) == 0:
             return 0
 
@@ -31,9 +81,6 @@ def test_remove_repeats():
 
         return count_reachable(piece_df, piece_df.loc[piece_df.next.isin(selected_mcs), 'mc'],
                                start_mc) + count
-
-    measures_df = read_dump(MEASURES_TSV)
-    removed_repeats = cu.remove_repeats(measures_df, remove_unreachable=True)
 
     # Test well-formedness
     for file_id, piece_df in removed_repeats.groupby('file_id'):
@@ -48,13 +95,14 @@ def test_remove_repeats():
         # Check that every measure can be reached except the start_mc
         assert set(piece_df.mc) - set(piece_df.next) == set([piece_df.iloc[0].mc])
 
+        # Check that every measure points forwards (ensures no disjoint loops)
+        assert len(piece_df.loc[piece_df.next <= piece_df.mc]) == 0
 
-    removed_repeats_all = cu.remove_repeats(measures_df, remove_unreachable=False)
-    assert len(removed_repeats_all) > len(removed_repeats)
-    removed_repeats = removed_repeats_all
+    # Test with unreachables
+    assert len(removed_repeats_with_unreachable) > len(removed_repeats)
 
     # Test well-formedness
-    for file_id, piece_df in removed_repeats.groupby('file_id'):
+    for file_id, piece_df in removed_repeats_with_unreachable.groupby('file_id'):
         piece_df = piece_df.copy()
 
         assert len(piece_df.loc[piece_df['next'].isnull()]) == 1, "Not exactly 1 mc ends."
@@ -127,7 +175,20 @@ def test_add_note_offsets():
         measures_dicts, keys=[0, 1, 2], axis=0, names=['file_id', 'measure_id']
     )
 
-    def check_result(note, target_offset_mc, target_offset_beat):
+    def check_result(note: pd.DataFrame, target_offset_mc: int, target_offset_beat: Fraction):
+        """
+        Check the result of a call to cu.add_note_offsets with assertions.
+
+        Parameters
+        ----------
+        note : pd.DataFrame
+            A DataFrame with a single note, including offset_mc and offset_beat columns from
+            cu.add_note_offsets.
+        target_offset_mc : int
+            The correct offset_mc for the note.
+        target_offset_beat : Fraction
+            The correct offset_beat for the note.
+        """
         note_offset = cu.add_note_offsets(note, measures)
 
         # Check values

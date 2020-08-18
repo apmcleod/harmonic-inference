@@ -11,7 +11,7 @@ from tqdm import tqdm
 import harmonic_inference.utils.rhythmic_utils as ru
 
 
-def remove_inactives(dataframe: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFrame:
+def remove_unmatched(dataframe: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFrame:
     """
     Remove all rows from the given dataframe which do not have an associated measure in the given
     measures dataframe.
@@ -31,7 +31,15 @@ def remove_inactives(dataframe: pd.DataFrame, measures: pd.DataFrame) -> pd.Data
         A copy of the given dataframe, with any row which does not correspond to a measure
         from the measures DataFrame removed.
     """
-    pass
+    # List of columns that are indexes for the given dataframe, in order to re-index after merge
+    index_list = list(dataframe.index.names)
+
+    # Inner merge removes unmatched rows from the given dataframe
+    merged = pd.merge(dataframe.loc[:, 'mc'].reset_index(), measures.loc[:, 'mc'], how='inner',
+                      on=['file_id', 'mc'])
+    merged_index = merged.set_index(index_list).index
+
+    return dataframe.loc[merged_index].copy()
 
 
 def remove_repeats(measures: pd.DataFrame, remove_unreachable: bool = True) -> pd.DataFrame:
