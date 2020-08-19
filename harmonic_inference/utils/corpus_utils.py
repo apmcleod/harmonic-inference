@@ -454,7 +454,7 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
           Any interveing tied=0 notes and the ending tied=-1 note will be removed.
         - A non-matched 0 which eventually reaches a -1 will have tied=-1. Otherwise, it will have
           tied=0. Any intervening tied=0 notes and the ending tied=-1 note will be removed.
-        -A non-matched tied=-1 will have tied=-1.
+        - A non-matched tied=-1 will have tied=-1.
         Gracenotes are returned as is.
     """
     # First, check for offset information
@@ -462,12 +462,16 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
         "Notes must contain offset information. Run `notes = corpus_utils.add_note_offsets` first."
     )
 
+    # Split notes into those that will change and those that will not
     changing_notes_mask = notes.gracenote.isnull() & ~notes.tied.isnull()
-    changing_notes = notes.loc[changing_notes_mask].copy()
+    changing_notes = notes.loc[changing_notes_mask]
     unchanging_notes = notes.loc[~changing_notes_mask].copy()
 
+    # Tracking dfs for tied out and in notes. These will be kept up to date while iterating
     tied_out_notes = changing_notes.loc[changing_notes.tied == 1].copy()
     tied_in_notes = changing_notes.loc[changing_notes.tied.isin([0, -1])].copy()
+
+    # This will track all notes that are finished, or will no longer be matched ever
     finished_notes_dfs = []
 
     # Merge notes beginning with a tied=1 note iteratively
@@ -480,7 +484,7 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
     while changes and len(merged) > 0:
         changes = False
 
-        # Get views of df from tied_out and tied_out perspectives
+        # Get views of merged df using both tied_out and tied_out indexing
         merged_out_indexed = merged.set_index(['file_id', 'note_id_out'])
         merged_in_indexed = merged.set_index(['file_id', 'note_id_in'])
 
@@ -496,7 +500,7 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
         merged.loc[:, 'new_tied'] = pd.NA
         merged.loc[merged.tied_in == 0, 'new_tied'] = 1
 
-        # Simple update for notes only in merged_notes once
+        # Find pairs of notes where each is only in merged_notes once
         single_match_out_mask = merged_out_indexed.index.isin(
             merged_out_indexed.loc[merged_out_indexed.index.value_counts() == 1].index
         )
@@ -504,14 +508,16 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
             merged_in_indexed.loc[merged_in_indexed.index.value_counts() == 1].index
         )
         single_match_both = single_match_out_mask & single_match_in_mask
+
+        # Update global tied_notes_out df with new matched values
         tied_out_notes.loc[merged_out_indexed.index[single_match_both],
                            ['offset_mc', 'offset_beat', 'duration', 'tied']] = (
             merged.loc[single_match_both,
                        ['offset_mc_in', 'offset_beat_in', 'new_dur', 'new_tied']].values
         )
 
-        # Detect updates
-        if sum(single_match_both) > 0:
+        # Detect updates -- if anything has changed we should keep iterating
+        if any(single_match_both):
             changes = True
 
         # Move finished notes from tied_out into finished
@@ -520,46 +526,52 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
             finished_notes_dfs.append(finished)
             tied_out_notes = tied_out_notes.drop(finished.index)
 
-        # Remove singly-matched in_notes
+        # Remove any used notes from tied_in_notes
         tied_in_notes = tied_in_notes.drop(merged_in_indexed.index[single_match_both])
 
-        # Re-match doubly-matched notes with staff and voice
+        # Re-match doubly-matched notes using staff and voice
         doubly_matched = ~single_match_both
 
-        if sum(doubly_matched) > 0:
+        if any(doubly_matched):
             merged_doubly = merged.loc[doubly_matched]
             merged_more = merged_doubly.loc[(merged_doubly.staff_out == merged_doubly.staff_in) &
                                             (merged_doubly.voice_out == merged_doubly.voice_in)]
 
-            # Naively drop notes that are still duplicates -- there is nothing more we can do
+            # Naively drop notes that are still duplicates -- there is no other way to disambiguate
             merged_more = merged_more.drop_duplicates(subset=['file_id', 'note_id_out'])
             merged_more = merged_more.drop_duplicates(subset=['file_id', 'note_id_in'])
             # TODO: WARN
 
+            # Get views of multiply-matched df using both out and in indexing
             merged_more_out = merged_more.set_index(['file_id', 'note_id_out'])
             merged_more_in = merged_more.set_index(['file_id', 'note_id_in'])
-            tied_out_notes.loc[merged_more_out.index, ['offset_mc', 'offset_beat', 'duration', 'tied']] = (
-                merged_more_out.loc[:, ['offset_mc_in', 'offset_beat_in', 'new_dur', 'new_tied']].values
+
+            # Update global tied_out_notes df with new values
+            tied_out_notes.loc[merged_more_out.index,
+                               ['offset_mc', 'offset_beat', 'duration', 'tied']] = (
+                merged_more_out.loc[
+                    :, ['offset_mc_in', 'offset_beat_in', 'new_dur', 'new_tied']
+                ].values
             )
 
-            # Detect changes
-            if len(merged_more) > 0:
+            # If anything has changed, we should iterate again
+            if any(merged_more):
                 changes = True
 
             # Move finished notes from tied_out into finished
             finished = tied_out_notes.loc[tied_out_notes.tied.isnull()].copy()
             if len(finished) > 0:
                 finished_notes_dfs.append(finished)
-                tied_out_notes = tied_out_notes.drop(tied_out_notes.loc[tied_out_notes.tied.isnull()].index)
+                tied_out_notes = tied_out_notes.drop(finished.index)
 
             # Remove now-matched in notes
             tied_in_notes = tied_in_notes.drop(merged_more_in.index)
 
+        # Re-merge for next iteration
         merged = pd.merge(tied_out_notes.reset_index(), tied_in_notes.reset_index(), how='inner',
                           left_on=['file_id', 'midi', 'offset_mc', 'offset_beat'],
                           right_on=['file_id', 'midi', 'mc', 'onset'],
                           suffixes=('_out', '_in'))
-
 
     finished_df = pd.concat(finished_notes_dfs)
     return pd.concat([unchanging_notes, tied_out_notes, tied_in_notes, finished_df]).sort_index()

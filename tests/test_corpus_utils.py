@@ -419,7 +419,7 @@ def test_merge_ties():
     # TESTS:
     #  -midi is taken into account
     #  -offset beat is take into account
-    #  -multiple identicly-matched with voice and staff still works
+    #  -multiple identically-matched with voice and staff still works
     notes_list.append(pd.DataFrame({
         'mc': [0, 1, 1, 1, 1, 2, 2, 3, 4, 5],
         'onset': [Fraction(0)] * 7 + [Fraction(1, 2)] * 3,
@@ -433,21 +433,23 @@ def test_merge_ties():
         'tied': [1, -1, -1, -1, 1, -1, 1, -1, 1, -1]
     }))
 
-    # TODO: Multiple matches where neither matches staff or voice
-    # TODO: Ties beginning with tied=0
+    # TESTS:
+    #  -ties beginning with tied=0
+    #  -multiply-matched cases where neither matches staff or voice
     notes_list.append(pd.DataFrame({
-        'mc': [],
-        'onset': [],
-        'duration': [],
-        'offset_mc': [],
-        'offset_beat': [],
-        'midi': [],
-        'staff': [],
-        'voice': [],
-        'gracenote': [],
-        'tied': []
+        'mc': [0, 1, 1, 1, 2, 3, 3, 3],
+        'onset': Fraction(0),
+        'duration': Fraction(1),
+        'offset_mc': [1, 2, 2, 2, 3, 4, 4, 4],
+        'offset_beat': Fraction(0),
+        'midi': 50,
+        'staff': [0, 1, 1, 1, 0, 1, 1, 1],
+        'voice': [0, 1, 1, 1, 0, 1, 1, 1],
+        'gracenote': None,
+        'tied': [1, 0, 0, 0, 0, -1, -1, -1]
     }))
 
+    # Create notes in good format
     notes = pd.concat(
         notes_list, keys=list(range(len(notes_list))), axis=0, names=['file_id', 'note_id']
     )
@@ -485,3 +487,13 @@ def test_merge_ties():
     assert all(merged_single.duration == [2, 1, 1, 1, 1, Fraction(1, 2), 1, 1, 1])
     # Fix for pd.NA == pd.NA returns False
     assert all(merged_single.tied.fillna(100) == [100, -1, -1, 1, -1, 1, -1, 1, -1])
+
+    # Now, check accuracy
+    merged_single = merged.loc[2]
+    assert len(merged_single) == 3
+    assert all(merged_single.index == [0, 2, 3])
+    assert all(merged_single.offset_mc == [4, 4, 2])
+    assert all(merged_single.offset_beat == [0, 0, 0])
+    assert all(merged_single.duration == [4, 3, 1])
+    # Fix for pd.NA == pd.NA returns False
+    assert all(merged_single.tied.fillna(100) == [100, 100, 0])
