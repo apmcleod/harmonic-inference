@@ -370,7 +370,7 @@ def test_get_notes_during_chord():
         assert set(notes.columns) == set(list(offsets_notes_df.columns) + ['overlap'])
         assert notes.index.names == offsets_notes_df.index.names
         if len(notes) > 0:
-            assert notes.loc[:, offsets_notes_df.columns].equals(offsets_notes_df.loc[notes.index]), f'{notes}\n{offsets_notes_df.loc[notes.index]}'
+            assert notes.loc[:, offsets_notes_df.columns].equals(offsets_notes_df.loc[notes.index])
         assert notes.overlap.dtype == 'Int64'
         assert len(notes) == 4
         assert list(notes.overlap) == [-1, 0, pd.NA, 1]
@@ -391,3 +391,97 @@ def test_get_notes_during_chord():
         assert notes.index.names == offsets_notes_df.index.names
         assert set(notes.columns) == set(list(offsets_notes_df.columns) + ['overlap'])
         assert notes.overlap.dtype == 'Int64'
+
+
+def test_merge_ties():
+    notes_list = []
+
+    # TESTS:
+    #  -an unmatched note
+    #  -long chained match
+    #  -doubly-matched disambiguated by voice and staff
+    #  -two matches at the same time
+    #  -gracenotes are skipped
+    #  -un-ending tie
+    notes_list.append(pd.DataFrame({
+        'mc': [0, 1, 2, 3, 4, 4, 5, 6, 7, 8, 8],
+        'onset': Fraction(0),
+        'duration': [Fraction(1)] * 5 + [Fraction(1, 2)] * 5 + [Fraction(0)],
+        'offset_mc': [1, 2, 3, 4, 5, 5, 6, 6, 8, 9, 8],
+        'offset_beat': [Fraction(0)] * 7 + [Fraction(1, 2)] + [Fraction(0)] * 3,
+        'midi': 40,
+        'staff': 2,
+        'voice': [0, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0],
+        'gracenote': [None] * 10 + ['grace'],
+        'tied': [1, 0, 0, 0, -1, 0, -1, pd.NA, 1, 0, -1]
+    }))
+
+    # TESTS:
+    #  -midi is taken into account
+    #  -offset beat is take into account
+    #  -multiple identicly-matched with voice and staff still works
+    notes_list.append(pd.DataFrame({
+        'mc': [0, 1, 1, 1, 1, 2, 2, 3, 4, 5],
+        'onset': [Fraction(0)] * 7 + [Fraction(1, 2)] * 3,
+        'duration': [Fraction(1)] * 6 + [Fraction(1, 2)] + [Fraction(1)] * 3,
+        'offset_mc': [1, 2, 2, 2, 2, 3, 3, 4, 5, 6],
+        'offset_beat': Fraction(0),
+        'midi': [40] * 5 + [50] * 5,
+        'staff': 0,
+        'voice': 0,
+        'gracenote': None,
+        'tied': [1, -1, -1, -1, 1, -1, 1, -1, 1, -1]
+    }))
+
+    # TODO: Multiple matches where neither matches staff or voice
+    # TODO: Ties beginning with tied=0
+    notes_list.append(pd.DataFrame({
+        'mc': [],
+        'onset': [],
+        'duration': [],
+        'offset_mc': [],
+        'offset_beat': [],
+        'midi': [],
+        'staff': [],
+        'voice': [],
+        'gracenote': [],
+        'tied': []
+    }))
+
+    notes = pd.concat(
+        notes_list, keys=list(range(len(notes_list))), axis=0, names=['file_id', 'note_id']
+    )
+    notes = notes.assign(extra=Fraction(3, 2))
+    for column in ['mc', 'offset_mc', 'midi', 'staff', 'voice', 'tied']:
+        notes.loc[:, column] = notes[column].astype('Int64')
+
+    merged = cu.merge_ties(notes)
+
+    # First, check form of result
+    assert notes.equals(notes)
+    assert merged.index.names == notes.index.names
+    assert len(set(merged.columns) - set(notes.columns)) == 0
+    assert len(set(notes.columns) - set(merged.columns)) == 0
+
+    unchanged = list(set(notes.columns) - set(['offset_mc', 'offset_beat', 'duration', 'tied']))
+    assert notes.loc[merged.index, unchanged].equals(merged.loc[:, unchanged])
+
+    # Now, check accuracy
+    merged_single = merged.loc[0]
+    assert len(merged_single) == 5
+    assert all(merged_single.index == [0, 4, 7, 8, 10])
+    assert all(merged_single.offset_mc == [6, 5, 6, 9, 8])
+    assert all(merged_single.offset_beat == [0, 0, Fraction(1, 2), 0, 0])
+    assert all(merged_single.duration == [Fraction(5), Fraction(1), Fraction(1, 2), 1, 0])
+    # Fix for pd.NA == pd.NA returns False
+    assert all(merged_single.tied.fillna(100) == [100, -1, 100, 1, -1])
+
+    # Now, check accuracy
+    merged_single = merged.loc[1]
+    assert len(merged_single) == 9
+    assert all(merged_single.index == [0, 2, 3, 4, 5, 6, 7, 8, 9])
+    assert all(merged_single.offset_mc == [2, 2, 2, 2, 3, 3, 4, 5, 6])
+    assert all(merged_single.offset_beat == [0, 0, 0, 0, 0, 0, 0, 0, 0])
+    assert all(merged_single.duration == [2, 1, 1, 1, 1, Fraction(1, 2), 1, 1, 1])
+    # Fix for pd.NA == pd.NA returns False
+    assert all(merged_single.tied.fillna(100) == [100, -1, -1, 1, -1, 1, -1, 1, -1])
