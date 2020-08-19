@@ -469,6 +469,7 @@ def test_merge_ties():
     assert notes.loc[merged.index, unchanged].equals(merged.loc[:, unchanged])
 
     # Now, check accuracy
+    assert 0 in merged.index.get_level_values(0)
     merged_single = merged.loc[0]
     assert len(merged_single) == 5
     assert all(merged_single.index == [0, 4, 7, 8, 10])
@@ -479,9 +480,14 @@ def test_merge_ties():
     assert all(merged_single.tied.fillna(100) == [100, -1, 100, 1, -1])
 
     # Now, check accuracy
+    assert 1 in merged.index.get_level_values(0)
     merged_single = merged.loc[1]
     assert len(merged_single) == 9
-    assert all(merged_single.index == [0, 2, 3, 4, 5, 6, 7, 8, 9])
+    always_in = [0, 4, 5, 6, 7, 8, 9]
+    sometimes_in = [1, 2, 3]
+    index_set = set(merged_single.index) - set(always_in)
+    assert sum(i in index_set for i in sometimes_in) == 2
+    assert len(set(always_in) - set(merged_single.index)) == 0
     assert all(merged_single.offset_mc == [2, 2, 2, 2, 3, 3, 4, 5, 6])
     assert all(merged_single.offset_beat == [0, 0, 0, 0, 0, 0, 0, 0, 0])
     assert all(merged_single.duration == [2, 1, 1, 1, 1, Fraction(1, 2), 1, 1, 1])
@@ -489,11 +495,24 @@ def test_merge_ties():
     assert all(merged_single.tied.fillna(100) == [100, -1, -1, 1, -1, 1, -1, 1, -1])
 
     # Now, check accuracy
+    assert 2 in merged.index.get_level_values(0)
     merged_single = merged.loc[2]
     assert len(merged_single) == 3
-    assert all(merged_single.index == [0, 2, 3])
-    assert all(merged_single.offset_mc == [4, 4, 2])
+    always_in = [0]
+    sometimes_in = [1, 2, 3]
+    index_set = set(merged_single.index) - set(always_in)
+    assert sum(i in index_set for i in sometimes_in) == 2
+    assert len(set(always_in) - set(merged_single.index)) == 0
+    assert all(merged_single.offset_mc == [4, 4, 2]) or all(merged_single.offset_mc == [4, 2, 4])
     assert all(merged_single.offset_beat == [0, 0, 0])
-    assert all(merged_single.duration == [4, 3, 1])
+    assert all(merged_single.duration == [4, 3, 1]) or all(merged_single.duration == [4, 1, 3])
     # Fix for pd.NA == pd.NA returns False
-    assert all(merged_single.tied.fillna(100) == [100, 100, 0])
+    assert (all(merged_single.tied.fillna(100) == [100, 100, 0]) or
+            all(merged_single.tied.fillna(100) == [100, 0, 100]))
+    # Ensure the orderings for the variable fields are consistent
+    total = 0
+    for i in 1, 2:
+        if (merged_single.offset_mc.values[i] == 4 and merged_single.duration.values[i] == 3 and
+                merged_single.tied.fillna(100) == 100):
+            total += 1
+    assert total == 1
