@@ -280,6 +280,7 @@ def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFram
     note_measures.loc[at_end, ['offset_mc', 'offset_beat']] = (
         note_measures.loc[at_end, ['next', 'offset_next']].to_numpy()
     )
+    note_measures.offset_mc = note_measures.offset_mc.astype('Int64')
 
     # Find which offsets go beyond the end of their current measure
     past_end = (
@@ -328,8 +329,8 @@ def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFram
 
 
 
-def get_notes_during_chord(chord: pd.Series, notes: pd.DataFrame, onsets_only: bool = False,
-                           measures: pd.DataFrame = None) -> pd.DataFrame:
+def get_notes_during_chord(chord: pd.Series, notes: pd.DataFrame,
+                           onsets_only: bool = False) -> pd.DataFrame:
     """
     Get all of the notes that occur during the given chord.
 
@@ -340,10 +341,6 @@ def get_notes_during_chord(chord: pd.Series, notes: pd.DataFrame, onsets_only: b
 
     notes : pd.DataFrame
         The possible notes.
-
-    measures : pd.DataFrame
-        The measures in the dataset. Required only if notes doesn't contain
-        offset_mc and offset_beat columns.
 
     Returns
     -------
@@ -356,49 +353,60 @@ def get_notes_during_chord(chord: pd.Series, notes: pd.DataFrame, onsets_only: b
             0   if both -1 and 1 apply.
     """
     # First, check for offset information, and calculate it if necessary
-    if not all([column in notes.columns for column in ['offset_beat', 'offset_mc']]):
-        assert measures is not None, ("measures must be given if offset_beat and offset_mc "
-                                      "are not in notes")
-        offset_mc, offset_beat = get_offsets(notes, measures)
-        notes = notes.assign(offset_mc=offset_mc, offset_beat=offset_beat)
+    assert all([column in notes.columns for column in ['offset_beat', 'offset_mc']]), (
+        "Notes must contain offset information. Run `notes = corpus_utils.add_note_offsets` first."
+    )
 
-    file_notes = notes.loc[chord.name[0]]
-    selected_notes = file_notes.loc[(file_notes.offset_mc >= chord.mc) &
-                                    (file_notes.mc <= chord.mc_next)].copy()
+    # Search only through notes in the correct file
+    if chord.name[0] in notes.index:
+        file_notes = notes.loc[chord.name[0]]
+    else:
+        file_notes = notes.loc[~notes.mc.isin(notes.mc)]
 
-    # Drop notes that end before the chord onset...
-    before_chord = ((selected_notes.offset_mc == chord.mc) &
-                    (selected_notes.offset_beat < chord.onset))
-    selected_notes = selected_notes.loc[~before_chord].copy()
+    # Get note and chord onset and offset bounds
 
-    # ...or begin after the next chord onset
-    after_chord = (selected_notes.mc == chord.mc_next) & (selected_notes.onset >= chord.onset_next)
-    selected_notes = selected_notes.loc[~after_chord].copy()
+    # Workaround to get numpy array of tuples: www.stackoverflow.com/questions/46569100
+    note_onsets = np.empty((len(file_notes),), dtype=object)
+    note_offsets = np.empty((len(file_notes),), dtype=object)
+    chord_onset = np.empty((1,), dtype=object)
+    chord_offset = np.empty((1,), dtype=object)
+
+    note_onsets[:] = list(zip(file_notes.mc, file_notes.onset))
+    note_offsets[:] = list(zip(file_notes.offset_mc, file_notes.offset_beat))
+
+    chord_onset[0] = (chord.mc, chord.onset)
+    chord_offset[0] = (chord.mc_next, chord.onset_next)
+
+    # Get notes that overlap the chord's range
+    selection = (note_onsets < chord_offset) & (note_offsets > chord_onset)
+    if onsets_only:
+        selection &= note_onsets >= chord_onset
+
+    selected_notes = file_notes.loc[selection]
+
+    # Update note onset/offset position to only selected notes
+    note_onsets = note_onsets[selection]
+    note_offsets = note_offsets[selection]
 
     # Add overlap column
+    ties_in = note_onsets < chord_onset
+    ties_out = note_offsets > chord_offset
+    ties_both = ties_in & ties_out
 
-    # Note onset in earlier measure than chord onset, or...
-    # Note onset in same measure, but beat is earlier
-    ties_in = ((selected_notes.mc < chord.mc) |
-               ((selected_notes.mc == chord.mc) & (selected_notes.onset < chord.onset)))
-
-    # Note offset in later measure than the next chord, or...
-    # Note offset in same measure as the next chord, but beat is later
-    ties_out = ((selected_notes.offset_mc > chord.mc_next) |
-                ((selected_notes.offset_mc == chord.mc_next) &
-                 (selected_notes.offset_beat > chord.onset_next)))
-
-    ties_both = (ties_in & ties_out)
+    overlap = np.array([pd.NA] * len(ties_in))
+    overlap[ties_in] = -1
+    overlap[ties_out] = 1
+    overlap[ties_both] = 0
 
     # Add column
-    selected_notes['overlap'] = pd.NA
-    selected_notes.loc[ties_in, 'overlap'] = -1
-    selected_notes.loc[ties_out, 'overlap'] = 1
-    selected_notes.loc[ties_both, 'overlap'] = 0
-    selected_notes.overlap = selected_notes.overlap.astype('Int64')
+    selected_notes = selected_notes.assign(overlap=overlap)
+    selected_notes.loc[:, 'overlap'] = selected_notes.overlap.astype('Int64')
 
-    if onsets_only:
-        selected_notes = selected_notes.loc[~selected_notes.overlap.isin([-1, 0])].copy()
+    # Add file_id key back into notes
+    if 'file_id' not in selected_notes.index.names:
+        selected_notes = pd.concat([selected_notes], keys=[selected_notes.index.name],
+                                   names=['file_id'])
+        selected_notes.index.set_levels([chord.name[0]], level='file_id', inplace=True)
 
     return selected_notes
 

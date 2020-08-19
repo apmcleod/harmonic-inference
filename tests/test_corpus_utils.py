@@ -316,13 +316,14 @@ def test_add_note_offsets():
 
 def test_get_notes_during_chord():
     chords = pd.DataFrame({
-        'file_id': [0, 0, 2, 2],
+        'file_id': [0, 0, 1, 2, 2],
         'onset': [Fraction(3, 4),
                   Fraction(1, 2),
-                  Fraction(3, 4),
+                  Fraction(0),
+                  Fraction(1, 4),
                   Fraction(1, 2)],
-        'chord_id': [0, 1, 0, 1],
-        'mc': [2, 4, 2, 4],
+        'chord_id': [0, 1, 0, 0, 1],
+        'mc': [2, 4, 2, 3, 4],
         'extra': Fraction(2, 3)
     }).set_index(['file_id', 'chord_id'])
     offsets_chords_df = cu.add_chord_metrical_data(chords, removed_repeats_with_unreachable)
@@ -332,38 +333,61 @@ def test_get_notes_during_chord():
         'file_id': [0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2],
         'note_id': [0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5],
         'extra': Fraction(2, 3),
-        'mc': [1, 1, 1, 2, 2, 4, 1, 1, 1, 2, 2, 4],
+        'mc': [1, 1, 1, 2, 2, 4, 1, 1, 1, 3, 3, 4],
         'onset': [Fraction(0),
                   Fraction(0),
                   Fraction(0),
+                  Fraction(3, 4),
+                  Fraction(3, 4),
+                  Fraction(1, 2),
                   Fraction(0),
                   Fraction(0),
                   Fraction(0),
-                  Fraction(0),
-                  Fraction(0),
-                  Fraction(0),
-                  Fraction(0),
-                  Fraction(0),
-                  Fraction(0)],
-        'duration': [Fraction(0),
-                     Fraction(0),
-                     Fraction(0),
-                     Fraction(0),
-                     Fraction(0),
-                     Fraction(0),
-                     Fraction(0),
-                     Fraction(0),
-                     Fraction(0),
-                     Fraction(0),
-                     Fraction(0),
-                     Fraction(0)]
+                  Fraction(1, 4),
+                  Fraction(1, 4),
+                  Fraction(1, 2)],
+        'duration': [Fraction(7, 4),
+                     Fraction(15, 8),
+                     Fraction(4),
+                     Fraction(5, 4),
+                     Fraction(6, 4),
+                     Fraction(2),
+                     Fraction(1),
+                     Fraction(5, 4),
+                     Fraction(7, 4),
+                     Fraction(1, 2),
+                     Fraction(3, 4),
+                     Fraction(2)]
     }).set_index(['file_id', 'note_id'])
     offsets_notes_df = cu.add_note_offsets(notes, removed_repeats_with_unreachable)
 
-    for chord_id, chord in offsets_chords_df.iloc[1::2].iterrows():
+    for chord_id, chord in offsets_chords_df.iloc[0::3].iterrows():
         notes = cu.get_notes_during_chord(chord, offsets_notes_df)
 
+        notes_onsets = cu.get_notes_during_chord(chord, offsets_notes_df, onsets_only=True)
+        assert notes_onsets.equals(notes.loc[notes.overlap.isin([pd.NA, 1])])
+
         assert set(notes.columns) == set(list(offsets_notes_df.columns) + ['overlap'])
+        assert notes.index.names == offsets_notes_df.index.names
         if len(notes) > 0:
-            assert notes.loc[:, offsets_notes_df.columns].equals(offsets_notes_df.loc[notes.index])
+            assert notes.loc[:, offsets_notes_df.columns].equals(offsets_notes_df.loc[notes.index]), f'{notes}\n{offsets_notes_df.loc[notes.index]}'
+        assert notes.overlap.dtype == 'Int64'
+        assert len(notes) == 4
+        assert list(notes.overlap) == [-1, 0, pd.NA, 1]
+        assert list(notes.index.get_level_values('note_id')) == list(range(1, 5))
+
+    # Make sure no match is fine
+    no_matches = pd.DataFrame({'file_id': [1, 2],
+                               'chord_id': 0,
+                               'mc': 7,
+                               'onset': Fraction(1),
+                               'mc_next': 8,
+                               'onset_next': Fraction(1),
+                               'duration': Fraction(1)}).set_index(['file_id', 'chord_id'])
+    for chord_id, chord in no_matches.iterrows():
+        notes = cu.get_notes_during_chord(chord, offsets_notes_df)
+
+        assert len(notes) == 0, f'{chord}\n{notes}'
+        assert notes.index.names == offsets_notes_df.index.names
+        assert set(notes.columns) == set(list(offsets_notes_df.columns) + ['overlap'])
         assert notes.overlap.dtype == 'Int64'
