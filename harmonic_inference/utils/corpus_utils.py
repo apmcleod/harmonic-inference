@@ -588,7 +588,22 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
         merged : pd.DataFrame
             The given dataframe, but with duplicate notes in and out removed.
         """
+        merged_out_dups = merged.set_index(['file_id', 'note_id_out']).index.duplicated(keep=False)
+        cols_to_log = ['file_id', 'note_id_out', 'offset_mc_out', 'offset_beat_out', 'staff_out',
+                       'voice_out', 'note_id_in', 'staff_in', 'voice_in']
+        if any(merged_out_dups):
+            logging.warning("Some tied_out notes matched multiple tied_in notes and could not be "
+                            "disambiguated with voice and staff. Choosing arbitrarily:\n"
+                            f"{merged.loc[merged_out_dups, cols_to_log]}")
+
         merged = merged.drop_duplicates(subset=['file_id', 'note_id_out'])
+
+        merged_in_dups = merged.set_index(['file_id', 'note_id_in']).index.duplicated(keep=False)
+        if any(merged_in_dups):
+            logging.warning("Some tied_in notes matched multiple tied_out notes and could not be "
+                            "disambiguated with voice and staff. Choosing arbitrarily:\n"
+                            f"{merged.loc[merged_in_dups, cols_to_log]}")
+
         return merged.drop_duplicates(subset=['file_id', 'note_id_in'])
 
     def update_tied_out_notes(tied_out_notes: pd.DataFrame, new_values: pd.DataFrame):
@@ -673,10 +688,11 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
         merged_out_indexed, merged_in_indexed = get_out_and_in_views(merged)
 
         # Find unmatched tied_out_notes, remove them from tied_out_notes, and add them to finished
-        tied_out_notes = remove_finished(
-            tied_out_notes, ~tied_out_notes.index.isin(merged_out_indexed.index),
-            finished_notes_dfs
-        )
+        unmatched = ~tied_out_notes.index.isin(merged_out_indexed.index)
+        if any(unmatched):
+            logging.warning("The following tied_out notes (with tied == 1) are unmatched:\n"
+                            f"{tied_out_notes.loc[unmatched, ['offset_mc', 'offset_beat']]}")
+            tied_out_notes = remove_finished(tied_out_notes, unmatched, finished_notes_dfs)
 
         # Find pairs of notes where each is only in merged_notes once
         single_match_out_mask = merged_out_indexed.index.isin(
@@ -701,8 +717,8 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
             merged_more = merged_doubly.loc[(merged_doubly.staff_out == merged_doubly.staff_in) &
                                             (merged_doubly.voice_out == merged_doubly.voice_in)]
 
-            merged_more = naive_duplicate_drop(merged_more)
-            merged_more_out, merged_more_in = get_out_and_in_views(merged_more)
+            merged_more_no_dup = naive_duplicate_drop(merged_more)
+            merged_more_out, merged_more_in = get_out_and_in_views(merged_more_no_dup)
 
             # UPDATE STEP: update tied out notes, remove finished, drop tied in notes
             tied_out_notes, tied_in_notes = update_step(
