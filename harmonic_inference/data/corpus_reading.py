@@ -15,7 +15,7 @@ str2strtuple = lambda l: tuple() if l == '' else tuple(str(s) for s in l.split('
 iterable2str = lambda iterable: ', '.join(str(s) for s in iterable)
 def int2bool(s):
     try:
-        return pd.BooleanDtype(int(s))
+        return bool(int(s))
     except:
         return pd.NA
 
