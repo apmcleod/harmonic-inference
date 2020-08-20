@@ -449,6 +449,23 @@ def test_merge_ties():
         'tied': [1, 0, 0, 0, 0, 0, -1, -1]
     }))
 
+    # TESTS:
+    #  - multiply-matched out notes where both match staff and voice
+    #  - multiply-matched out notes where neither matches staff or voice
+    #  - multiply-matched out notes disambiguated by staff and voice
+    notes_list.append(pd.DataFrame({
+        'mc': [0, 0, 1, 2, 2, 3, 4, 4, 5],
+        'onset': Fraction(0),
+        'duration': Fraction(2),
+        'offset_mc': [1, 1, 2, 3, 3, 4, 5, 5, 6],
+        'offset_beat': Fraction(0),
+        'midi': 40,
+        'staff': [0, 0, 0, 1, 1, 0, 1, 0, 0],
+        'voice': [0, 0, 0, 1, 1, 0, 1, 0, 0],
+        'gracenote': None,
+        'tied': [1, 1, -1, 1, 1, -1, 1, 1, -1]
+    }))
+
     # Create notes in good format
     notes = pd.concat(
         notes_list, keys=list(range(len(notes_list))), axis=0, names=['file_id', 'note_id']
@@ -526,3 +543,37 @@ def test_merge_ties():
                     merged_single.tied.fillna(NA).values[i] == -1):
                 total += 1
         assert total == 1
+
+        # Now, check accuracy
+        assert 3 in merged.index.get_level_values(0)
+        merged_single = merged.loc[3]
+        assert len(merged_single) == 6
+        assert all(merged_single.index == [0, 1, 3, 4, 6, 7])
+        offset_mc_match = [all(merged_single.offset_mc == [2, 1, 3, 4, 5, 6]),
+                           all(merged_single.offset_mc == [1, 2, 3, 4, 5, 6]),
+                           all(merged_single.offset_mc == [1, 2, 4, 3, 5, 6]),
+                           all(merged_single.offset_mc == [2, 1, 4, 3, 5, 6])]
+        assert sum(offset_mc_match) == 1
+        assert all(merged_single.offset_beat == [0, 0, 0, 0, 0, 0])
+        duration_match = [all(merged_single.duration == [4, 2, 2, 4, 2, 4]),
+                          all(merged_single.duration == [2, 4, 2, 4, 2, 4]),
+                          all(merged_single.duration == [2, 4, 4, 2, 2, 4]),
+                          all(merged_single.duration == [4, 2, 4, 2, 2, 4])]
+        assert sum(duration_match) == 1
+        # Fix for pd.NA == pd.NA returns False
+        tied_match = [all(merged_single.tied.fillna(NA) == [finished_tie, unfinished_tie,
+                                                            unfinished_tie, finished_tie,
+                                                            unfinished_tie, finished_tie]),
+                      all(merged_single.tied.fillna(NA) == [unfinished_tie, finished_tie,
+                                                            unfinished_tie, finished_tie,
+                                                            unfinished_tie, finished_tie]),
+                      all(merged_single.tied.fillna(NA) == [unfinished_tie, finished_tie,
+                                                            finished_tie, unfinished_tie,
+                                                            unfinished_tie, finished_tie]),
+                      all(merged_single.tied.fillna(NA) == [finished_tie, unfinished_tie,
+                                                            finished_tie, unfinished_tie,
+                                                            unfinished_tie, finished_tie])]
+        assert sum(tied_match) == 1
+        # Ensure the orderings for the variable fields are consistent
+        assert offset_mc_match.index(True) == duration_match.index(True)
+        assert duration_match.index(True) == tied_match.index(True)

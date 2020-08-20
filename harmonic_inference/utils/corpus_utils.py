@@ -611,15 +611,13 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
                 new_values.loc[:, ['offset_mc_in', 'offset_beat_in', 'new_dur', 'new_tied']].values
             )
 
-    def update_step(
-        tied_out_notes: pd.DataFrame, new_tied_out_values_df: pd.DataFrame,
-        tied_out_finished_mask: List, finished_notes_dfs: List[pd.DataFrame],
-        tied_in_notes: pd.DataFrame, tied_in_drop_indexes: pd.Index
-    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def update_step(tied_out_notes: pd.DataFrame, new_tied_out_values_df: pd.DataFrame,
+                    finished_notes_dfs: List[pd.DataFrame], tied_in_notes: pd.DataFrame,
+                    tied_in_drop_indexes: pd.Index) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Perform a single update step in the merging process. That is:
         1. Update tied_out_notes with the new values from new_tied_out_values_df.
-        2. Remove tied_out_notes from the tied_out_notes dataframe.
+        2. Remove now finished tied_out_notes from the tied_out_notes dataframe.
         3. Drop now-matched notes (given as indexes) from the tied_in_notes dataframe.
 
         Parameters
@@ -628,8 +626,6 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
             The current tied out notes df. An updated version of this df will be returned.
         new_tied_out_values_df : pd.DataFrame
             The df to get new values for the tied_out_notes df.
-        tied_out_finished_mask : List
-            A mask for which notes in tied_out_notes are already finished.
         finished_notes_dfs : List[pd.DataFrame]
             A List to store dfs containing the finished notes removed from tied_out_notes.
         tied_in_notes : pd.DataFrame
@@ -646,7 +642,7 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
             A new tied_in_notes dataframe, from which used notes have been dropped.
         """
         update_tied_out_notes(tied_out_notes, new_tied_out_values_df)
-        tied_out_notes = remove_finished(tied_out_notes, tied_out_finished_mask,
+        tied_out_notes = remove_finished(tied_out_notes, tied_out_notes.tied.isnull(),
                                          finished_notes_dfs)
         tied_in_notes = tied_in_notes.drop(tied_in_drop_indexes)
 
@@ -693,8 +689,7 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
 
         # UPDATE STEP: update tied out notes, remove finished, drop tied in notes
         tied_out_notes, tied_in_notes = update_step(
-            tied_out_notes, merged_out_indexed.loc[single_match_both],
-            tied_out_notes.tied.isnull(), finished_notes_dfs,
+            tied_out_notes, merged_out_indexed.loc[single_match_both], finished_notes_dfs,
             tied_in_notes, merged_in_indexed.index[single_match_both]
         )
 
@@ -711,8 +706,8 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
 
             # UPDATE STEP: update tied out notes, remove finished, drop tied in notes
             tied_out_notes, tied_in_notes = update_step(
-                tied_out_notes, merged_more_out, tied_out_notes.tied.isnull(), finished_notes_dfs,
-                tied_in_notes, merged_more_in.index
+                tied_out_notes, merged_more_out, finished_notes_dfs, tied_in_notes,
+                merged_more_in.index
             )
 
             # Get notes that were doubly matched, but the staff, voice matching eliminated them all
@@ -740,8 +735,8 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
 
                     # UPDATE STEP: update tied out notes, remove finished, drop tied in notes
                     tied_out_notes, tied_in_notes = update_step(
-                        tied_out_notes, to_force_out, tied_out_notes.tied.isnull(),
-                        finished_notes_dfs, tied_in_notes, to_force_in.index
+                        tied_out_notes, to_force_out, finished_notes_dfs, tied_in_notes,
+                        to_force_in.index
                     )
 
         # Reset tied_out_notes if it is empty
