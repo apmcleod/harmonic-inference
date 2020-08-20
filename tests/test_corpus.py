@@ -18,7 +18,6 @@ chords_df = read_dump(CHORDS_TSV)
 notes_df = read_dump(NOTES_TSV)
 
 removed_repeats = cu.remove_repeats(measures_df, remove_unreachable=True)
-removed_repeats_with_unreachable = cu.remove_repeats(measures_df, remove_unreachable=False)
 
 chords_df_removed = cu.remove_unmatched(chords_df, removed_repeats)
 offsets_chords_df = cu.add_chord_metrical_data(chords_df_removed, removed_repeats)
@@ -28,68 +27,11 @@ offsets_notes_df = cu.add_note_offsets(notes_df_removed, removed_repeats)
 merged_notes_df = cu.merge_ties(offsets_notes_df, removed_repeats)
 
 
-def test_remove_unmatched():
-    # Chords
-    assert chords_df.index.name == chords_df_removed.index.name
-    assert all(chords_df.columns == chords_df_removed.columns)
-    assert len(chords_df_removed) <= len(chords_df)
-
-    merged = pd.merge(chords_df.reset_index(), removed_repeats, how='inner', on=['file_id', 'mc'])
-    merged = merged.set_index(['file_id', 'chord_id'])
-    assert len(chords_df_removed) == len(merged)
-    assert all(chords_df_removed.index == merged.index)
-
-    assert chords_df.equals(cu.remove_unmatched(chords_df, removed_repeats_with_unreachable))
-
-    # Notes
-    assert notes_df.index.name == notes_df_removed.index.name
-    assert all(notes_df.columns == notes_df_removed.columns)
-    assert len(notes_df_removed) <= len(notes_df)
-
-    merged = pd.merge(notes_df.reset_index(), removed_repeats, how='inner', on=['file_id', 'mc'])
-    merged = merged.set_index(['file_id', 'note_id'])
-    assert len(notes_df_removed) == len(merged)
-    assert all(notes_df_removed.index == merged.index)
-
-    assert notes_df.equals(cu.remove_unmatched(notes_df, removed_repeats_with_unreachable))
-
-
-def test_remove_repeats():
-    def count_reachable(piece_df: pd.DataFrame, selected_mcs: List[int], start_mc: int) -> int:
-        """
-        Get a count of the ways to reach the given list of mcs from the start measure.
-
-        Parameters
-        ----------
-        piece_df : pd.DataFrame
-            The measures df of a single piece.
-        selected_mcs : List[int]
-            A list of mcs whose count to return.
-        start_mc : int
-            The starting measure mc of this piece.
-
-        Returns
-        -------
-        count : int
-            The number of different ways to reach any mc in the given selected_mcs list from the
-            start measure.
-        """
-        if len(selected_mcs) == 0:
-            return 0
-
-        count = sum([1 for mc in selected_mcs if mc == start_mc])
-        if count == len(selected_mcs):
-            return count
-
-        return count_reachable(piece_df, piece_df.loc[piece_df.next.isin(selected_mcs), 'mc'],
-                               start_mc) + count
-
-    # Test well-formedness
+def test_measures():
     for file_id, piece_df in removed_repeats.groupby('file_id'):
         piece_df = piece_df.copy()
 
         assert len(piece_df.loc[piece_df['next'].isnull()]) == 1, "Not exactly 1 mc ends."
-        assert piece_df.next.dtype == 'Int64'
 
         # Check that every measure can be reached at most once
         assert piece_df.next.value_counts().max() == 1
@@ -99,25 +41,6 @@ def test_remove_repeats():
 
         # Check that every measure points forwards (ensures no disjoint loops)
         assert len(piece_df.loc[piece_df.next <= piece_df.mc]) == 0
-
-    # Test with unreachables
-    assert len(removed_repeats_with_unreachable) > len(removed_repeats)
-
-    # Test well-formedness
-    for file_id, piece_df in removed_repeats_with_unreachable.groupby('file_id'):
-        piece_df = piece_df.copy()
-
-        assert len(piece_df.loc[piece_df['next'].isnull()]) == 1, "Not exactly 1 mc ends."
-        assert piece_df.next.dtype == 'Int64'
-
-        # Check that every measure can be reached at most once
-        start_mc = piece_df.iloc[0].mc
-        value_counts = piece_df.next.value_counts()
-
-        for mc in value_counts[value_counts > 1].index:
-            assert count_reachable(
-                piece_df, piece_df.loc[piece_df.next == mc, 'mc'], start_mc
-            ) <= 1
 
 
 def test_add_chord_metrical_data():
