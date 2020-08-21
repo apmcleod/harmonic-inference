@@ -592,17 +592,19 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
         cols_to_log = ['file_id', 'note_id_out', 'offset_mc_out', 'offset_beat_out', 'staff_out',
                        'voice_out', 'note_id_in', 'staff_in', 'voice_in']
         if any(merged_out_dups):
-            logging.warning("Some tied_out notes matched multiple tied_in notes and could not be "
-                            "disambiguated with voice and staff. Choosing arbitrarily:\n"
-                            f"{merged.loc[merged_out_dups, cols_to_log]}")
+            with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+                logging.warning("Some tied_out notes matched multiple tied_in notes and could not"
+                                " be disambiguated with voice and staff. Choosing arbitrarily:\n"
+                                f"{merged.loc[merged_out_dups, cols_to_log]}")
 
         merged = merged.drop_duplicates(subset=['file_id', 'note_id_out'])
 
         merged_in_dups = merged.set_index(['file_id', 'note_id_in']).index.duplicated(keep=False)
         if any(merged_in_dups):
-            logging.warning("Some tied_in notes matched multiple tied_out notes and could not be "
-                            "disambiguated with voice and staff. Choosing arbitrarily:\n"
-                            f"{merged.loc[merged_in_dups, cols_to_log]}")
+            with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+                logging.warning("Some tied_in notes matched multiple tied_out notes and could not"
+                                " be disambiguated with voice and staff. Choosing arbitrarily:\n"
+                                f"{merged.loc[merged_in_dups, cols_to_log]}")
 
         return merged.drop_duplicates(subset=['file_id', 'note_id_in'])
 
@@ -690,8 +692,6 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
         # Find unmatched tied_out_notes, remove them from tied_out_notes, and add them to finished
         unmatched = ~tied_out_notes.index.isin(merged_out_indexed.index)
         if any(unmatched):
-            logging.warning("The following tied_out notes (with tied == 1) are unmatched:\n"
-                            f"{tied_out_notes.loc[unmatched, ['offset_mc', 'offset_beat']]}")
             tied_out_notes = remove_finished(tied_out_notes, unmatched, finished_notes_dfs)
 
         # Find pairs of notes where each is only in merged_notes once
@@ -759,7 +759,23 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
         if len(tied_out_notes) == 0:
             tied_out_notes, tied_in_notes = repopulate_tied_out_notes(tied_in_notes)
 
-    df_list = [unchanging_notes, tied_out_notes, tied_in_notes]
-    if len(finished_notes_dfs) > 0:
-        df_list.append(pd.concat(finished_notes_dfs))
-    return pd.concat(df_list).sort_index()
+    merged_df = pd.concat([unchanging_notes, tied_in_notes] + finished_notes_dfs).sort_index()
+
+    error_notes = merged_df.loc[merged_df.gracenote.isnull() & ~merged_df.tied.isnull()]
+    if len(error_notes) > 0:
+        with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+            tied_out_errors = error_notes.loc[error_notes.tied == 1]
+            tied_in_errors = error_notes.loc[error_notes.tied == -1]
+            tied_both_errors = error_notes.loc[error_notes.tied == 0]
+
+            if len(tied_out_errors) > 0:
+                logging.warning("The following merged notes are tied out but matched with no tie"
+                                f" ending:\n{tied_out_errors}")
+            if len(tied_in_errors) > 0:
+                logging.warning("The following merged notes are tied in, but matched with no tie"
+                                f" beginning:\n{tied_in_errors}")
+            if len(tied_both_errors) > 0:
+                logging.warning("The following merged notes are tied in and out, but matched with"
+                                f" no tie ending or beginning:\n{tied_both_errors}")
+
+    return merged_df
