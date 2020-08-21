@@ -764,9 +764,10 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
     error_notes = merged_df.loc[merged_df.gracenote.isnull() & ~merged_df.tied.isnull()]
     if len(error_notes) > 0:
         with pd.option_context('display.max_rows', None, 'display.max_columns', None):
-            tied_out_errors = error_notes.loc[error_notes.tied == 1]
-            tied_in_errors = error_notes.loc[error_notes.tied == -1]
-            tied_both_errors = error_notes.loc[error_notes.tied == 0]
+            columns = ['mc', 'onset', 'offset_mc', 'offset_beat', 'midi', 'tied']
+            tied_out_errors = error_notes.loc[error_notes.tied == 1, columns]
+            tied_in_errors = error_notes.loc[error_notes.tied == -1, columns]
+            tied_both_errors = error_notes.loc[error_notes.tied == 0, columns]
 
             if len(tied_out_errors) > 0:
                 logging.warning("The following merged notes are tied out but matched with no tie"
