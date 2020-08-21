@@ -5,3 +5,5 @@ data/**
 results/**
 .pytest_cache/**
 .vscode/**
+debug.py
+*.log

@@ -4,6 +4,7 @@ from fractions import Fraction
 import logging
 
 import pandas as pd
+import numpy as np
 
 from .data_types import *
 from harmonic_inference.utils import harmonic_utils as hu
@@ -328,36 +329,43 @@ class ScorePiece(Piece):
             A DataFrame containing information about the measures contained in the piece.
         """
         super().__init__(PieceType.SCORE)
-        self.notes = [
-            note for note in notes_df.apply(
+        notes = np.array([
+            [note, note_id] for note_id, note in enumerate(notes_df.apply(
                 Note.from_series, axis='columns', measures_df=measures_df,
                 pitch_type=PitchType.TPC
-            ) if note is not None
-        ]
+            )) if note is not None
+        ])
+        self.notes, self.note_ilocs = np.hsplit(notes, 2)
+        self.notes = np.squeeze(self.notes)
+        self.note_ilocs = np.squeeze(self.note_ilocs).astype(int)
 
-        self.chords = [
-            chord for chord in chords_df.apply(
+        chords = np.array([
+            [chord, chord_id] for chord_id, chord in enumerate(chords_df.apply(
                 Chord.from_series, axis='columns', measures_df=measures_df,
                 pitch_type=PitchType.TPC
-            ) if chord is not None
-        ]
+            )) if chord is not None
+        ])
+        self.chords, self.chord_ilocs = np.hsplit(chords, 2)
+        self.chords = np.squeeze(self.chords)
+        self.chord_ilocs = np.squeeze(self.chord_ilocs).astype(int)
 
+        # The index of the notes where there is a chord change
         self.chord_changes = [0] * len(self.chords)
         note_index = 0
         for chord_index, chord in enumerate(self.chords):
-            if self.notes[note_index].onset >= chord.onset:
-                self.chord_changes[chord_index] = note_index
-            else:
+            while self.notes[note_index].onset < chord.onset:
                 note_index += 1
+            self.chord_changes[chord_index] = note_index
 
-        key_cols = chords_df.loc[:, ['globalkey', 'globalkey_is_minor', 'localkey_is_minor',
-                                     'localkey', 'relativeroot']]
+        key_cols = chords_df.loc[chords_df.index[self.chord_ilocs], [
+            'globalkey', 'globalkey_is_minor', 'localkey_is_minor', 'localkey', 'relativeroot']
+        ]
         key_cols = key_cols.fillna('-1')
         changes = key_cols.ne(key_cols.shift()).fillna(True)
 
         self.key_changes = changes.loc[changes.any(axis=1)].index.to_list()
         self.keys = [
-            key for key in chords_df.loc[self.key_changes].apply(
+            key for key in chords_df.loc[chords_df.index[self.chord_ilocs[self.key_changes]]].apply(
                 Key.from_series, axis='columns', tonic_type=PitchType.TPC, do_relative=True
             ) if key is not None
         ]
