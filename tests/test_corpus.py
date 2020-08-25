@@ -1,6 +1,7 @@
 """Tests for corpus_data structure"""
 from fractions import Fraction
 from typing import Tuple, List
+from pathlib import Path
 
 import pandas as pd
 import numpy as np
@@ -9,22 +10,26 @@ from harmonic_inference.utils import rhythmic_utils as ru
 from harmonic_inference.utils import corpus_utils as cu
 from harmonic_inference.data.corpus_reading import read_dump
 
-CHORDS_TSV = 'corpus_data/chords.tsv'
-NOTES_TSV = 'corpus_data/notes.tsv'
-MEASURES_TSV = 'corpus_data/measures.tsv'
+TSV_BASE = Path('corpus_data')
+FILES_TSV = TSV_BASE / 'files.tsv'
+CHORDS_TSV = TSV_BASE / 'chords.tsv'
+NOTES_TSV = TSV_BASE / 'notes.tsv'
+MEASURES_TSV = TSV_BASE / 'measures.tsv'
 
+files_df = read_dump(FILES_TSV, index_col=0)
 measures_df = read_dump(MEASURES_TSV)
-chords_df = read_dump(CHORDS_TSV)
+chords_df = read_dump(CHORDS_TSV, low_memory=False)
 notes_df = read_dump(NOTES_TSV)
 
 removed_repeats = cu.remove_repeats(measures_df, remove_unreachable=True)
 
 chords_df_removed = cu.remove_unmatched(chords_df, removed_repeats)
+chords_df = chords_df.drop(chords_df.loc[(chords_df.numeral == '@none') | chords_df.numeral.isnull()].index)
 offsets_chords_df = cu.add_chord_metrical_data(chords_df_removed, removed_repeats)
 
 notes_df_removed = cu.remove_unmatched(notes_df, removed_repeats)
 offsets_notes_df = cu.add_note_offsets(notes_df_removed, removed_repeats)
-merged_notes_df = cu.merge_ties(offsets_notes_df, removed_repeats)
+merged_notes_df = cu.merge_ties(offsets_notes_df)
 
 
 def test_measures():

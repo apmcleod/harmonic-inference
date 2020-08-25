@@ -87,8 +87,7 @@ def read_dump(file: str, index_col: Union[int, Iterable] = (0, 1), converters: D
         The tsv file to parse.
 
     index_col : int or list(int)
-        The index (or indices) of column(s) to use as the index. For note_list.tsv,
-        use [0, 1, 2].
+        The index (or indices) of column(s) to use as the index. For files.tsv, use 0.
 
     converters : dict
         Converters which will be passed to the pandas read_csv function. These will
