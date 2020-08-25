@@ -56,7 +56,7 @@ class Note():
     def from_series(note_row: pd.Series, measures_df: pd.DataFrame, pitch_type: PitchType):
         try:
             pitch = (note_row.tpc + hu.TPC_C if pitch_type == PitchType.TPC else
-                    note_row.midi % hu.NUM_PITCHES[PitchType.MIDI])
+                     note_row.midi % hu.NUM_PITCHES[PitchType.MIDI])
             octave = note_row.midi // hu.NUM_PITCHES[PitchType.MIDI]
 
             onset = (note_row.mc, note_row.onset)
