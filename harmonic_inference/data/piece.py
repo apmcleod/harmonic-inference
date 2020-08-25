@@ -129,8 +129,9 @@ class Chord():
         else:
             inversion_str = f'{self.inversion}th inversion'
 
-        return (f'{hu.get_pitch_string(self.root, self.pitch_type)}:{self.chord_type} '
-                f'{inversion_str} BASS={hu.get_pitch_string(self.bass, self.pitch_type)}: '
+        return (f'{hu.get_pitch_string(self.root, self.pitch_type)}:'
+                f'{hu.get_chord_string(self.chord_type)} {inversion_str} '
+                f'BASS={hu.get_pitch_string(self.bass, self.pitch_type)}: '
                 f'{self.onset}--{self.offset}')
 
     @staticmethod

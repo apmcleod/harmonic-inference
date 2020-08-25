@@ -1,9 +1,12 @@
 """Tests for harmonic_utils.py"""
 import itertools
+import pytest
 
 import pandas as pd
 
+from harmonic_inference.data.data_types import KeyMode, ChordType, PitchType
 from harmonic_inference.utils import harmonic_utils as hu
+from harmonic_inference.utils import harmonic_constants as hc
 
 
 def test_get_accidental_adjustment():
@@ -33,142 +36,257 @@ def test_get_accidental_adjustment():
                 )
 
 
-
-def test_get_numeral_semitones():
-    for acc, adj in zip(['b', '', '#'], [-1, 0, 1]):
-        for is_major, semitones in zip([True, False],
-                                       [[0, 2, 4, 5, 7, 9, 11],
-                                        [0, 2, 3, 5, 7, 8, 10]]):
-            for numeral, index in zip(['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'], range(7)):
-                numeral = acc + numeral
-                out_semis, out_is_major = hu.get_numeral_semitones(numeral, is_major)
-                assert out_semis == semitones[index] + adj, (
-                    f"Output semitones incorrect for inputs {numeral}, {is_major}"
-                )
-                assert out_is_major, f"Output is_major incorrect for inputs {numeral}, {is_major}"
-
-                numeral_lower = numeral.lower()
-                out_semis_lower, out_is_major_lower = hu.get_numeral_semitones(numeral_lower,
-                                                                               is_major)
-                assert out_semis_lower == out_semis, (
-                    f"Output semitones different for {numeral} and {numeral_lower}"
-                )
-                assert not out_is_major_lower, (
-                    f"Output is_major incorrect for inputs {numeral_lower}, {is_major}"
-                )
-
-
-def test_get_bass_step_semitones():
-    for acc, adj in zip(['b', '', '#'], [-1, 0, 1]):
-        for is_major, semitones in zip([True, False],
-                                       [[0, 2, 4, 5, 7, 9, 11],
-                                        [0, 2, 3, 5, 7, 8, 10]]):
-            for step, index in zip(['1', '2', '3', '4', '5', '6', '7'], range(7)):
-                step = acc + step
-                out_semis = hu.get_bass_step_semitones(step, is_major)
-                assert out_semis == semitones[index] + adj, (
-                    f"Output semitones incorrect for inputs {step}, {is_major}"
-                )
-
-
-
-def test_get_key():
-    for acc, adj in zip(['b', '', '#'], [-1, 0, 1]):
-        for tonic, semitones in zip(['C', 'D', 'E', 'F', 'G', 'A', 'B'],
-                                    [0, 2, 4, 5, 7, 9, 11]):
-            major_key = tonic + acc
-            out_semitones, out_is_major = hu.get_key(major_key)
-            assert out_semitones == semitones + adj, (
-                f"Output semitones incorrect for input {major_key}"
-            )
-            assert out_is_major, f"Output is minor for key {major_key}"
-
-            minor_key = major_key.lower()
-            out_semitones, out_is_major = hu.get_key(minor_key)
-            assert out_semitones == semitones + adj, (
-                f"Output semitones incorrect for input {minor_key}"
-            )
-            assert not out_is_major, f"Output is major for key {minor_key}"
-
-
-
-LENGTH = hu.PITCHES_PER_OCTAVE
 def test_transpose_chord_vector():
-    for chord_vector in itertools.product([0, 1], repeat=LENGTH):
-        for transposition in range(-LENGTH + 1, LENGTH):
-            output = hu.transpose_chord_vector(chord_vector, transposition)
-            for index in range(LENGTH):
-                out_index = (index + transposition + LENGTH) % LENGTH
-                assert chord_vector[index] == output[out_index], (
-                    f"Transposed output at index {out_index} does not match input at index {index}"
-                    f" with transposition {transposition}"
-                )
+    midi_vector = [0] * hc.NUM_PITCHES[PitchType.MIDI]
+    tpc_vector = [0] * hc.NUM_PITCHES[PitchType.TPC]
+    for idx in range(0, len(midi_vector), 2):
+        midi_vector[idx] = 1
+    for idx in range(0, len(tpc_vector), 3):
+        tpc_vector[idx] = 1
 
+    for interval in range(-50, 50):
+        midi_output = hu.transpose_chord_vector(midi_vector, interval, PitchType.MIDI)
+        tpc_output = hu.transpose_chord_vector(tpc_vector, interval, PitchType.TPC)
 
+        for idx, val in enumerate(midi_vector):
+            assert midi_output[(idx + interval) % hc.NUM_PITCHES[PitchType.MIDI]] == val
+
+        checked = []
+        for idx, val in enumerate(tpc_vector):
+            index = idx + interval
+            if 0 <= index < hc.NUM_PITCHES[PitchType.TPC]:
+                checked.append(index)
+                assert tpc_output[index] == val
+        for idx, val in enumerate(tpc_output):
+            if idx not in checked:
+                assert val == 0
 
 
 def test_get_vector_from_chord_type():
-    for chord_type, vector in zip(
-            ['M', 'm', 'o', '+', 'mm7', 'Mm7', 'MM7', 'mM7', 'o7', '%7', '+7'],
-            [[1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
-             [1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
-             [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
-             [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
-             [1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0],
-             [1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0],
-             [1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1],
-             [1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
-             [1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0],
-             [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0],
-             [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0]]):
-        out_vector = hu.get_vector_from_chord_type(chord_type)
-        assert vector == out_vector, f"Chord vector incorrect for chord type {chord_type}"
+    chord_types = [ChordType.MAJOR,
+                   ChordType.MINOR,
+                   ChordType.DIMINISHED,
+                   ChordType.AUGMENTED,
+                   ChordType.MIN_MIN7,
+                   ChordType.MAJ_MIN7,
+                   ChordType.MAJ_MAJ7,
+                   ChordType.MIN_MAJ7,
+                   ChordType.DIM7,
+                   ChordType.HALF_DIM7,
+                   ChordType.AUG_MIN7,
+                   ChordType.AUG_MAJ7]
+    chord_vectors_midi = [[1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0],
+                          [1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
+                          [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0],
+                          [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+                          [1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0],
+                          [1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0],
+                          [1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1],
+                          [1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+                          [1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0],
+                          [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0],
+                          [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0],
+                          [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1]]
+    chord_vectors_tpc = [['C', 'E', 'G'],
+                         ['C', 'Eb', 'G'],
+                         ['C', 'Eb', 'Gb'],
+                         ['C', 'E', 'G#'],
+                         ['C', 'Eb', 'G', 'Bb'],
+                         ['C', 'E', 'G', 'Bb'],
+                         ['C', 'E', 'G', 'B'],
+                         ['C', 'Eb', 'G', 'B'],
+                         ['C', 'Eb', 'Gb', 'Bbb'],
+                         ['C', 'Eb', 'Gb', 'Bb'],
+                         ['C', 'E', 'G#', 'Bb'],
+                         ['C', 'E', 'G#', 'B'],]
+    for chord_type, midi_vector, tpc_vector in zip(chord_types, chord_vectors_midi,
+                                                   chord_vectors_tpc):
+        out_vector = hu.get_vector_from_chord_type(chord_type, PitchType.MIDI)
+        assert out_vector.dtype == int
+        assert all(midi_vector == out_vector), (
+            f"Chord vector incorrect for MIDI and chord type {chord_type}"
+        )
+
+        out_vector_tpc = hu.get_vector_from_chord_type(chord_type, PitchType.TPC)
+        assert out_vector_tpc.dtype == int
+        tpc_vector_one_hot = [0] * hc.NUM_PITCHES[PitchType.TPC]
+        for pitch_string in tpc_vector:
+            tpc_vector_one_hot[hu.get_pitch_from_string(pitch_string, PitchType.TPC)] = 1
+        assert all(tpc_vector_one_hot == out_vector_tpc), (
+            f"Chord vector incorrect for TPC and chord type {chord_type}"
+        )
 
 
-
-
-def test_get_chord_type_string():
-    for chord_type in ['M', 'm', 'o', '+', 'mm7', 'Mm7', 'MM7', 'mM7', 'o7', '%7', '+7']:
-        form = pd.NA
-        figbass = pd.NA
-        is_major = True
-
-        # Triad
-        if chord_type[-1] != '7':
-            if chord_type in ['o', '+']:
-                form = chord_type
-            else:
-                is_major = chord_type.isupper()
-
-            for figbass in [pd.NA, '6', '64']:
-                out_type = hu.get_chord_type_string(is_major, form=form, figbass=figbass)
-                assert out_type == chord_type, (
-                    f"Chord type is {out_type} instead of {chord_type} "
-                    f"for inputs (is_major, form, figbass) {is_major}, "
-                    f"{form}, {figbass}"
+def test_get_interval_from_numeral():
+    for acc, adj in zip(['bbb', 'bb', 'b', '', '#', '##', '###'], [-3, -2, -1, 0, 1, 2, 3]):
+        for key_mode, semitones, tpc in zip([KeyMode.MAJOR, KeyMode.MINOR],
+                                            [[0, 2, 4, 5, 7, 9, 11],
+                                             [0, 2, 3, 5, 7, 8, 10]],
+                                            [[0, 2, 4, -1, 1, 3, 5],
+                                             [0, 2, -3, -1, 1, -4, -2]]):
+            for numeral, index in zip(['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'], range(7)):
+                numeral = acc + numeral
+                out_semis = hu.get_interval_from_numeral(numeral, key_mode, PitchType.MIDI)
+                assert out_semis == semitones[index] + adj, (
+                    f"Output semitones incorrect for inputs {(numeral, key_mode, PitchType.MIDI)}"
                 )
+                assert out_semis == hu.get_interval_from_numeral(numeral, key_mode, PitchType.MIDI)
 
-        # 7th chord
-        else:
-            # Dim, aug, half-dim
-            if len(chord_type) == 2:
-                form = chord_type[0]
-                for figbass in ['7', '65', '43', '2', '42']:
-                    out_type = hu.get_chord_type_string(is_major, form=form, figbass=figbass)
-                    assert out_type == chord_type, (
-                        f"Chord type is {out_type} instead of {chord_type} "
-                        f"for inputs (is_major, form, figbass) {is_major}, "
-                        f"{form}, {figbass}"
+                out_tpc = hu.get_interval_from_numeral(numeral, key_mode, PitchType.TPC)
+                assert out_tpc == tpc[index] + adj * hc.ACCIDENTAL_ADJUSTMENT[PitchType.TPC], (
+                    f"Output interval incorrect for inputs {(numeral, key_mode, PitchType.TPC)}"
+                )
+                assert out_tpc == hu.get_interval_from_numeral(numeral, key_mode, PitchType.TPC)
+
+
+def test_get_interval_from_scale_degree():
+    for acc, adj in zip(['bbb', 'bb', 'b', '', '#', '##', '###'], [-3, -2, -1, 0, 1, 2, 3]):
+        for key_mode, semitones, tpc in zip([KeyMode.MAJOR, KeyMode.MINOR],
+                                            [[0, 2, 4, 5, 7, 9, 11],
+                                             [0, 2, 3, 5, 7, 8, 10]],
+                                            [[0, 2, 4, -1, 1, 3, 5],
+                                             [0, 2, -3, -1, 1, -4, -2]]):
+            for numeral, number, index in zip(['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'],
+                                              ['1', '2', '3', '4', '5', '6', '7'], range(7)):
+                for prefixed, degree in itertools.product([True, False], [numeral, number]):
+                    if prefixed:
+                        degree = acc + degree
+                    else:
+                        degree = degree + acc
+                    out_semis = hu.get_interval_from_scale_degree(degree, prefixed, key_mode,
+                                                                PitchType.MIDI)
+                    assert out_semis == semitones[index] + adj, (
+                        "Output semitones incorrect for inputs "
+                        f"{(degree, key_mode, prefixed, PitchType.MIDI)}"
                     )
+                    assert out_semis == hu.get_interval_from_scale_degree(degree, prefixed,
+                                                                          key_mode, PitchType.MIDI)
 
-            # MM, Mm, mM, mm
+                    out_tpc = hu.get_interval_from_scale_degree(degree, prefixed, key_mode,
+                                                                PitchType.TPC)
+                    assert out_tpc == tpc[index] + adj * hc.ACCIDENTAL_ADJUSTMENT[PitchType.TPC], (
+                        "Output interval incorrect for inputs "
+                        f"{(degree, prefixed, key_mode, PitchType.TPC)}"
+                    )
+                    assert out_tpc == hu.get_interval_from_scale_degree(degree, prefixed, key_mode,
+                                                                        PitchType.TPC)
+
+
+def test_transpose_pitch():
+    for midi, tpc in zip(range(hc.NUM_PITCHES[PitchType.MIDI]),
+                         range(hc.NUM_PITCHES[PitchType.TPC])):
+        for interval in range(-50, 50):
+            correct_midi = (midi + interval) % hc.NUM_PITCHES[PitchType.MIDI]
+            res_midi = hu.transpose_pitch(midi, interval, PitchType.MIDI)
+            assert res_midi == correct_midi
+
+            correct_tpc = tpc + interval
+            if 0 <= correct_tpc < hc.NUM_PITCHES[PitchType.TPC]:
+                res_tpc = hu.transpose_pitch(tpc, interval, PitchType.TPC)
             else:
-                is_major = chord_type[0].isupper()
-                form = chord_type[1]
-                for figbass in ['7', '65', '43', '2', '42']:
-                    out_type = hu.get_chord_type_string(is_major, form=form, figbass=figbass)
-                    assert out_type == chord_type, (
-                        f"Chord type is {out_type} instead of {chord_type} "
-                        f"for inputs (is_major, form, figbass) {is_major}, "
-                        f"{form}, {figbass}"
-                    )
+                with pytest.raises(ValueError):
+                    hu.transpose_pitch(tpc, interval, PitchType.TPC)
+
+
+def test_get_chord_inversion():
+    correct_inversions = {
+        '7':  0,
+        '6':  1,
+        '65': 1,
+        '43': 2,
+        '64': 2,
+        '2':  3
+    }
+
+    for null_string in pd.NA, None, '':
+        assert hu.get_chord_inversion(null_string) == 0
+
+    for figbass, correct in correct_inversions.items():
+        assert hu.get_chord_inversion(figbass) == correct
+
+    with pytest.raises(ValueError):
+        hu.get_chord_inversion('Some nonsense')
+
+
+def test_get_chord_string_conversion():
+    chord_type_strings = {
+        ChordType.MAJOR: 'M',
+        ChordType.MINOR: 'm',
+        ChordType.DIMINISHED: 'o',
+        ChordType.AUGMENTED: '+',
+        ChordType.MIN_MIN7: 'mm7',
+        ChordType.MAJ_MIN7: 'Mm7',
+        ChordType.MAJ_MAJ7: 'MM7',
+        ChordType.MIN_MAJ7: 'mM7',
+        ChordType.DIM7: 'o7',
+        ChordType.HALF_DIM7: '%7',
+        ChordType.AUG_MIN7: '+7',
+        ChordType.AUG_MAJ7: '+M7'
+    }
+
+    for chord_type, string in chord_type_strings.items():
+        assert hu.get_chord_type_from_string(string) == chord_type
+        assert hu.get_chord_string(chord_type) == string
+
+
+def test_get_pitch_from_string():
+    for acc, adj in zip(['###', '##', '#', '', 'b', 'bb', 'bbb'], [3, 2, 1, 0, -1, -2, -3]):
+        for pitch, midi, tpc in zip(['C', 'D', 'E', 'F', 'G', 'A', 'B'],
+                                    [0, 2, 4, 5, 7, 9, 11],
+                                    [0, 2, 4, -1, 1, 3, 5]):
+            tpc += hc.TPC_C
+            pitch += acc
+
+            correct_midi = (midi + adj) % hc.NUM_PITCHES[PitchType.MIDI]
+            assert hu.get_pitch_from_string(pitch, PitchType.MIDI) == correct_midi
+
+            correct_tpc = tpc + adj * hc.ACCIDENTAL_ADJUSTMENT[PitchType.TPC]
+            if 0 <= correct_tpc < hc.NUM_PITCHES[PitchType.TPC]:
+                assert hu.get_pitch_from_string(pitch, PitchType.TPC) == correct_tpc
+            else:
+                with pytest.raises(ValueError):
+                    hu.get_pitch_from_string(pitch, PitchType.TPC)
+
+
+def test_get_pitch_string():
+    base_tpc = ['F', 'C', 'G', 'D', 'A', 'E', 'B']
+    pitch_strings = {
+        PitchType.MIDI: ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'],
+        PitchType.TPC: (
+            [base + 'bb' for base in base_tpc] +
+            [base + 'b' for base in base_tpc] +
+            base_tpc +
+            [base + '#' for base in base_tpc] +
+            [base + '##' for base in base_tpc]
+        )
+    }
+    for pitch_type in [PitchType.MIDI, PitchType.TPC]:
+        for pitch in range(0, hc.NUM_PITCHES[pitch_type]):
+            string = hu.get_pitch_string(pitch, pitch_type)
+            correct_string = pitch_strings[pitch_type][pitch]
+
+            if pitch_type == PitchType.TPC or ('#' not in correct_string):
+                assert string == correct_string
+            else:
+                assert '/' in string and correct_string in string.split('/')
+
+        with pytest.raises(ValueError):
+            hu.get_pitch_string(-1, pitch_type)
+        with pytest.raises(ValueError):
+            hu.get_pitch_string(hc.NUM_PITCHES[pitch_type], pitch_type)
+
+
+def test_get_one_hot_labels():
+    for pitch_type in [PitchType.MIDI, PitchType.TPC]:
+        one_hots = hu.get_one_hot_labels(pitch_type)
+        i = 0
+
+        for chord_type in ChordType:
+            chord_string = hu.get_chord_string(chord_type)
+            for pitch in range(0, hc.NUM_PITCHES[pitch_type]):
+                pitch_string = hu.get_pitch_string(pitch, pitch_type)
+
+                assert one_hots[i] == f'{pitch_string}:{chord_string}'
+                i += 1
+
+        assert i == len(one_hots)

@@ -4,186 +4,7 @@ import pandas as pd
 import numpy as np
 
 from harmonic_inference.data.data_types import  KeyMode, PitchType, ChordType
-
-
-TPC_C = 15
-TPC_NATURAL_PITCHES = 7
-
-
-STRING_TO_PITCH = {
-    PitchType.TPC: {
-        'A': TPC_C + 3,
-        'B': TPC_C + 5,
-        'C': TPC_C,
-        'D': TPC_C + 2,
-        'E': TPC_C + 4,
-        'F': TPC_C - 1,
-        'G': TPC_C + 1
-    },
-    PitchType.MIDI: {
-        'C': 0,
-        'D': 2,
-        'E': 4,
-        'F': 5,
-        'G': 7,
-        'A': 9,
-        'B': 11
-    }
-}
-
-
-PITCH_TO_STRING = {
-    PitchType.MIDI: ['C', 'C#/Db', 'D', 'D#/Eb', 'E', 'F', 'F#/Gb', 'G', 'G#/Ab', 'A', 'A#/Bb', 'B'],
-    PitchType.TPC: {index: string for string, index in  STRING_TO_PITCH[PitchType.TPC].items()}
-}
-
-
-for note_string in ['A', 'B', 'C', 'D', 'E', 'F', 'G']:
-    for pitch_type in PitchType:
-        STRING_TO_PITCH[pitch_type][note_string.lower()] = STRING_TO_PITCH[pitch_type][note_string]
-
-
-SCALE_INTERVALS = {
-    KeyMode.MAJOR: {
-        PitchType.TPC: [0, 0, 2, 4, -1, 1, 3, 5],
-        PitchType.MIDI: [0, 0, 2, 4, 5, 7, 9, 11],
-    },
-    KeyMode.MINOR: {
-        PitchType.TPC: [0, 0, 2, -3, -1, 1, -4, -2],
-        PitchType.MIDI: [0, 0, 2, 3, 5, 7, 8, 10]
-    }
-}
-
-
-ACCIDENTAL_ADJUSTMENT = {
-    PitchType.TPC: 7,
-    PitchType.MIDI: 1
-}
-
-
-NUM_PITCHES = {
-    PitchType.TPC: 35,
-    PitchType.MIDI: 12
-}
-
-
-SCALE_DEGREE_TO_NUMBER = {
-    'I':   1,
-    'II':  2,
-    'III': 3,
-    'IV':  4,
-    'V':   5,
-    'VI':  6,
-    'VII': 7,
-    'i':   1,
-    'ii':  2,
-    'iii': 3,
-    'iv':  4,
-    'v':   5,
-    'vi':  6,
-    'vii': 7,
-    '1':   1,
-    '2':   2,
-    '3':   3,
-    '4':   4,
-    '5':   5,
-    '6':   6,
-    '7':   7
-}
-
-# Triad types indexes of ones for a C chord of the given type in a one-hot presence vector
-CHORD_PITCHES = {}
-for pitch_type in [PitchType.MIDI, PitchType.TPC]:
-    CHORD_PITCHES[pitch_type] = {
-        ChordType.MAJOR: [
-            STRING_TO_PITCH[pitch_type]['C'],
-            STRING_TO_PITCH[pitch_type]['E'],
-            STRING_TO_PITCH[pitch_type]['G']
-        ],
-        ChordType.MINOR: [
-            STRING_TO_PITCH[pitch_type]['C'],
-            STRING_TO_PITCH[pitch_type]['E'] - ACCIDENTAL_ADJUSTMENT[pitch_type],
-            STRING_TO_PITCH[pitch_type]['G']
-        ],
-        ChordType.DIMINISHED: [
-            STRING_TO_PITCH[pitch_type]['C'],
-            STRING_TO_PITCH[pitch_type]['E'] - ACCIDENTAL_ADJUSTMENT[pitch_type],
-            STRING_TO_PITCH[pitch_type]['G'] - ACCIDENTAL_ADJUSTMENT[pitch_type]
-        ],
-        ChordType.AUGMENTED: [
-            STRING_TO_PITCH[pitch_type]['C'],
-            STRING_TO_PITCH[pitch_type]['E'],
-            STRING_TO_PITCH[pitch_type]['G'] + ACCIDENTAL_ADJUSTMENT[pitch_type]
-        ]
-    }
-
-    # Add major triad 7th chords
-    for chord in [ChordType.MAJ_MAJ7, ChordType.MAJ_MIN7]:
-        CHORD_PITCHES[pitch_type][chord] = CHORD_PITCHES[pitch_type][ChordType.MAJOR].copy()
-
-    # Add minor triad 7th chords
-    for chord in [ChordType.MIN_MAJ7, ChordType.MIN_MIN7]:
-        CHORD_PITCHES[pitch_type][chord] = CHORD_PITCHES[pitch_type][ChordType.MINOR].copy()
-
-    # Add diminished triad 7th chords
-    for chord in [ChordType.DIM7, ChordType.HALF_DIM7]:
-        CHORD_PITCHES[pitch_type][chord] = CHORD_PITCHES[pitch_type][ChordType.DIMINISHED].copy()
-
-    # Add augmented triad 7th chords
-    for chord in [ChordType.AUG_MAJ7, ChordType.AUG_MIN7]:
-        CHORD_PITCHES[pitch_type][chord] = CHORD_PITCHES[pitch_type][ChordType.AUGMENTED].copy()
-
-    # Add major 7ths
-    for chord in [ChordType.MAJ_MAJ7, ChordType.MIN_MAJ7, ChordType.AUG_MAJ7]:
-        CHORD_PITCHES[pitch_type][chord].append(STRING_TO_PITCH[pitch_type]['B'])
-
-    # Add minor 7ths
-    for chord in [ChordType.MAJ_MIN7, ChordType.MIN_MIN7, ChordType.HALF_DIM7, ChordType.AUG_MIN7]:
-        CHORD_PITCHES[pitch_type][chord].append(
-            STRING_TO_PITCH[pitch_type]['B'] - ACCIDENTAL_ADJUSTMENT[pitch_type]
-        )
-
-    # Add diminished 7ths
-    for chord in [ChordType.DIMINISHED]:
-        CHORD_PITCHES[pitch_type][chord].append(
-            STRING_TO_PITCH[pitch_type]['B'] - 2 * ACCIDENTAL_ADJUSTMENT[pitch_type]
-        )
-
-
-
-def get_pitch_string(pitch: int, pitch_type: PitchType) -> str:
-    """
-    Get the string representation of a pitch.
-
-    Parameters
-    ----------
-    pitch : int
-        The pitch to convert to a string.
-    pitch_type : PitchType
-        The type of pitch this is.
-
-    Returns
-    -------
-    pitch_string : str
-        A string representation of the given pitch.
-    """
-    if pitch_type == PitchType.MIDI:
-        return PITCH_TO_STRING[PitchType.MIDI][pitch % NUM_PITCHES[PitchType.MIDI]]
-
-    accidental = 0
-    accidental_string = '#'
-    while pitch < min(PITCH_TO_STRING[PitchType.TPC].keys()):
-        pitch += TPC_NATURAL_PITCHES
-        accidental -= 1
-    while pitch > max(PITCH_TO_STRING[PitchType.TPC].keys()):
-        pitch -= TPC_NATURAL_PITCHES
-        accidental += 1
-
-    if accidental < 0:
-        accidental_string = 'b'
-        accidental = -accidental
-
-    return PITCH_TO_STRING[PitchType.TPC][pitch] + (accidental_string * accidental)
+from harmonic_inference.utils import harmonic_constants as hc
 
 
 def get_one_hot_labels(pitch_type: PitchType) -> List[str]:
@@ -202,7 +23,7 @@ def get_one_hot_labels(pitch_type: PitchType) -> List[str]:
     """
     roots = []
     if pitch_type == PitchType.MIDI:
-        roots = MIDI_PITCH_NAMES
+        roots = hc.PITCH_TO_STRING[pitch_type]
     elif pitch_type == PitchType.TPC:
         for accidental in ['bb', 'b', '', '#', '##']:
             for root in ['F', 'C', 'G', 'D', 'A', 'E', 'B']:
@@ -211,7 +32,7 @@ def get_one_hot_labels(pitch_type: PitchType) -> List[str]:
     labels = []
     for chord_type in ChordType:
         for root in roots:
-            labels.append(f'{root}:{chord_type}')
+            labels.append(f'{root}:{get_chord_string(chord_type)}')
 
     return labels
 
@@ -296,7 +117,7 @@ def transpose_chord_vector(chord_vector: List[int], interval: int,
     if interval > 0:
         result[:interval] = 0
         result[interval:] = chord_vector[:-interval]
-    elif num < 0:
+    elif interval < 0:
         result[interval:] = 0
         result[:interval] = chord_vector[-interval:]
     else:
@@ -321,8 +142,8 @@ def get_vector_from_chord_type(chord_type: ChordType, pitch_type: PitchType) -> 
         A one-hot vector of the pitches present in a chord of the given chord type
         with root C in the given pitch representation.
     """
-    chord_vector = np.zeros(NUM_PITCHES[pitch_type])
-    chord_vector[CHORD_PITCHES[pitch_type][chord_type]] = 1
+    chord_vector = np.zeros(hc.NUM_PITCHES[pitch_type], dtype=int)
+    chord_vector[hc.CHORD_PITCHES[pitch_type][chord_type]] = 1
     return chord_vector
 
 
@@ -345,10 +166,10 @@ def get_interval_from_numeral(numeral: str, mode: KeyMode, pitch_type: PitchType
     interval : int
         The interval from the key tonic to the scale degree numeral.
     """
-    return get_interval_from_scale_degree(numeral, True, True, mode, pitch_type)
+    return get_interval_from_scale_degree(numeral, True, mode, pitch_type)
 
 
-def get_interval_from_scale_degree(scale_degree: str, numeral: bool, accidentals_prefixed: bool,
+def get_interval_from_scale_degree(scale_degree: str, accidentals_prefixed: bool,
                                    mode: KeyMode, pitch_type: PitchType) -> int:
     """
     Get an interval from the string of a scale degree, prefixed or suffixed with flats or sharps.
@@ -358,8 +179,6 @@ def get_interval_from_scale_degree(scale_degree: str, numeral: bool, accidentals
     scale_degree : str
         A string of a scale degree, either as a roman numeral or a number, with any accidentals
         suffixed or prefixed as 'b' (flats) or '#' (sharps).
-    numeral : bool
-        True if the scale degree is given as a roman numeral. False if it is given as a number.
     accidentals_prefixed : bool
         True if the given scale degree might be prefixed with accidentals. False if they can be
         suffixed.
@@ -377,8 +196,8 @@ def get_interval_from_scale_degree(scale_degree: str, numeral: bool, accidentals
     accidental_adjustment, scale_degree = get_accidental_adjustment(scale_degree,
                                                                     in_front=accidentals_prefixed)
 
-    interval = SCALE_INTERVALS[mode][pitch_type][SCALE_DEGREE_TO_NUMBER[scale_degree]]
-    interval += accidental_adjustment * ACCIDENTAL_ADJUSTMENT[pitch_type]
+    interval = hc.SCALE_INTERVALS[mode][pitch_type][hc.SCALE_DEGREE_TO_NUMBER[scale_degree]]
+    interval += accidental_adjustment * hc.ACCIDENTAL_ADJUSTMENT[pitch_type]
 
     return interval
 
@@ -406,46 +225,14 @@ def transpose_pitch(pitch: int, interval: int, pitch_type: PitchType) -> int:
         The given pitch, transposed by the given interval.
     """
     if pitch_type == PitchType.MIDI:
-        return (pitch + interval) % NUM_PITCHES[PitchType.MIDI]
+        return (pitch + interval) % hc.NUM_PITCHES[PitchType.MIDI]
     pitch = pitch + interval
 
-    if pitch < 0 or pitch >= NUM_PITCHES[PitchType.TPC]:
+    if pitch < 0 or pitch >= hc.NUM_PITCHES[PitchType.TPC]:
         raise ValueError(f"pitch_type is TPC but transposed pitch {pitch} lies outside of TPC "
                          "range.")
 
     return pitch
-
-
-STRING_TO_CHORD_TYPE = {
-    'M': ChordType.MAJOR,
-    'm': ChordType.MINOR,
-    'o': ChordType.DIMINISHED,
-    '+': ChordType.AUGMENTED,
-    'MM7': ChordType.MAJ_MAJ7,
-    'Mm7': ChordType.MAJ_MIN7,
-    'mM7': ChordType.MIN_MAJ7,
-    'mm7': ChordType.MIN_MIN7,
-    'o7': ChordType.DIM7,
-    '%7': ChordType.HALF_DIM7,
-    '+7': ChordType.AUG_MIN7,
-    '+M7': ChordType.AUG_MAJ7
-}
-
-
-def get_chord_type_from_string(string : str) -> ChordType:
-    if string not in STRING_TO_CHORD_TYPE:
-        raise ValueError(f"String type {string} not recognized.")
-    return STRING_TO_CHORD_TYPE[string]
-
-
-INVERSIONS = {
-    '7':  0,
-    '6':  1,
-    '65': 1,
-    '43': 2,
-    '64': 2,
-    '2':  3
-}
 
 
 def get_chord_inversion(figbass: str) -> int:
@@ -462,14 +249,58 @@ def get_chord_inversion(figbass: str) -> int:
     inversion : int
         An integer representing the chord inversion. 0 for root position, 1 for 1st inversion, etc.
     """
-    if pd.isnull(figbass):
+    if pd.isnull(figbass) or len(figbass) == 0:
         return 0
     try:
-        return INVERSIONS[figbass]
+        return hc.FIGBASS_INVERSIONS[figbass]
     except:
         raise ValueError(f"{str} is not a valid figured bass symbol for detecting inversions.")
 
 
+# Chord/Pitch string <--> object conversion functions =============================================
+
+
+def get_chord_type_from_string(chord_string : str) -> ChordType:
+    """
+    Map a chord type string to a ChordType.
+
+    Parameters
+    ----------
+    chord_string : str
+        A string representing a chord type.
+        One of: M, m, +, o, MM7, Mm7, mM7, mm7, %7, o7, +7, +M7.
+
+    Returns
+    -------
+    chord_type : ChordType
+        The chord type object corresponding to the given chord_string.
+
+    Raises
+    ------
+    ValueError
+        If the given chord_string is not one of the recognized chord type strings.
+    """
+    try:
+        return hc.STRING_TO_CHORD_TYPE[chord_string]
+    except:
+        raise ValueError(f"String type {chord_string} not recognized.")
+
+
+def get_chord_string(chord_type : ChordType) -> str:
+    """
+    Get a chord type string from a given ChordType.
+
+    Parameters
+    ----------
+    chord_type : ChordType
+        A ChordType to convert to a string.
+
+    Returns
+    -------
+    chord_type_str : str
+        The string representation of the given ChordType.
+    """
+    return hc.CHORD_TYPE_TO_STRING[chord_type]
 
 
 def get_pitch_from_string(pitch_string: str, pitch_type: PitchType) -> int:
@@ -491,7 +322,52 @@ def get_pitch_from_string(pitch_string: str, pitch_type: PitchType) -> int:
     """
     accidental_adjustment, pitch_string = get_accidental_adjustment(pitch_string, in_front=False)
 
-    pitch = STRING_TO_PITCH[pitch_type][pitch_string]
-    pitch += accidental_adjustment * ACCIDENTAL_ADJUSTMENT[pitch_type]
+    pitch = hc.STRING_TO_PITCH[pitch_type][pitch_string]
+    pitch += accidental_adjustment * hc.ACCIDENTAL_ADJUSTMENT[pitch_type]
+
+    if pitch_type == PitchType.MIDI:
+        pitch %= hc.NUM_PITCHES[PitchType.MIDI]
+    elif pitch_type == PitchType.TPC and (pitch < 0 or pitch >= hc.NUM_PITCHES[PitchType.TPC]):
+        raise ValueError(
+            f"Pitch type is TPC, but returned pitch {pitch} would be outside of valid range."
+        )
 
     return pitch
+
+
+def get_pitch_string(pitch: int, pitch_type: PitchType) -> str:
+    """
+    Get the string representation of a pitch.
+
+    Parameters
+    ----------
+    pitch : int
+        The pitch to convert to a string.
+    pitch_type : PitchType
+        The type of pitch this is.
+
+    Returns
+    -------
+    pitch_string : str
+        A string representation of the given pitch.
+    """
+    if pitch < 0 or pitch >= hc.NUM_PITCHES[pitch_type]:
+        raise ValueError(f"Pitch {pitch} outside of valid range for pitch type {pitch_type}")
+
+    if pitch_type == PitchType.MIDI:
+        return hc.PITCH_TO_STRING[PitchType.MIDI][pitch % hc.NUM_PITCHES[PitchType.MIDI]]
+
+    accidental = 0
+    accidental_string = '#'
+    while pitch < min(hc.PITCH_TO_STRING[PitchType.TPC].keys()):
+        pitch += hc.TPC_NATURAL_PITCHES
+        accidental -= 1
+    while pitch > max(hc.PITCH_TO_STRING[PitchType.TPC].keys()):
+        pitch -= hc.TPC_NATURAL_PITCHES
+        accidental += 1
+
+    if accidental < 0:
+        accidental_string = 'b'
+        accidental = -accidental
+
+    return hc.PITCH_TO_STRING[PitchType.TPC][pitch] + (accidental_string * accidental)
