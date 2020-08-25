@@ -34,7 +34,7 @@ def get_range_length(range_start: Tuple[int, Fraction], range_end: Tuple[int, Fr
 
     # Start looping at end of start_mc
     act_dur, offset, current_mc = measures.loc[measures.mc == start_mc,
-                                         ['act_dur', 'offset', 'next']].values[0]
+                                               ['act_dur', 'offset', 'next']].values[0]
     length = act_dur + offset - start_beat
 
     # Loop until reaching end_mc
