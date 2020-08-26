@@ -169,6 +169,24 @@ def get_interval_from_numeral(numeral: str, mode: KeyMode, pitch_type: PitchType
     return get_interval_from_scale_degree(numeral, True, mode, pitch_type)
 
 
+def tpc_interval_to_midi_interval(tpc_interval: int) -> int:
+    """
+    Convert a TPC interval (in fifths, where 0 is a unison interval) into a MIDI interval
+    (in semitones).
+
+    Parameters
+    ----------
+    tpc_interval : int
+        The TPC representation of the given interval, measured in fifths above a given pitch.
+
+    Returns
+    -------
+    midi_interval : int
+        The MIDI representation of the given interval, measured in semitones above a given pitch.
+    """
+    return (hc.TPC_INTERVAL_SEMITONES * tpc_interval) % hc.NUM_PITCHES[PitchType.MIDI]
+
+
 def get_interval_from_scale_degree(scale_degree: str, accidentals_prefixed: bool,
                                    mode: KeyMode, pitch_type: PitchType) -> int:
     """
@@ -351,9 +369,6 @@ def get_pitch_string(pitch: int, pitch_type: PitchType) -> str:
     pitch_string : str
         A string representation of the given pitch.
     """
-    if pitch < 0 or pitch >= hc.NUM_PITCHES[pitch_type]:
-        raise ValueError(f"Pitch {pitch} outside of valid range for pitch type {pitch_type}")
-
     if pitch_type == PitchType.MIDI:
         return hc.PITCH_TO_STRING[PitchType.MIDI][pitch % hc.NUM_PITCHES[PitchType.MIDI]]
 

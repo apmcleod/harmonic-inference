@@ -2,8 +2,10 @@
 from harmonic_inference.data.data_types import KeyMode, PitchType, ChordType
 
 
-TPC_C = 15
 TPC_NATURAL_PITCHES = 7
+TPC_ACCIDENTALS = 5 # bb, b, natural, #, ##. natural must be in the exact middle
+TPC_C_WITHIN_PITCHES = 1
+TPC_C = int(TPC_ACCIDENTALS / 2) * TPC_NATURAL_PITCHES + TPC_C_WITHIN_PITCHES
 
 
 STRING_TO_PITCH = {
@@ -28,7 +30,7 @@ STRING_TO_PITCH = {
 }
 
 NUM_PITCHES = {
-    PitchType.TPC: 35,
+    PitchType.TPC: TPC_NATURAL_PITCHES * TPC_ACCIDENTALS,
     PitchType.MIDI: 12
 }
 
@@ -57,9 +59,13 @@ SCALE_INTERVALS = {
 
 
 ACCIDENTAL_ADJUSTMENT = {
-    PitchType.TPC: 7,
+    PitchType.TPC: TPC_NATURAL_PITCHES,
     PitchType.MIDI: 1
 }
+
+
+# How many semitones is one TPC
+TPC_INTERVAL_SEMITONES = 7
 
 
 SCALE_DEGREE_TO_NUMBER = {

@@ -8,6 +8,7 @@ import numpy as np
 
 from .data_types import *
 from harmonic_inference.utils import harmonic_utils as hu
+from harmonic_inference.utils import harmonic_constants as hc
 
 
 class Note():
@@ -53,11 +54,37 @@ class Note():
                 f'{self.onset}--{self.offset}')
 
     @staticmethod
-    def from_series(note_row: pd.Series, measures_df: pd.DataFrame, pitch_type: PitchType):
+    def from_series(note_row: pd.Series, pitch_type: PitchType):
+        """
+        Create a new Note object from a pd.Series, and return it.
+
+        Parameters
+        ----------
+        note_row : pd.Series
+            A pd.Series of a note. Must have at least the fields:
+                'midi' (int): MIDI pitch, from 0 to 127.
+                'tpc' (int): The note's TPC pitch, where C = 0. Required if pitch_type is TPC.
+                'mc' (int): The note's onset measure.
+                'onset' (Fraction): The note's onset beat, in whole notes.
+                'offset_mc' (int): The note's offset measure.
+                'offset_beat' (Fraction): The note's offset beat, in whole notes.
+                'duration' (Fraction): The note's duration, in whole notes.
+        pitch_type : PitchType
+            The pitch type to use for the Note.
+
+        Returns
+        -------
+        note : Note, or None
+            The created Note object. If an error occurs, None is returned and the error is logged.
+        """
         try:
-            pitch = (note_row.tpc + hu.TPC_C if pitch_type == PitchType.TPC else
-                     note_row.midi % hu.NUM_PITCHES[PitchType.MIDI])
-            octave = note_row.midi // hu.NUM_PITCHES[PitchType.MIDI]
+            if pitch_type == PitchType.TPC:
+                pitch = note_row.tpc + hc.TPC_C
+                if pitch < 0 or pitch >= hc.NUM_PITCHES[PitchType.TPC]:
+                    raise ValueError(f"TPC pitch {pitch} is outside of valid range.")
+            elif pitch_type == PitchType.MIDI:
+                pitch = note_row.midi % hc.NUM_PITCHES[PitchType.MIDI]
+            octave = note_row.midi // hc.NUM_PITCHES[PitchType.MIDI]
 
             onset = (note_row.mc, note_row.onset)
             offset = (note_row.offset_mc, note_row.offset_beat)
@@ -135,29 +162,70 @@ class Chord():
                 f'{self.onset}--{self.offset}')
 
     @staticmethod
-    def from_series(chord_row: pd.Series, measures_df: pd.DataFrame, pitch_type: PitchType):
+    def from_series(chord_row: pd.Series, pitch_type: PitchType):
+        """
+        Create a Chord object of the given pitch_type from the given pd.Series.
+
+        Parameters
+        ----------
+        chord_row : pd.Series
+            The chord row from which to make our chord object. It must contain at least the rows:
+                'numeral' (str): The numeral of the chord label. If this is null or '@none',
+                                 None is returned.
+                'root' (int): The interval of the root note above the local key tonic, in TPC.
+                'bass_note' (int): The interval of the bass note above the local key tonic, in TPC.
+                'chord_type' (str): The string representation of the chord type.
+                'figbass' (str): The figured bass of the chord inversion.
+                'globalkey' (str): The global key A-G (major) or a-g (minor) with appended # and b.
+                'globalkey_is_minor' (bool): True if the global key is minor. False if major.
+                'localkey' (str): A Roman numeral representing the local key relative to the global
+                                  key. E.g., 'biv' for a minor local key with a tonic on the flat-4
+                                  of the global key.
+                'localkey_is_minor' (bool): True if the local key is minor. False if major.
+                'relativeroot' (str): The relative root for this chord, if any (otherwise null).
+                                      Represented as 'r1', 'r1/r2', 'r1/r2/r3...'. The last
+                                      relative root is relative to the local key, and each previous
+                                      one is relative to that new applied key. Each root is in the
+                                      same format as 'localkey'.
+                'mc' (int): The chord's onset measure.
+                'onset' (Fraction): The chord's onset beat, in whole notes.
+                'mc_next' (int): The chord's offset measure.
+                'onset_next' (Fraction): The chord's offset beat, in whole notes.
+                'duration' (Fraction): The chord's duration, in whole notes.
+
+        pitch_type : PitchType
+            The pitch type to use for the Chord.
+
+        Returns
+        -------
+        chord : Chord, or None
+            The created Note object. If an error occurs, None is returned and the error is logged.
+        """
         try:
             if chord_row['numeral'] == '@none' or pd.isnull(chord_row['numeral']):
                 # Handle "No Chord" symbol
                 return None
 
-            else:
-                # Root and bass note are relative to local key (not applied dominant)
-                local_key = Key.from_series(chord_row, pitch_type, do_relative=False)
+            # Root and bass note are relative to local key (not applied dominant)
+            local_key = Key.from_series(chord_row, pitch_type, do_relative=False)
 
-                # Root note of chord, absolute
-                root_interval = (chord_row['root'] if pitch_type == PitchType.TPC else
-                                hu.tpc_to_midi_interval(chord_row['bass_note'] + hu.TPC_C))
-                root = hu.transpose_pitch(local_key.tonic, root_interval, pitch_type=pitch_type)
+            # Root note of chord, absolute
+            root_interval = (
+                chord_row['root'] if pitch_type == PitchType.TPC else
+                hu.tpc_interval_to_midi_interval(chord_row['root'])
+            )
+            root = hu.transpose_pitch(local_key.tonic, root_interval, pitch_type=pitch_type)
 
-                # Bass note of chord, absolute
-                bass_interval = (chord_row['bass_note'] if pitch_type == PitchType.TPC else
-                                hu.tpc_to_midi(chord_row['bass_note'] + hu.TPC_C))
-                bass = hu.transpose_pitch(local_key.tonic, bass_interval, pitch_type=pitch_type)
+            # Bass note of chord, absolute
+            bass_interval = (
+                chord_row['bass_note'] if pitch_type == PitchType.TPC else
+                hu.tpc_interval_to_midi_interval(chord_row['bass_note'])
+            )
+            bass = hu.transpose_pitch(local_key.tonic, bass_interval, pitch_type=pitch_type)
 
-                # Additional chord info
-                chord_type = hu.get_chord_type_from_string(chord_row['chord_type'])
-                inversion = hu.get_chord_inversion(chord_row['figbass'])
+            # Additional chord info
+            chord_type = hu.get_chord_type_from_string(chord_row['chord_type'])
+            inversion = hu.get_chord_inversion(chord_row['figbass'])
 
             # Rhythmic info - Even "No Chord" symbols have these.
             onset = (chord_row.mc, chord_row.onset)
@@ -202,6 +270,35 @@ class Key():
 
     @staticmethod
     def from_series(chord_row: pd.Series, tonic_type: PitchType, do_relative: bool = True):
+        """
+        Create a Key object of the given pitch_type from the given pd.Series.
+
+        Parameters
+        ----------
+        chord_row : pd.Series
+            The chord row from which to make our Key object. It must contain at least the rows:
+                'globalkey' (str): The global key A-G (major) or a-g (minor) with appended # and b.
+                'globalkey_is_minor' (bool): True if the global key is minor. False if major.
+                'localkey' (str): A Roman numeral representing the local key relative to the global
+                                  key. E.g., 'biv' for a minor local key with a tonic on the flat-4
+                                  of the global key.
+                'localkey_is_minor' (bool): True if the local key is minor. False if major.
+                'relativeroot' (str): The relative root for this chord, if any (otherwise null).
+                                      Represented as 'r1', 'r1/r2', 'r1/r2/r3...'. The last
+                                      relative root is relative to the local key, and each previous
+                                      one is relative to that new applied key. Each root is in the
+                                      same format as 'localkey'.
+        pitch_type : PitchType
+            The pitch type to use for the Key's tonic.
+        do_relative : bool
+            True to treat slash chords (e.g., applied dominants) as Keys. False to stop after
+            considering the local key only.
+
+        Returns
+        -------
+        chord : Chord, or None
+            The created Note object. If an error occurs, None is returned and the error is logged.
+        """
         try:
             # Global key, absolute
             global_tonic = hu.get_pitch_from_string(chord_row['globalkey'], pitch_type=tonic_type)
@@ -316,7 +413,7 @@ class ScorePiece(Piece):
     A single musical piece, in score format.
     """
 
-    def __init__(self, notes_df: pd.DataFrame, chords_df: pd.DataFrame, measures_df: pd.DataFrame):
+    def __init__(self, notes_df: pd.DataFrame, chords_df: pd.DataFrame):
         """
         Create a ScorePiece object from the given 3 pandas DataFrames.
 
@@ -326,14 +423,11 @@ class ScorePiece(Piece):
             A DataFrame containing information about the notes contained in the piece.
         chords_df : pd.DataFrame
             A DataFrame containing information about the chords contained in the piece.
-        measures_df : pd.DataFrame
-            A DataFrame containing information about the measures contained in the piece.
         """
         super().__init__(PieceType.SCORE)
         notes = np.array([
             [note, note_id] for note_id, note in enumerate(notes_df.apply(
-                Note.from_series, axis='columns', measures_df=measures_df,
-                pitch_type=PitchType.TPC
+                Note.from_series, axis='columns', pitch_type=PitchType.TPC
             )) if note is not None
         ])
         self.notes, self.note_ilocs = np.hsplit(notes, 2)
@@ -342,8 +436,7 @@ class ScorePiece(Piece):
 
         chords = np.array([
             [chord, chord_id] for chord_id, chord in enumerate(chords_df.apply(
-                Chord.from_series, axis='columns', measures_df=measures_df,
-                pitch_type=PitchType.TPC
+                Chord.from_series, axis='columns', pitch_type=PitchType.TPC
             )) if chord is not None
         ])
         self.chords, self.chord_ilocs = np.hsplit(chords, 2)

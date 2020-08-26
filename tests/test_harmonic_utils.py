@@ -172,6 +172,15 @@ def test_get_interval_from_scale_degree():
                                                                         PitchType.TPC)
 
 
+def test_tpc_interval_to_midi_interval():
+    for tpc in range(hc.NUM_PITCHES[PitchType.TPC]):
+        midi_target = hu.get_pitch_from_string(
+            hu.get_pitch_string(tpc, PitchType.TPC),
+            PitchType.MIDI
+        )
+        assert hu.tpc_interval_to_midi_interval(tpc - hc.TPC_C) == midi_target
+
+
 def test_transpose_pitch():
     for midi, tpc in zip(range(hc.NUM_PITCHES[PitchType.MIDI]),
                          range(hc.NUM_PITCHES[PitchType.TPC])):
@@ -269,11 +278,6 @@ def test_get_pitch_string():
                 assert string == correct_string
             else:
                 assert '/' in string and correct_string in string.split('/')
-
-        with pytest.raises(ValueError):
-            hu.get_pitch_string(-1, pitch_type)
-        with pytest.raises(ValueError):
-            hu.get_pitch_string(hc.NUM_PITCHES[pitch_type], pitch_type)
 
 
 def test_get_one_hot_labels():
