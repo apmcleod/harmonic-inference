@@ -228,8 +228,8 @@ def test_key_from_series():
             key_series = pd.Series(key_dict)
             for pitch_type in PitchType:
                 for do_relative in [False, True]:
-                    key = Key.from_series(key_series, pitch_type, do_relative=do_relative)
-                    check_equals(key_dict, key, pitch_type, do_relative)
+                    key_obj = Key.from_series(key_series, pitch_type, do_relative=do_relative)
+                    check_equals(key_dict, key_obj, pitch_type, do_relative)
 
     # Try with localkey minor, relatives major
     key_dict['localkey_is_minor'] = True
@@ -305,4 +305,52 @@ def test_key_from_series():
 
 
 def test_score_piece():
-    pass
+    note_dict = {
+        'midi': 50,
+        'tpc': 5,
+        'mc': range(10),
+        'onset': Fraction(1, 2),
+        'offset_mc': range(1, 11),
+        'offset_beat': Fraction(1, 2),
+        'duration': Fraction(1),
+    }
+    note_df = pd.DataFrame(note_dict)
+    notes = [Note.from_series(note_row, PitchType.TPC) for _, note_row in note_df.iterrows()]
+
+    chord_dict = {
+        'numeral': ['III', 'III', 'III', 'IV', 'IV', '@none'],
+        'root': 5,
+        'bass_note': 5,
+        'chord_type': 'M',
+        'figbass': '',
+        'globalkey': 'A',
+        'globalkey_is_minor': False,
+        'localkey': ['iii', 'iii', 'III', 'III', 'I', pd.NA],
+        'localkey_is_minor': [True, True, False, False, False, pd.NA],
+        'relativeroot': [pd.NA, pd.NA, pd.NA, 'V', 'V', pd.NA],
+        'offset_mc': 2,
+        'offset_beat': Fraction(3, 4),
+        'duration': Fraction(5, 6),
+        'mc': [2 * i for i in range(6)],
+        'onset': Fraction(1, 2),
+        'mc_next': [2 * i + 1 for i in range(6)],
+        'onset_next': Fraction(1, 2),
+        'duration': Fraction(2),
+    }
+    chord_df = pd.DataFrame(chord_dict)
+    chords = [Chord.from_series(chord_row, PitchType.TPC) for _, chord_row in chord_df.iterrows()]
+    not_none_chords = [c for c in chords if c is not None]
+
+    keys = [Key.from_series(chord_row, PitchType.TPC) for _, chord_row in chord_df.iterrows()]
+    not_none_keys = [k for k in keys if k is not None]
+    unique_keys = [not_none_keys[0]] + [
+        k for k, k_prev in zip(not_none_keys[1:], not_none_keys[:-1]) if k != k_prev
+    ]
+
+    piece = ScorePiece(note_df, chord_df)
+
+    assert all(piece.get_inputs() == notes)
+    assert all(piece.get_chords() == not_none_chords)
+    assert all(piece.get_keys() == unique_keys)
+    assert all(piece.get_chord_change_indices() == [0, 2, 4, 6, 8])
+    assert all(piece.get_key_change_indices() == [0, 2, 3, 4])

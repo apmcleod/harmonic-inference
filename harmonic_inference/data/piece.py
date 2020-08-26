@@ -6,7 +6,7 @@ import logging
 import pandas as pd
 import numpy as np
 
-from .data_types import *
+from harmonic_inference.data.data_types import KeyMode, PitchType, ChordType, PieceType
 from harmonic_inference.utils import harmonic_utils as hu
 from harmonic_inference.utils import harmonic_constants as hc
 
@@ -49,9 +49,26 @@ class Note():
         self.offset = offset
         self.pitch_type = pitch_type
 
+    def __eq__(self, other):
+        if not isinstance(other, Note):
+            return False
+        return (
+            self.pitch_class == other.pitch_class and
+            self.octave == other.octave and
+            self.onset == other.onset and
+            self.duration == other.duration and
+            self.offset == other.offset and
+            self.pitch_type == other.pitch_type
+        )
+
+    def __repr__(self):
+        return self.__str__()
+
     def __str__(self):
-        return (f'{hu.get_pitch_string(self.pitch_class, self.pitch_type)}{self.octave}: '
-                f'{self.onset}--{self.offset}')
+        return (
+            f'{hu.get_pitch_string(self.pitch_class, self.pitch_type)}{self.octave}: '
+            f'{self.onset}--{self.offset}'
+        )
 
     @staticmethod
     def from_series(note_row: pd.Series, pitch_type: PitchType):
@@ -143,6 +160,23 @@ class Chord():
         self.offset = offset
         self.duration = duration
         self.pitch_type = pitch_type
+
+    def __eq__(self, other):
+        if not isinstance(other, Chord):
+            return False
+        return (
+            self.root == other.root and
+            self.bass == other.bass and
+            self.chord_type == other.chord_type and
+            self.inversion == other.inversion and
+            self.onset == other.onset and
+            self.duration == other.duration and
+            self.offset == other.offset and
+            self.pitch_type == other.pitch_type
+        )
+
+    def __repr__(self):
+        return self.__str__()
 
     def __str__(self):
         if self.inversion == 0:
@@ -265,6 +299,18 @@ class Key():
         self.mode = mode
         self.tonic_type = tonic_type
 
+    def __eq__(self, other):
+        if not isinstance(other, Key):
+            return False
+        return (
+            self.tonic == other.tonic and
+            self.mode == other.mode and
+            self.tonic_type == other.tonic_type
+        )
+
+    def __repr__(self):
+        return self.__str__()
+
     def __str__(self):
         return f'{hu.get_pitch_string(self.tonic, self.tonic_type)} {self.mode}'
 
@@ -350,58 +396,58 @@ class Piece():
         # pylint: disable=invalid-name
         self.DATA_TYPE = data_type
 
-    def get_inputs(self) -> List:
+    def get_inputs(self) -> np.array:
         """
         Get a list of the inputs for this Piece.
 
         Returns
         -------
-        inputs : List
+        inputs : np.array
             A List of the inputs for this musical piece.
         """
         raise NotImplementedError
 
-    def get_chord_change_indices(self) -> List[int]:
+    def get_chord_change_indices(self) -> np.array:
         """
         Get a List of the indexes (into the input list) at which there are chord changes.
 
         Returns
         -------
-        chord_change_indices : List[int]
+        chord_change_indices : np.array[int]
             The indices (into the inputs list) at which there is a chord change.
         """
         raise NotImplementedError
 
-    def get_chords(self) -> List[Chord]:
+    def get_chords(self) -> np.array:
         """
         Get a List of the chords in this piece.
 
         Returns
         -------
-        chords : List[Chord]
+        chords : np.array[Chord]
             The chords present in this piece. The ith chord occurs for the inputs between
             chord_change_index i (inclusive) and i+1 (exclusive).
         """
         raise NotImplementedError
 
-    def get_key_change_indices(self) -> List[int]:
+    def get_key_change_indices(self) -> np.array:
         """
         Get a List of the indexes (into the chord list) at which there are key changes.
 
         Returns
         -------
-        key_change_indices : List[int]
+        key_change_indices : np.array[int]
             The indices (into the chords list) at which there is a key change.
         """
         raise NotImplementedError
 
-    def get_keys(self) -> List[Key]:
+    def get_keys(self) -> np.array:
         """
         Get a List of the keys in this piece.
 
         Returns
         -------
-        keys : List[Key]
+        keys : np.array[Key]
             The keys present in this piece. The ith key occurs for the chords between
             key_change_index i (inclusive) and i+1 (exclusive).
         """
@@ -444,7 +490,7 @@ class ScorePiece(Piece):
         self.chord_ilocs = np.squeeze(self.chord_ilocs).astype(int)
 
         # The index of the notes where there is a chord change
-        self.chord_changes = [0] * len(self.chords)
+        self.chord_changes = np.zeros(len(self.chords))
         note_index = 0
         for chord_index, chord in enumerate(self.chords):
             while self.notes[note_index].onset < chord.onset:
@@ -457,24 +503,24 @@ class ScorePiece(Piece):
         key_cols = key_cols.fillna('-1')
         changes = key_cols.ne(key_cols.shift()).fillna(True)
 
-        self.key_changes = changes.loc[changes.any(axis=1)].index.to_list()
-        self.keys = [
+        self.key_changes = changes.loc[changes.any(axis=1)].index.to_numpy()
+        self.keys = np.array([
             key for key in chords_df.loc[chords_df.index[self.chord_ilocs[self.key_changes]]].apply(
                 Key.from_series, axis='columns', tonic_type=PitchType.TPC, do_relative=True
             ) if key is not None
-        ]
+        ])
 
-    def get_inputs(self) -> List[Note]:
+    def get_inputs(self) -> np.array:
         return self.notes
 
-    def get_chord_change_indices(self) -> List[int]:
+    def get_chord_change_indices(self) -> np.array:
         return self.chord_changes
 
-    def get_chords(self) -> List[Chord]:
+    def get_chords(self) -> np.array:
         return self.chords
 
-    def get_key_change_indices(self) -> List[int]:
+    def get_key_change_indices(self) -> np.array:
         return self.key_changes
 
-    def get_keys(self) -> List[Key]:
+    def get_keys(self) -> np.array:
         return self.keys
