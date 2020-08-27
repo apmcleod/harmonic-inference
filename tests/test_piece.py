@@ -397,3 +397,17 @@ def test_score_piece():
     assert all(piece.get_key_change_indices() == [0, 2, 3, 4])
 
     inputs = piece.get_chord_note_inputs(window=2)
+    assert np.sum(inputs[0][:2]) == 0
+    assert all(
+        inputs[0][2] ==
+        notes[0].to_vec(not_none_chords[0], measures_df, (notes[0].octave, notes[0].pitch_class))
+    )
+    assert np.sum(inputs[-1][-2:]) == 0
+    assert all(
+        inputs[-1][-3] ==
+        notes[-1].to_vec(not_none_chords[-1], measures_df, (notes[-1].octave, notes[-1].pitch_class))
+    )
+    assert all(
+        inputs[1][2] ==
+        notes[2].to_vec(not_none_chords[1], measures_df, (notes[2].octave, notes[2].pitch_class))
+    )
