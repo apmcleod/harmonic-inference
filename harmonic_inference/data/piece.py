@@ -64,15 +64,80 @@ class Note():
         self.offset_level = offset_level
         self.pitch_type = pitch_type
 
-    def to_vec(self) -> np.array:
+    def to_vec(
+        self,
+        chord = None,
+        measures_df: pd.DataFrame = None,
+        min_pitch: Tuple[int, int] = None
+    ) -> np.array:
         """
-        Get the vectorized representation of this note.
+        Get the vectorized representation of this note given a chord.
+
+        Parameters
+        ----------
+        chord : Chord
+            The chord object the vector should be relative to (since we might want relative
+            positions or durations). None to not include chord-relative information in the
+            vector.
+
+        measures_df : pd.DataFrame
+            The measures DataFrame for this piece, to be used for getting metrical range
+            information. None to not include chord-relative metrical information in the
+            vector.
+
+        min_pitch : Tuple[int, int]
+            The minimum pitch of any note in this set of notes, expressed as a (octave, pitch)
+            tuple. None to not include the binary is_lowest vector entry.
 
         Returns
         -------
         vector : np.array
             The vector of this Note.
         """
+        vectors = []
+
+        # Pitch as one-hot
+        pitch = np.zeros(hc.NUM_PITCHES[self.pitch_type])
+        pitch[self.pitch_class] = 1
+        vectors.append(pitch)
+
+        # Octave as one-hot
+        octave = np.zeros(127 // hc.NUM_PITCHES[PitchType.MIDI])
+        octave[self.octave] = 1
+        vectors.append(octave)
+
+        # Onset metrical level as one-hot
+        onset_level = np.zeros(4)
+        onset_level[self.onset_level] = 1
+        vectors.append(onset_level)
+
+        # Offset metrical level as one-hot
+        offset_level = np.zeros(4)
+        offset_level[self.offset_level] = 1
+        vectors.append(offset_level)
+
+        # onset, offset, duration as floats, as proportion of chord's range
+        if chord is not None and measures_df is not None:
+            onset, offset, duration = ru.get_rhythmic_info_as_proportion_of_range(
+                pd.Series({
+                    'mc': self.onset[0],
+                    'onset': self.onset[1],
+                    'duration': self.duration
+                }),
+                chord.onset,
+                chord.offset,
+                measures_df,
+                range_len=chord.duration,
+            )
+            metrical = np.array([onset, offset, duration], dtype=float)
+            vectors.append(metrical)
+
+        # Binary -- is this the lowest note in this set of notes
+        if min_pitch is not None:
+            min_pitch = np.array([1 if (self.octave, self.pitch_class) == min_pitch else 0])
+            vectors.append(min_pitch)
+
+        return np.concatenate(vectors)
 
 
     def __eq__(self, other):
@@ -502,6 +567,25 @@ class Piece():
         """
         raise NotImplementedError
 
+    def get_chord_note_inputs(self, window: int = 0) -> np.array:
+        """
+        Get a list of the note input vectors for each chord in this piece, using an optional
+        window on both sides. The ith element in the returned array will be an nd-array of
+        size (2 * window + num_notes, note_vector_length).
+
+        Parameters
+        ----------
+        window : int
+            Add this many neighboring notes to each side of each input tensor. Fill with 0s if
+            this goes beyond the bounds of all notes.
+
+        Returns
+        -------
+        chord_inputs : np.array
+            The input note tensor for each chord in this piece.
+        """
+        raise NotImplementedError
+
     def get_key_change_indices(self) -> np.array:
         """
         Get a List of the indexes (into the chord list) at which there are key changes.
@@ -545,6 +629,8 @@ class ScorePiece(Piece):
             A DataFrame containing information about the measures in the piece.
         """
         super().__init__(PieceType.SCORE)
+        self.measures_df = measures_df
+
         notes = np.array([
             [note, note_id] for note_id, note in enumerate(notes_df.apply(
                 Note.from_series,
@@ -570,14 +656,15 @@ class ScorePiece(Piece):
         self.chord_ilocs = np.squeeze(self.chord_ilocs).astype(int)
 
         # The index of the notes where there is a chord change
-        self.chord_changes = np.zeros(len(self.chords))
+        self.chord_changes = np.zeros(len(self.chords), dtype=int)
         note_index = 0
         for chord_index, chord in enumerate(self.chords):
             while self.notes[note_index].onset < chord.onset:
                 note_index += 1
             self.chord_changes[chord_index] = note_index
 
-        key_cols = chords_df.loc[chords_df.index[self.chord_ilocs], [
+        key_cols = chords_df.loc[
+            chords_df.index[self.chord_ilocs], [
             'globalkey', 'globalkey_is_minor', 'localkey_is_minor', 'localkey', 'relativeroot']
         ]
         key_cols = key_cols.fillna('-1')
@@ -598,6 +685,37 @@ class ScorePiece(Piece):
 
     def get_chords(self) -> np.array:
         return self.chords
+
+    def get_chord_note_inputs(self, window: int = 0):
+        def get_chord_note_input(self, chord, onset_index, offset_index):
+            # Get the notes within the window
+            first_note_index = max(onset_index, 0)
+            last_note_index = min(offset_index, len(self.notes))
+            chord_notes = self.notes[first_note_index:last_note_index]
+
+            # Get all note vectors within the window
+            min_pitch = min([(note.octave, note.pitch_class) for note in chord_notes])
+            note_vectors = np.vstack(
+                [note.to_vec(chord, self.measures_df, min_pitch) for note in chord_notes]
+            )
+
+            # Place the note vectors within the final tensor and return
+            chord_note_input = np.zeros((offset_index - onset_index, note_vectors.shape[1]))
+            start = 0 + (first_note_index - onset_index)
+            end = len(chord_note_input) - (offset_index - last_note_index)
+            chord_note_input[start:end] = note_vectors
+            return chord_note_input
+
+        chord_note_inputs = [
+            get_chord_note_input(self, chord, onset_index - window, offset_index + window)
+            for chord, onset_index, offset_index in zip(
+                self.chords,
+                self.chord_changes,
+                list(self.chord_changes[1:]) + [len(self.notes)],
+            )
+        ]
+
+        return chord_note_inputs
 
     def get_key_change_indices(self) -> np.array:
         return self.key_changes

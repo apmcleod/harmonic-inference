@@ -337,6 +337,9 @@ def test_score_piece():
     measures_df = pd.DataFrame({
         'mc': list(range(20)),
         'timesig': '12/8',
+        'act_dur': Fraction(12, 8),
+        'offset': Fraction(0),
+        'next': list(range(1, 20)) + [-1],
     })
 
     note_dict = {
@@ -366,9 +369,9 @@ def test_score_piece():
         'localkey_is_minor': [True, True, False, False, False, pd.NA],
         'relativeroot': [pd.NA, pd.NA, pd.NA, 'V', 'V', pd.NA],
         'duration': Fraction(5, 6),
-        'mc': [2 * i for i in range(6)],
+        'mc': [0, 2, 5, 6, 8, 10],
         'onset': Fraction(1, 2),
-        'mc_next': [2 * i + 1 for i in range(6)],
+        'mc_next': [2, 5, 6, 8, 10, 12],
         'onset_next': Fraction(1, 2),
         'duration': Fraction(2),
     }
@@ -390,7 +393,7 @@ def test_score_piece():
     assert all(piece.get_inputs() == notes)
     assert all(piece.get_chords() == not_none_chords)
     assert all(piece.get_keys() == unique_keys)
-    assert all(piece.get_chord_change_indices() == [0, 2, 4, 6, 8])
+    assert all(piece.get_chord_change_indices() == [0, 2, 5, 6, 8])
     assert all(piece.get_key_change_indices() == [0, 2, 3, 4])
 
-test_score_piece()
+    inputs = piece.get_chord_note_inputs(window=2)
