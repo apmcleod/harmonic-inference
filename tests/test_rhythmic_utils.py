@@ -44,6 +44,8 @@ def test_get_range_length():
                     assert length == correct_length, (
                         f"Range length incorrect between {start} and {end}"
                     )
+                    length = ru.get_range_length(end, start, measures)
+                    assert length == -correct_length
 
                     # Try different measure lengths
                     measures.loc[start_mc, 'act_dur'] = Fraction(7, 2)
@@ -64,6 +66,8 @@ def test_get_range_length():
                     assert length == correct_length, (
                         f"Range length incorrect between {start} and {end}"
                     )
+                    length = ru.get_range_length(end, start, measures)
+                    assert length == -correct_length
 
                     # Try weird next list
                     if end_mc > start_mc:
@@ -81,6 +85,8 @@ def test_get_range_length():
                             f"Range length incorrect with start.next==end between {start} and "
                             f"{end}"
                         )
+                        length = ru.get_range_length(end, start, measures)
+                        assert length == -correct_length
 
                         if start_mc != 0:
                             measures.loc[start_mc, 'next'] = 0
@@ -93,6 +99,8 @@ def test_get_range_length():
                                 f"Range length incorrect with start.next==0 between {start} and "
                                 f"{end}"
                             )
+                            length = ru.get_range_length(end, start, measures)
+                            assert length == -correct_length
 
 
 def test_get_rhythmic_info_as_proportion_of_range():

@@ -26,11 +26,17 @@ def get_range_length(range_start: Tuple[int, Fraction], range_end: Tuple[int, Fr
     length : Fraction
         The length of the given range, in whole notes.
     """
+    factor = 1
+    if range_start > range_end:
+        factor = -1
+        tmp = range_start
+        range_start = range_end
+        range_end = tmp
     start_mc, start_beat = range_start
     end_mc, end_beat = range_end
 
     if start_mc == end_mc:
-        return end_beat - start_beat
+        return factor * (end_beat - start_beat)
 
     # Start looping at end of start_mc
     act_dur, offset, current_mc = measures.loc[measures.mc == start_mc,
@@ -47,7 +53,7 @@ def get_range_length(range_start: Tuple[int, Fraction], range_end: Tuple[int, Fr
     final_offset = measures.loc[measures.mc == current_mc, 'offset'].values[0]
     length += end_beat - final_offset
 
-    return length
+    return factor * length
 
 
 
