@@ -1,9 +1,12 @@
-from typing import List
+from typing import List, Iterable
+import logging
 
+from tqdm import tqdm
 import numpy as np
+import pandas as pd
 from torch.utils.data import Dataset
 
-from harmonic_inference.data.piece import Piece
+from harmonic_inference.data.piece import Piece, ScorePiece
 import harmonic_inference.utils.harmonic_utils as hu
 
 
@@ -52,3 +55,98 @@ class KeyTransitionDataset(HarmonicDataset):
 
 class KeySequenceDataset(HarmonicDataset):
     pass
+
+
+def get_dataset_splits(
+    files: pd.DataFrame,
+    measures: pd.DataFrame,
+    chords: pd.DataFrame,
+    notes: pd.DataFrame,
+    datasets: Iterable[HarmonicDataset],
+    splits: Iterable[float] = [0.8, 0.1, 0.1],
+    seed: int = None,
+) -> Iterable[Iterable[HarmonicDataset]]:
+    """
+    Get datasets representing splits of the data in the given DataFrames.
+
+    Parameters
+    ----------
+    files : pd.DataFrame
+        A DataFrame with data about all of the files in the DataFrames.
+    measures : pd.DataFrame
+        A DataFrame with information about the measures of the pieces in the data.
+    chords : pd.DataFrame
+        A DataFrame with information about the chords of the pieces in the data.
+    notes : pd.DataFrame
+        A DataFrame with information about the notes of the pieces in the data.
+    datasets : Iterable[HarmonicDataset]
+        An Iterable of HarmonicDataset class objects, each representing a different type of
+        HarmonicDataset subclass to make a Dataset from. These are all passed so that they will
+        have identical splits.
+    splits : Iterable[float]
+        An Iterable of floats representing the proportion of pieces which will go into each split.
+        This will be normalized to sum to 1.
+    seed : int
+        A numpy random seed, if given.
+
+    Returns
+    -------
+    dataset_splits : Iterable[Iterable[HarmonicDataset]]
+        An iterable, the length of `dataset` representing the splits for each given dataset type.
+        Each element is itself an iterable the length of `splits`.
+    """
+    assert sum(splits) != 0
+    splits = np.array(splits) / sum(splits)
+
+    if seed is not None:
+        np.random.seed(seed)
+
+    pieces = []
+    df_indexes = []
+
+    for i in tqdm(files.index):
+        file_name = f'{files.loc[i].corpus_name}/{files.loc[i].file_name}'
+        logging.info(f"Parsing {file_name} (id {i})")
+
+        dfs = [chords, measures, notes]
+        names = ['chords', 'measures', 'notes']
+        exists = [i in df.index.get_level_values(0) for df in dfs]
+
+        if not all(exists):
+            for exist, df, name in zip(exists, dfs, names):
+                if not exist:
+                    logging.warning(f'{name}_df does not contain {file_name} data (id {i}).')
+            continue
+
+        try:
+            piece = ScorePiece(notes.loc[i], chords.loc[i], measures.loc[i])
+            pieces.append(piece)
+            df_indexes.append(i)
+        except BaseException as e:
+            logging.error(f"Error parsing index {i}: {e}")
+            continue
+
+    # Shuffle the pieces and the df_indexes the same way
+    shuffled_indexes = np.arange(len(pieces))
+    np.random.shuffle(shuffled_indexes)
+    pieces = np.array(pieces)[shuffled_indexes]
+    df_indexes = np.array(df_indexes)[shuffled_indexes]
+
+    dataset_splits = np.full((len(datasets), len(splits)), None)
+    prop = 0
+    for split_index, split_prop in enumerate(splits):
+        start = int(round(prop * len(pieces)))
+        prop += split_prop
+        end = int(round(prop * len(pieces)))
+
+        if start == end:
+            logging.warning(
+                f"Split {split_index} with prop {split_prop} contains no pieces. Returning None "
+                "for those."
+            )
+            continue
+
+        for dataset_index, dataset_class in enumerate(datasets):
+            dataset_splits[dataset_index][split_index] = dataset_class(pieces[start:end])
+
+    return dataset_splits
