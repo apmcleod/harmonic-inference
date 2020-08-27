@@ -190,7 +190,7 @@ def test_get_metrical_level():
     # Time signatures are really tested above
     for num in [3, 4, 12]:
         for denom in [4, 8, 16]:
-            time_sig = str(num) + '/' + str(denom)
+            time_sig = f"{num}/{denom}"
             measure_length, beat_length, sub_beat_length = ru.get_metrical_level_lengths(time_sig)
 
             # This is what is being tested here
@@ -210,9 +210,7 @@ def test_get_metrical_level():
 
                     beat = 0
                     level = ru.get_metrical_level(beat, measure)
-                    assert level == correct_level, (
-                        f"Level is wrong for measure {measure} and beat {beat}"
-                    )
+                    assert level == 3
 
                     # Swap offset and beat
                     beat = measure.offset

@@ -157,9 +157,6 @@ def get_metrical_level(beat: Fraction, measure: pd.Series) -> int:
     """
     measure_length, beat_length, sub_beat_length = get_metrical_level_lengths(measure.timesig)
 
-    # Offset for partial measures (not beginning on a downbeat)
-    beat += measure.offset
-
     if beat % measure_length == 0:
         return 3
     if beat % beat_length == 0:

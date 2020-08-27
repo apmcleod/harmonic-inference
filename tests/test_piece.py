@@ -6,10 +6,11 @@ import pandas as pd
 from harmonic_inference.data.data_types import KeyMode, PitchType, ChordType
 from harmonic_inference.data.piece import *
 from harmonic_inference.utils import harmonic_constants as hc
+from harmonic_inference.utils import rhythmic_utils as ru
 
 
 def test_note_from_series():
-    def check_equals(note_dict, note, pitch_type):
+    def check_equals(note_dict, note, measures_df, pitch_type):
         assert pitch_type == note.pitch_type
         if pitch_type == PitchType.MIDI:
             assert (note_dict['midi'] % hc.NUM_PITCHES[PitchType.MIDI]) == note.pitch_class
@@ -19,6 +20,14 @@ def test_note_from_series():
         assert note.onset == (note_dict['mc'], note_dict['onset'])
         assert note.offset == (note_dict['offset_mc'], note_dict['offset_beat'])
         assert note.duration == note_dict['duration']
+        assert note.onset_level == ru.get_metrical_level(
+            note_dict['onset'],
+            measures_df.loc[measures_df['mc'] == note_dict['mc']].squeeze(),
+        )
+        assert note.offset_level == ru.get_metrical_level(
+            note_dict['offset_beat'],
+            measures_df.loc[measures_df['mc'] == note_dict['offset_mc']].squeeze(),
+        )
 
     note_dict = {
         'midi': 50,
@@ -40,29 +49,42 @@ def test_note_from_series():
         'duration': [i * Fraction(1, 2) for i in range(3)],
     }
 
+    measures_df = pd.DataFrame({
+        'mc': list(range(10)),
+        'timesig': '12/8'
+    })
+
     for key, values in key_values.items():
         for value in values:
             note_dict[key] = value
             note_series = pd.Series(note_dict)
-            note = Note.from_series(note_series, PitchType.MIDI)
-            check_equals(note_dict, note, PitchType.MIDI)
-            note = Note.from_series(note_series, PitchType.TPC)
-            check_equals(note_dict, note, PitchType.TPC)
+            note = Note.from_series(note_series, measures_df, PitchType.MIDI)
+            check_equals(note_dict, note, measures_df, PitchType.MIDI)
+            note = Note.from_series(note_series, measures_df, PitchType.TPC)
+            check_equals(note_dict, note, measures_df, PitchType.TPC)
 
     note_dict['tpc'] = hc.NUM_PITCHES[PitchType.TPC] - hc.TPC_C
-    assert Note.from_series(pd.Series(note_dict), PitchType.TPC) is None
+    assert Note.from_series(pd.Series(note_dict), measures_df, PitchType.TPC) is None
     note_dict['tpc'] = 0 - hc.TPC_C - 1
-    assert Note.from_series(pd.Series(note_dict), PitchType.TPC) is None
+    assert Note.from_series(pd.Series(note_dict), measures_df, PitchType.TPC) is None
 
 
 def test_chord_from_series():
-    def check_equals(chord_dict, chord, pitch_type, local_key):
+    def check_equals(chord_dict, chord, measures_df, pitch_type, local_key):
         assert chord.pitch_type == pitch_type
         assert chord.chord_type == hu.get_chord_type_from_string(chord_dict['chord_type'])
         assert chord.inversion == hu.get_chord_inversion(chord_dict['figbass'])
         assert chord.onset == (chord_dict['mc'], chord_dict['onset'])
         assert chord.offset == (chord_dict['mc_next'], chord_dict['onset_next'])
         assert chord.duration == chord_dict['duration']
+        assert chord.onset_level == ru.get_metrical_level(
+            chord_dict['onset'],
+            measures_df.loc[measures_df["mc"] == chord_dict["mc"]].squeeze(),
+        )
+        assert chord.offset_level == ru.get_metrical_level(
+            chord_dict['onset_next'],
+            measures_df.loc[measures_df["mc"] == chord_dict["mc_next"]].squeeze(),
+        )
 
         root = chord_dict['root']
         bass = chord_dict['bass_note']
@@ -105,35 +127,42 @@ def test_chord_from_series():
         'duration': [i * Fraction(1, 2) for i in range(3)],
     }
 
+    measures_df = pd.DataFrame({
+        'mc': list(range(10)),
+        'timesig': '12/8'
+    })
+
     for key, values in key_values.items():
         for value in values:
             chord_dict[key] = value
             chord_series = pd.Series(chord_dict)
             for pitch_type in PitchType:
-                chord = Chord.from_series(chord_series, pitch_type)
-                local_key = Key.from_series(chord_series, pitch_type, do_relative=False)
-                check_equals(chord_dict, chord, pitch_type, local_key)
+                chord = Chord.from_series(chord_series, measures_df, pitch_type)
+                local_key = Key.from_series(
+                    chord_series, pitch_type, do_relative=False
+                )
+                check_equals(chord_dict, chord, measures_df, pitch_type, local_key)
 
     # @none returns None
     for numeral in ['@none', pd.NA]:
         chord_dict['numeral'] = numeral
         chord_series = pd.Series(chord_dict)
         for pitch_type in PitchType:
-            assert Chord.from_series(chord_series, pitch_type) is None
+            assert Chord.from_series(chord_series, measures_df, pitch_type) is None
     chord_dict['numeral'] = 'III'
 
     # Bad key returns None
     chord_dict['localkey'] = 'Error'
     chord_series = pd.Series(chord_dict)
     for pitch_type in PitchType:
-        assert Chord.from_series(chord_series, pitch_type) is None
+        assert Chord.from_series(chord_series, measures_df, pitch_type) is None
     chord_dict['localkey'] = 'iii'
 
     # Bad relativeroot is ok
     chord_dict['relativeroot'] = 'Error'
     chord_series = pd.Series(chord_dict)
     for pitch_type in PitchType:
-        assert Chord.from_series(chord_series, pitch_type) is not None
+        assert Chord.from_series(chord_series, measures_df, pitch_type) is not None
 
 
 def test_key_from_series():
@@ -305,6 +334,11 @@ def test_key_from_series():
 
 
 def test_score_piece():
+    measures_df = pd.DataFrame({
+        'mc': list(range(20)),
+        'timesig': '12/8',
+    })
+
     note_dict = {
         'midi': 50,
         'tpc': 5,
@@ -315,7 +349,10 @@ def test_score_piece():
         'duration': Fraction(1),
     }
     note_df = pd.DataFrame(note_dict)
-    notes = [Note.from_series(note_row, PitchType.TPC) for _, note_row in note_df.iterrows()]
+    notes = [
+        Note.from_series(note_row, measures_df, PitchType.TPC)
+        for _, note_row in note_df.iterrows()
+    ]
 
     chord_dict = {
         'numeral': ['III', 'III', 'III', 'IV', 'IV', '@none'],
@@ -328,8 +365,6 @@ def test_score_piece():
         'localkey': ['iii', 'iii', 'III', 'III', 'I', pd.NA],
         'localkey_is_minor': [True, True, False, False, False, pd.NA],
         'relativeroot': [pd.NA, pd.NA, pd.NA, 'V', 'V', pd.NA],
-        'offset_mc': 2,
-        'offset_beat': Fraction(3, 4),
         'duration': Fraction(5, 6),
         'mc': [2 * i for i in range(6)],
         'onset': Fraction(1, 2),
@@ -338,7 +373,10 @@ def test_score_piece():
         'duration': Fraction(2),
     }
     chord_df = pd.DataFrame(chord_dict)
-    chords = [Chord.from_series(chord_row, PitchType.TPC) for _, chord_row in chord_df.iterrows()]
+    chords = [
+        Chord.from_series(chord_row, measures_df, PitchType.TPC)
+        for _, chord_row in chord_df.iterrows()
+    ]
     not_none_chords = [c for c in chords if c is not None]
 
     keys = [Key.from_series(chord_row, PitchType.TPC) for _, chord_row in chord_df.iterrows()]
@@ -347,10 +385,12 @@ def test_score_piece():
         k for k, k_prev in zip(not_none_keys[1:], not_none_keys[:-1]) if k != k_prev
     ]
 
-    piece = ScorePiece(note_df, chord_df)
+    piece = ScorePiece(note_df, chord_df, measures_df)
 
     assert all(piece.get_inputs() == notes)
     assert all(piece.get_chords() == not_none_chords)
     assert all(piece.get_keys() == unique_keys)
     assert all(piece.get_chord_change_indices() == [0, 2, 4, 6, 8])
     assert all(piece.get_key_change_indices() == [0, 2, 3, 4])
+
+test_score_piece()

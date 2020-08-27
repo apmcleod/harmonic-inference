@@ -8,6 +8,7 @@ import numpy as np
 
 from harmonic_inference.data.data_types import KeyMode, PitchType, ChordType, PieceType
 from harmonic_inference.utils import harmonic_utils as hu
+from harmonic_inference.utils import rhythmic_utils as ru
 from harmonic_inference.utils import harmonic_constants as hc
 
 
@@ -15,9 +16,17 @@ class Note():
     """
     A representation of a musical Note, with pitch, onset, duration, and offset.
     """
-    def __init__(self, pitch_class: int, octave: int, onset: Union[float, Tuple[int, Fraction]],
-                 duration: Union[float, Fraction], offset: Union[float, Tuple[int, Fraction]],
-                 pitch_type: PitchType):
+    def __init__(
+        self,
+        pitch_class: int,
+        octave: int,
+        onset: Union[float, Tuple[int, Fraction]],
+        onset_level: int,
+        duration: Union[float, Fraction],
+        offset: Union[float, Tuple[int, Fraction]],
+        offset_level: int,
+        pitch_type: PitchType,
+    ):
         """
         Create a new musical Note.
 
@@ -32,12 +41,16 @@ class Note():
         onset : Union[float, Tuple[int, Fraction]]
             The onset position of this Note. Either a float (representing time in seconds), or an
             (int, Fraction) tuple (representing measure count and beat in whole notes).
+        onset_level : int
+            The metrical level on which the onset lies. 0=none, 1=subbeat, 2=beat, 3=downbeat.
         duration : Union[float, Fraction]
             The duration of this Note. Either a float (representing time in seconds), ar a Fraction
             (representing whole notes).
         offset : Union[float, Tuple[int, Fraction]]
             The onset position of this Note. Either a float (representing time in seconds), or an
             (int, Fraction) tuple (representing measure count and beat in whole notes).
+        offset_level : int
+            The metrical level on which the offset lies. 0=none, 1=subbeat, 2=beat, 3=downbeat.
         pitch_type : PitchType
             The PitchType in which this note's pitch_class is stored. If this is TPC, the
             pitch_class can be later converted into MIDI, but not vice versa.
@@ -45,9 +58,22 @@ class Note():
         self.pitch_class = pitch_class
         self.octave = octave
         self.onset = onset
+        self.onset_level = onset_level
         self.duration = duration
         self.offset = offset
+        self.offset_level = offset_level
         self.pitch_type = pitch_type
+
+    def to_vec(self) -> np.array:
+        """
+        Get the vectorized representation of this note.
+
+        Returns
+        -------
+        vector : np.array
+            The vector of this Note.
+        """
+
 
     def __eq__(self, other):
         if not isinstance(other, Note):
@@ -56,8 +82,10 @@ class Note():
             self.pitch_class == other.pitch_class and
             self.octave == other.octave and
             self.onset == other.onset and
+            self.offset_level == other.offset_level and
             self.duration == other.duration and
             self.offset == other.offset and
+            self.offset_level == other.offset_level and
             self.pitch_type == other.pitch_type
         )
 
@@ -71,7 +99,7 @@ class Note():
         )
 
     @staticmethod
-    def from_series(note_row: pd.Series, pitch_type: PitchType):
+    def from_series(note_row: pd.Series, measures_df: pd.DataFrame, pitch_type: PitchType):
         """
         Create a new Note object from a pd.Series, and return it.
 
@@ -86,6 +114,11 @@ class Note():
                 'offset_mc' (int): The note's offset measure.
                 'offset_beat' (Fraction): The note's offset beat, in whole notes.
                 'duration' (Fraction): The note's duration, in whole notes.
+        measures_df : pd.DataFrame
+            A pd.DataFrame of the measures in the piece of the note. It is used to get metrical
+            levels of the note's onset and offset. Must have at least the columns:
+                'mc' (int): The measure number, to match with the note's onset and offset.
+                'timesig' (str): The time signature of the measure.
         pitch_type : PitchType
             The pitch type to use for the Note.
 
@@ -103,10 +136,20 @@ class Note():
                 pitch = note_row.midi % hc.NUM_PITCHES[PitchType.MIDI]
             octave = note_row.midi // hc.NUM_PITCHES[PitchType.MIDI]
 
-            onset = (note_row.mc, note_row.onset)
-            offset = (note_row.offset_mc, note_row.offset_beat)
+            onset = (note_row["mc"], note_row["onset"])
+            onset_level = ru.get_metrical_level(
+                note_row["onset"],
+                measures_df.loc[measures_df["mc"] == note_row["mc"]].squeeze(),
+            )
 
-            return Note(pitch, octave, onset, note_row.duration, offset, pitch_type)
+            offset = (note_row["offset_mc"], note_row["offset_beat"])
+            offset_level = ru.get_metrical_level(
+                note_row["offset_beat"],
+                measures_df.loc[measures_df["mc"]== note_row["offset_mc"]].squeeze(),
+            )
+
+            return Note(pitch, octave, onset, onset_level, note_row.duration, offset,
+                        offset_level, pitch_type)
 
         except BaseException as e:
             logging.error(f"Error parsing note from row {note_row}")
@@ -118,10 +161,19 @@ class Chord():
     """
     A musical chord, with a root and base note.
     """
-    def __init__(self, root: int, bass: int, chord_type: ChordType, inversion: int,
-                 onset: Union[float, Tuple[int, Fraction]],
-                 offset: Union[float, Tuple[int, Fraction]],
-                 duration: Union[float, Fraction], pitch_type: PitchType):
+    def __init__(
+        self,
+        root: int,
+        bass: int,
+        chord_type: ChordType,
+        inversion: int,
+        onset: Union[float, Tuple[int, Fraction]],
+        onset_level: int,
+        offset: Union[float, Tuple[int, Fraction]],
+        offset_level: int,
+        duration: Union[float, Fraction],
+        pitch_type: PitchType
+    ):
         """
         Create a new musical chord object.
 
@@ -142,9 +194,13 @@ class Chord():
         onset : Union[float, Tuple[int, Fraction]]
             The onset position of this Chord. Either a float (representing time in seconds), or an
             (int, Fraction) tuple (representing measure count and beat in whole notes).
+        onset_level : int
+            The metrical level on which the onset lies. 0=none, 1=subbeat, 2=beat, 3=downbeat.
         offset : Union[float, Tuple[int, Fraction]]
             The offset position of this Chord. Either a float (representing time in seconds), or an
             (int, Fraction) tuple (representing measure count and beat in whole notes).
+        offset_level : int
+            The metrical level on which the offset lies. 0=none, 1=subbeat, 2=beat, 3=downbeat.
         duration : Union[float, Fraction]
             The duration of this Chord. Either a float (representing time in seconds), ar a
             Fraction (representing whole notes).
@@ -157,7 +213,9 @@ class Chord():
         self.chord_type = chord_type
         self.inversion = inversion
         self.onset = onset
+        self.onset_level = onset_level
         self.offset = offset
+        self.offset_level = offset_level
         self.duration = duration
         self.pitch_type = pitch_type
 
@@ -170,8 +228,10 @@ class Chord():
             self.chord_type == other.chord_type and
             self.inversion == other.inversion and
             self.onset == other.onset and
+            self.onset_level == other.onset_level and
             self.duration == other.duration and
             self.offset == other.offset and
+            self.offset_level == other.offset_level and
             self.pitch_type == other.pitch_type
         )
 
@@ -196,7 +256,7 @@ class Chord():
                 f'{self.onset}--{self.offset}')
 
     @staticmethod
-    def from_series(chord_row: pd.Series, pitch_type: PitchType):
+    def from_series(chord_row: pd.Series, measures_df: pd.Series, pitch_type: PitchType):
         """
         Create a Chord object of the given pitch_type from the given pd.Series.
 
@@ -226,7 +286,11 @@ class Chord():
                 'mc_next' (int): The chord's offset measure.
                 'onset_next' (Fraction): The chord's offset beat, in whole notes.
                 'duration' (Fraction): The chord's duration, in whole notes.
-
+        measures_df : pd.DataFrame
+            A pd.DataFrame of the measures in the piece of the chord. It is used to get metrical
+            levels of the chord's onset and offset. Must have at least the columns:
+                'mc' (int): The measure number, to match with the chord's onset and offset.
+                'timesig' (str): The time signature of the measure.
         pitch_type : PitchType
             The pitch type to use for the Chord.
 
@@ -243,30 +307,38 @@ class Chord():
             # Root and bass note are relative to local key (not applied dominant)
             local_key = Key.from_series(chord_row, pitch_type, do_relative=False)
 
-            # Root note of chord, absolute
-            root_interval = (
-                chord_row['root'] if pitch_type == PitchType.TPC else
-                hu.tpc_interval_to_midi_interval(chord_row['root'])
-            )
-            root = hu.transpose_pitch(local_key.tonic, root_interval, pitch_type=pitch_type)
+            # Root and bass note of chord, as intervals above the local key tonic
+            root_interval = chord_row["root"]
+            bass_interval = chord_row["bass_note"]
+            if pitch_type == PitchType.MIDI:
+                root_interval = hu.tpc_interval_to_midi_interval(root_interval)
+                bass_interval = hu.tpc_interval_to_midi_interval(bass_interval)
 
-            # Bass note of chord, absolute
-            bass_interval = (
-                chord_row['bass_note'] if pitch_type == PitchType.TPC else
-                hu.tpc_interval_to_midi_interval(chord_row['bass_note'])
-            )
+            # Absolute root and bass
+            root = hu.transpose_pitch(local_key.tonic, root_interval, pitch_type=pitch_type)
             bass = hu.transpose_pitch(local_key.tonic, bass_interval, pitch_type=pitch_type)
 
             # Additional chord info
             chord_type = hu.get_chord_type_from_string(chord_row['chord_type'])
             inversion = hu.get_chord_inversion(chord_row['figbass'])
 
-            # Rhythmic info - Even "No Chord" symbols have these.
+            # Rhythmic info
             onset = (chord_row.mc, chord_row.onset)
+            onset_level = ru.get_metrical_level(
+                chord_row["onset"],
+                measures_df.loc[measures_df["mc"] == chord_row["mc"]].squeeze(),
+            )
+
             offset = (chord_row.mc_next, chord_row.onset_next)
+            offset_level = ru.get_metrical_level(
+                chord_row["onset_next"],
+                measures_df.loc[measures_df["mc"] == chord_row["mc_next"]].squeeze(),
+            )
+
             duration = chord_row.duration
 
-            return Chord(root, bass, chord_type, inversion, onset, offset, duration, pitch_type)
+            return Chord(root, bass, chord_type, inversion, onset, onset_level, offset,
+                         offset_level, duration, pitch_type)
 
         except BaseException as e:
             logging.error(f"Error parsing chord from row {chord_row}")
@@ -459,7 +531,7 @@ class ScorePiece(Piece):
     A single musical piece, in score format.
     """
 
-    def __init__(self, notes_df: pd.DataFrame, chords_df: pd.DataFrame):
+    def __init__(self, notes_df: pd.DataFrame, chords_df: pd.DataFrame, measures_df: pd.DataFrame):
         """
         Create a ScorePiece object from the given 3 pandas DataFrames.
 
@@ -469,11 +541,16 @@ class ScorePiece(Piece):
             A DataFrame containing information about the notes contained in the piece.
         chords_df : pd.DataFrame
             A DataFrame containing information about the chords contained in the piece.
+        measures_df : pd.DataFrame
+            A DataFrame containing information about the measures in the piece.
         """
         super().__init__(PieceType.SCORE)
         notes = np.array([
             [note, note_id] for note_id, note in enumerate(notes_df.apply(
-                Note.from_series, axis='columns', pitch_type=PitchType.TPC
+                Note.from_series,
+                axis='columns',
+                measures_df=measures_df,
+                pitch_type=PitchType.TPC,
             )) if note is not None
         ])
         self.notes, self.note_ilocs = np.hsplit(notes, 2)
@@ -482,7 +559,10 @@ class ScorePiece(Piece):
 
         chords = np.array([
             [chord, chord_id] for chord_id, chord in enumerate(chords_df.apply(
-                Chord.from_series, axis='columns', pitch_type=PitchType.TPC
+                Chord.from_series,
+                axis='columns',
+                measures_df=measures_df,
+                pitch_type=PitchType.TPC,
             )) if chord is not None
         ])
         self.chords, self.chord_ilocs = np.hsplit(chords, 2)
