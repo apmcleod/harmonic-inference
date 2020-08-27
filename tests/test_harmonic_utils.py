@@ -282,7 +282,7 @@ def test_get_pitch_string():
 
 def test_get_one_hot_labels():
     for pitch_type in [PitchType.MIDI, PitchType.TPC]:
-        one_hots = hu.get_one_hot_labels(pitch_type)
+        one_hots = hu.get_one_hot_labels(pitch_type, use_inversions=False)
         i = 0
 
         for chord_type in ChordType:
@@ -294,3 +294,80 @@ def test_get_one_hot_labels():
                 i += 1
 
         assert i == len(one_hots)
+
+    for pitch_type in [PitchType.MIDI, PitchType.TPC]:
+        one_hots = hu.get_one_hot_labels(pitch_type, use_inversions=True)
+        i = 0
+
+        for chord_type in ChordType:
+            chord_string = hu.get_chord_string(chord_type)
+            for pitch in range(0, hc.NUM_PITCHES[pitch_type]):
+                pitch_string = hu.get_pitch_string(pitch, pitch_type)
+                for inv in range(0, hu.get_chord_inversion_count(chord_type)):
+                    assert one_hots[i] == f'{pitch_string}:{chord_string}, inv:{inv}'
+                    i += 1
+
+        assert i == len(one_hots)
+
+
+def test_get_chord_inversion_count():
+    for chord_type in ChordType:
+        for pitch_type in PitchType:
+            vector = hu.get_vector_from_chord_type(chord_type, pitch_type)
+            assert hu.get_chord_inversion_count(chord_type) == sum(vector)
+
+
+def test_get_chord_one_hot_index():
+    for chord_type in ChordType:
+        for pitch_type in PitchType:
+            for root_pitch in range(hc.NUM_PITCHES[pitch_type]):
+                for inversion in range(hu.get_chord_inversion_count(chord_type)):
+                    pitch_string = hu.get_pitch_string(root_pitch, pitch_type)
+                    chord_string = hu.get_chord_string(chord_type)
+
+                    string_no_inv = f'{pitch_string}:{chord_string}'
+                    string = f'{pitch_string}:{chord_string}, inv:{inversion}'
+
+                    index_no_inv = hu.get_chord_one_hot_index(
+                        chord_type, root_pitch, pitch_type, inversion=inversion,
+                        use_inversion=False
+                    )
+                    assert (
+                        hu.get_one_hot_labels(pitch_type, use_inversions=False)[index_no_inv]
+                        == string_no_inv
+                    )
+
+                    index = hu.get_chord_one_hot_index(
+                        chord_type, root_pitch, pitch_type, inversion=inversion, use_inversion=True
+                    )
+                    assert (
+                        hu.get_one_hot_labels(pitch_type, use_inversions=True)[index] == string
+                    )
+
+    with pytest.raises(ValueError):
+        hu.get_chord_one_hot_index(
+            ChordType.MAJOR, -1, PitchType.MIDI, inversion=0, use_inversion=True
+        )
+    with pytest.raises(ValueError):
+        hu.get_chord_one_hot_index(
+            ChordType.MAJOR, hc.NUM_PITCHES[PitchType.MIDI], PitchType.MIDI, inversion=0,
+            use_inversion=True
+        )
+
+    with pytest.raises(ValueError):
+        hu.get_chord_one_hot_index(
+            ChordType.MAJOR, -1, PitchType.TPC, inversion=0, use_inversion=True
+        )
+    with pytest.raises(ValueError):
+        hu.get_chord_one_hot_index(
+            ChordType.MAJOR, hc.NUM_PITCHES[PitchType.TPC], PitchType.TPC, inversion=0,
+            use_inversion=True
+        )
+
+    with pytest.raises(ValueError):
+        hu.get_chord_one_hot_index(
+            ChordType.MAJOR, 0, PitchType.TPC, inversion=3, use_inversion=True
+        )
+    hu.get_chord_one_hot_index(
+        ChordType.MAJOR, 0, PitchType.TPC, inversion=3, use_inversion=False
+    )

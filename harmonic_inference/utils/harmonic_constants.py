@@ -178,3 +178,18 @@ FIGBASS_INVERSIONS = {
     '64': 2,
     '2':  3
 }
+
+CHORD_INVERSION_COUNT = {
+    ChordType.MAJOR: 3,
+    ChordType.MINOR: 3,
+    ChordType.DIMINISHED: 3,
+    ChordType.AUGMENTED: 3,
+    ChordType.MAJ_MAJ7: 4,
+    ChordType.MAJ_MIN7: 4,
+    ChordType.MIN_MAJ7: 4,
+    ChordType.MIN_MIN7: 4,
+    ChordType.DIM7: 4,
+    ChordType.HALF_DIM7: 4,
+    ChordType.AUG_MIN7: 4,
+    ChordType.AUG_MAJ7: 4,
+}

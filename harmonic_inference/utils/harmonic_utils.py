@@ -7,7 +7,7 @@ from harmonic_inference.data.data_types import  KeyMode, PitchType, ChordType
 from harmonic_inference.utils import harmonic_constants as hc
 
 
-def get_one_hot_labels(pitch_type: PitchType) -> List[str]:
+def get_one_hot_labels(pitch_type: PitchType, use_inversions=True) -> List[str]:
     """
     Get the human-readable label of every one-hot chord value.
 
@@ -15,6 +15,8 @@ def get_one_hot_labels(pitch_type: PitchType) -> List[str]:
     ----------
     pitch_type : PitchType
         The pitch type representation being used.
+    use_inversions : bool
+        True to count the different inversions of each chord as different chords.
 
     Returns
     -------
@@ -32,9 +34,80 @@ def get_one_hot_labels(pitch_type: PitchType) -> List[str]:
     labels = []
     for chord_type in ChordType:
         for root in roots:
-            labels.append(f'{root}:{get_chord_string(chord_type)}')
+            if use_inversions:
+                for inv in range(get_chord_inversion_count(chord_type)):
+                    labels.append(f'{root}:{get_chord_string(chord_type)}, inv:{inv}')
+            else:
+                labels.append(f'{root}:{get_chord_string(chord_type)}')
 
     return labels
+
+
+def get_chord_one_hot_index(
+    chord_type: ChordType,
+    root_pitch: int,
+    pitch_type: PitchType,
+    inversion: int = 0,
+    use_inversion: bool = True
+) -> int:
+    """
+    Get the one hot index of a given chord.
+
+    Parameters
+    ----------
+    chord_type : ChordType
+        The chord type of the chord.
+    root_pitch : int
+        The pitch of the root of this chord.
+    pitch_type : int
+        The representation used for `root_pitch`.
+    inversion : int
+        The inversion of this chord. Used only if use_inversion is True.
+    use_inversion : inv
+        True to take the chord's inversion into acccount.
+
+    Returns
+    -------
+    index : int
+        The index of the given chord's label in the list of all possible chord labels.
+    """
+    if root_pitch < 0 or root_pitch >= hc.NUM_PITCHES[pitch_type]:
+        raise ValueError("Given root is outside of valid range")
+    if use_inversion:
+        if inversion < 0 or inversion >= get_chord_inversion_count(chord_type):
+            raise ValueError(
+                f"inversion {inversion} outside of valid range for chord {chord_type}"
+            )
+        chord_inversions = np.array(
+            [get_chord_inversion_count(chord) for chord in ChordType], dtype=int
+        )
+    else:
+        chord_inversions = np.ones(len(ChordType), dtype=int)
+
+    index = np.sum(hc.NUM_PITCHES[pitch_type] * chord_inversions[:chord_type.value])
+    index += chord_inversions[chord_type.value] * root_pitch
+
+    if use_inversion:
+        index += inversion
+
+    return index
+
+
+def get_chord_inversion_count(chord_type: ChordType) -> int:
+    """
+    Get the number of possible inversions of the given chord.
+
+    Parameters
+    ----------
+    chord_type : ChordType
+        The chord type whose inversion count to return.
+
+    Returns
+    -------
+    inversions : int
+        The number of possible inversions of the given chord.
+    """
+    return hc.CHORD_INVERSION_COUNT[chord_type]
 
 
 def get_accidental_adjustment(string: str, in_front: bool = True) -> (int, str):
@@ -79,7 +152,6 @@ def get_accidental_adjustment(string: str, in_front: bool = True) -> (int, str):
             adjustment += 1
 
     return adjustment, string
-
 
 
 def transpose_chord_vector(chord_vector: List[int], interval: int,
