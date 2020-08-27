@@ -280,9 +280,9 @@ def test_get_pitch_string():
                 assert '/' in string and correct_string in string.split('/')
 
 
-def test_get_one_hot_labels():
+def test_get_chord_label_list():
     for pitch_type in [PitchType.MIDI, PitchType.TPC]:
-        one_hots = hu.get_one_hot_labels(pitch_type, use_inversions=False)
+        one_hots = hu.get_chord_label_list(pitch_type, use_inversions=False)
         i = 0
 
         for chord_type in ChordType:
@@ -296,7 +296,7 @@ def test_get_one_hot_labels():
         assert i == len(one_hots)
 
     for pitch_type in [PitchType.MIDI, PitchType.TPC]:
-        one_hots = hu.get_one_hot_labels(pitch_type, use_inversions=True)
+        one_hots = hu.get_chord_label_list(pitch_type, use_inversions=True)
         i = 0
 
         for chord_type in ChordType:
@@ -333,7 +333,7 @@ def test_get_chord_one_hot_index():
                         use_inversion=False
                     )
                     assert (
-                        hu.get_one_hot_labels(pitch_type, use_inversions=False)[index_no_inv]
+                        hu.get_chord_label_list(pitch_type, use_inversions=False)[index_no_inv]
                         == string_no_inv
                     )
 
@@ -341,7 +341,7 @@ def test_get_chord_one_hot_index():
                         chord_type, root_pitch, pitch_type, inversion=inversion, use_inversion=True
                     )
                     assert (
-                        hu.get_one_hot_labels(pitch_type, use_inversions=True)[index] == string
+                        hu.get_chord_label_list(pitch_type, use_inversions=True)[index] == string
                     )
 
     with pytest.raises(ValueError):
@@ -371,3 +371,42 @@ def test_get_chord_one_hot_index():
     hu.get_chord_one_hot_index(
         ChordType.MAJOR, 0, PitchType.TPC, inversion=3, use_inversion=False
     )
+
+
+def test_get_key_label_list():
+    for pitch_type in [PitchType.MIDI, PitchType.TPC]:
+        one_hots = hu.get_key_label_list(pitch_type)
+        i = 0
+
+        for key_mode in KeyMode:
+            for pitch in range(0, hc.NUM_PITCHES[pitch_type]):
+                pitch_string = hu.get_pitch_string(pitch, pitch_type)
+                if key_mode == KeyMode.MINOR:
+                    pitch_string = str(pitch_string).lower()
+                assert one_hots[i] == f'{pitch_string}:{key_mode}'
+                i += 1
+
+        assert i == len(one_hots)
+
+
+def test_get_key_one_hot_index():
+    for key_mode in KeyMode:
+        for pitch_type in PitchType:
+            for tonic in range(hc.NUM_PITCHES[pitch_type]):
+                tonic_string = hu.get_pitch_string(tonic, pitch_type)
+                if key_mode == KeyMode.MINOR:
+                    tonic_string = str(tonic_string).lower()
+                string = f'{tonic_string}:{key_mode}'
+
+                index = hu.get_key_one_hot_index(key_mode, tonic, pitch_type)
+                assert hu.get_key_label_list(pitch_type)[index] == string
+
+    with pytest.raises(ValueError):
+        hu.get_key_one_hot_index(KeyMode.MAJOR, -1, PitchType.MIDI)
+    with pytest.raises(ValueError):
+        hu.get_key_one_hot_index(KeyMode.MAJOR, hc.NUM_PITCHES[PitchType.MIDI], PitchType.MIDI)
+
+    with pytest.raises(ValueError):
+        hu.get_key_one_hot_index(KeyMode.MAJOR, -1, PitchType.TPC)
+    with pytest.raises(ValueError):
+        hu.get_key_one_hot_index(KeyMode.MAJOR, hc.NUM_PITCHES[PitchType.TPC], PitchType.TPC)

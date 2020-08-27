@@ -7,9 +7,9 @@ from harmonic_inference.data.data_types import  KeyMode, PitchType, ChordType
 from harmonic_inference.utils import harmonic_constants as hc
 
 
-def get_one_hot_labels(pitch_type: PitchType, use_inversions=True) -> List[str]:
+def get_chord_label_list(pitch_type: PitchType, use_inversions=True) -> List[str]:
     """
-    Get the human-readable label of every one-hot chord value.
+    Get the human-readable label of every chord label.
 
     Parameters
     ----------
@@ -23,13 +23,7 @@ def get_one_hot_labels(pitch_type: PitchType, use_inversions=True) -> List[str]:
     labels : List[String]
         A List, where labels[0] is the String interpretation of the one-hot chord label 0, etc.
     """
-    roots = []
-    if pitch_type == PitchType.MIDI:
-        roots = hc.PITCH_TO_STRING[pitch_type]
-    elif pitch_type == PitchType.TPC:
-        for accidental in ['bb', 'b', '', '#', '##']:
-            for root in ['F', 'C', 'G', 'D', 'A', 'E', 'B']:
-                roots.append(f'{root}{accidental}')
+    roots = [get_pitch_string(i, pitch_type) for i in range(hc.NUM_PITCHES[pitch_type])]
 
     labels = []
     for chord_type in ChordType:
@@ -91,6 +85,56 @@ def get_chord_one_hot_index(
         index += inversion
 
     return index
+
+
+def get_key_label_list(pitch_type: PitchType) -> List[str]:
+    """
+    Get the list of all key labels, in human-readable format.
+
+    Parameters
+    ----------
+    pitch_type : PitchType
+        The pitch type of the tonic labels.
+
+    Returns
+    -------
+    key_labels : List[str]
+        A List where key_labels[i] is the human-readable label for key index i.
+    """
+    tonics = [get_pitch_string(i, pitch_type) for i in range(hc.NUM_PITCHES[pitch_type])]
+
+    labels = []
+    for key_mode in KeyMode:
+        for tonic in tonics:
+            if key_mode == KeyMode.MINOR:
+                tonic = str(tonic).lower()
+            labels.append(f'{tonic}:{key_mode}')
+
+    return labels
+
+
+def get_key_one_hot_index(key_mode: KeyMode, tonic: int, pitch_type: PitchType) -> int:
+    """
+    Get the one hot index of a given key.
+
+    Parameters
+    ----------
+    key_mode : KeyMode
+        The mode of the key.
+    tonic : int
+        The pitch of the tonic of this key.
+    pitch_type : int
+        The representation used for `tonic`.
+
+    Returns
+    -------
+    index : int
+        The index of the given key's label in the list of all possible key labels.
+    """
+    if tonic < 0 or tonic >= hc.NUM_PITCHES[pitch_type]:
+        raise ValueError("Given root is outside of valid range")
+
+    return hc.NUM_PITCHES[pitch_type] * key_mode.value + tonic
 
 
 def get_chord_inversion_count(chord_type: ChordType) -> int:
