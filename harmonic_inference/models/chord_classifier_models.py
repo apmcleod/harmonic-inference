@@ -27,6 +27,7 @@ class ChordClassifierModel(Model):
         output_type : PitchType
             The type of chord this model will output.
         """
+        super().__init__()
 
     def get_chord_probs(self, input_data):
         """
@@ -44,8 +45,27 @@ class ChordClassifierModel(Model):
         """
         raise NotImplementedError
 
+    def training_step(self, batch, batch_idx):
+        x, y = batch
+        y_hat = self(x)
+        loss = F.cross_entropy(y_hat, y)
+        result = pl.TrainResult(loss)
+        result.log('train_loss', loss, on_epoch=True)
+        return result
 
-class MusicScoreModel(nn.Module):
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        y_hat = self(x)
+        loss = F.cross_entropy(y_hat, y)
+        result = pl.EvalResult(checkpoint_on=loss)
+        result.log('val_loss', loss)
+        return result
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=0.02)
+
+
+class BasicChordClassifier(ChordClassifierModel):
     """
     """
 

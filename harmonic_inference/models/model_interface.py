@@ -2,11 +2,15 @@
 from typing import Dict, Iterable
 
 from harmonic_inference.data.piece import Piece
+import pytorch_lightning as pl
 
-class Model():
+class Model(pl.LightningModule):
     """
     A Generic Model class which all others should extend.
     """
+    def __init__(self):
+        super().__init__()
+
     def get_state(self) -> Dict:
         """
         Get the state of this Model as a dictionary of fields.
