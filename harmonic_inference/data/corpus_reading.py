@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pandas as pd
 
+import harmonic_inference.utils.corpus_utils as cu
+
 
 # Helper functions to be used as converters, handlling empty strings
 str2inttuple = lambda l: tuple() if l == '' else tuple(int(s) for s in l.split(', '))
@@ -110,6 +112,63 @@ def read_dump(file: str, index_col: Union[int, Iterable] = (0, 1), converters: D
         conv.update(converters)
     return pd.read_csv(file, sep='\t', index_col=index_col, dtype=types, converters=conv,
                        **kwargs)
+
+
+def load_clean_corpus_dfs(dir_path: Union[str, Path]):
+    """
+    Return cleaned DataFrames from the corpus data in the given directory. The DataFrames will
+    be read from files: 'files.tsv', 'measures.tsv', 'chords.tsv', and 'notes.df'.
+
+    They will undergo the following cleaning procedure:
+        1. Remove repeats from measures.
+        2. Drop note and chords corresponding to removed measures.
+        3. Drop chords with numeral '@none' or pd.NAN.
+        4. Add offsets to notes.
+        5. Merge tied notes.
+        6. Add offsets to chords.
+
+    Parameters
+    ----------
+    dir_path : str or Path
+        The path to a directory containing the files: 'files.tsv', 'measures.tsv', 'chords.tsv',
+        and 'notes.df'.
+
+    Returns
+    -------
+    files_df : pd.DataFrame
+        The files data frame.
+    measures_df : pd.DataFrame
+        The measures data frame with repeats removed.
+    chords_df : pd.DataFrame
+        The chords data frame, cleaned as described.
+    notes_df : pd.DataFrame
+        The notes data frame, cleaned as described.
+    """
+    files_df = read_dump(Path(dir_path, 'files.tsv'), index_col=0)
+    measures_df = read_dump(Path(dir_path, 'measures.tsv'))
+    chords_df = read_dump(Path(dir_path, 'chords.tsv'), low_memory=False)
+    notes_df = read_dump(Path(dir_path, 'notes.tsv'))
+
+    # Remove measure repeats
+    if isinstance(measures_df.iloc[0].next, tuple):
+        measures_df = cu.remove_repeats(measures_df)
+
+    # Remove unmatched
+    notes_df = cu.remove_unmatched(notes_df, measures_df)
+    chords_df = cu.remove_unmatched(chords_df, measures_df)
+    chords_df = chords_df.drop(chords_df.loc[(chords_df.numeral == '@none') | chords_df.numeral.isnull()].index)
+
+    # Add offsets
+    if not all([column in notes_df.columns for column in ['offset_beat', 'offset_mc']]):
+        notes_df = cu.add_note_offsets(notes_df, measures_df)
+
+    # Merge ties
+    notes_df = cu.merge_ties(notes_df)
+
+    # Add chord metrical info
+    chords_df = cu.add_chord_metrical_data(chords_df, measures_df)
+
+    return files_df, measures_df, chords_df, notes_df
 
 
 def aggregate_annotation_dfs(annotations_path: Union[Path, str], out_dir: Union[Path, str]):
