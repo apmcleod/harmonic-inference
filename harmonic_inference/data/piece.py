@@ -133,9 +133,10 @@ class Note():
             vectors.append(metrical)
 
         # Binary -- is this the lowest note in this set of notes
-        if min_pitch is not None:
-            min_pitch = np.array([1 if (self.octave, self.pitch_class) == min_pitch else 0])
-            vectors.append(min_pitch)
+        min_pitch = np.array(
+            [1 if min_pitch is not None and (self.octave, self.pitch_class) == min_pitch else 0]
+        )
+        vectors.append(min_pitch)
 
         return np.concatenate(vectors)
 

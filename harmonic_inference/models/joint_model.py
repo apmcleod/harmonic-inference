@@ -1,11 +1,11 @@
 """Combined models that output a key/chord sequence given an input score, midi, or audio."""
 from typing import List, Tuple
 
-from chord_classifier_models import ChordClassifierModel
-from chord_sequence_models import ChordSequenceModel
-from chord_transition_models import ChordTransitionModel
-from key_sequence_models import KeySequenceModel
-from key_transition_models import KeyTransitionModel
+from harmonic_inference.models.chord_classifier_models import ChordClassifierModel
+from harmonic_inference.models.chord_sequence_models import ChordSequenceModel
+from harmonic_inference.models.chord_transition_models import ChordTransitionModel
+from harmonic_inference.models.key_sequence_models import KeySequenceModel
+from harmonic_inference.models.key_transition_models import KeyTransitionModel
 from harmonic_inference.data.piece import Piece
 
 

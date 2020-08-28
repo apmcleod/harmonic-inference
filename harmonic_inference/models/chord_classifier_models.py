@@ -5,13 +5,15 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-import torch.nn.functional as f
+import torch.nn.functional as F
+from pytorch_lightning import pl
 
-from model_interface import Model
 from harmonic_inference.data.data_types import PieceType, PitchType
+import harmonic_inference.utils.harmonic_constants as hc
+import harmonic_inference.utils.harmonic_utils as hu
 
 
-class ChordClassifierModel(Model):
+class ChordClassifierModel(pl.LightningModule):
     """
     The base type for all Chord Classifier Models, which take as input sets of frames from Pieces,
     and output chord probabilities for them.
@@ -28,70 +30,111 @@ class ChordClassifierModel(Model):
             The type of chord this model will output.
         """
         super().__init__()
-
-    def get_chord_probs(self, input_data):
-        """
-        Return a distribution over chords given some input data.
-
-        Parameters
-        ----------
-        input_data
-            The observed data to classify as a single chord.
-
-        Returns
-        -------
-        probabilities
-            The probability of the input being classified as each chord.
-        """
-        raise NotImplementedError
+        self.input_type = input_type
+        self.output_type = output_type
 
     def training_step(self, batch, batch_idx):
-        x, y = batch
-        y_hat = self(x)
-        loss = F.cross_entropy(y_hat, y)
+        notes = batch['inputs'].float()
+        notes_lengths = batch['input_lengths']
+        targets = batch['targets'].long()
+
+        outputs = self.forward(notes, notes_lengths)
+        loss = F.cross_entropy(outputs, targets)
+
         result = pl.TrainResult(loss)
         result.log('train_loss', loss, on_epoch=True)
         return result
 
     def validation_step(self, batch, batch_idx):
-        x, y = batch
-        y_hat = self(x)
-        loss = F.cross_entropy(y_hat, y)
+        notes = batch['inputs'].float()
+        notes_lengths = batch['input_lengths']
+        targets = batch['targets'].long()
+
+        outputs = self.forward(notes, notes_lengths)
+        loss = F.cross_entropy(outputs, targets)
+
         result = pl.EvalResult(checkpoint_on=loss)
         result.log('val_loss', loss)
         return result
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=0.02)
+        return torch.optim.Adam(
+            self.parameters(),
+            lr=0.001,
+            betas=(0.9, 0.999),
+            eps=1e-08,
+            weight_decay=0.001
+        )
 
 
-class BasicChordClassifier(ChordClassifierModel):
+class SimpleChordClassifier(ChordClassifierModel):
     """
+    The most simple chord classifier, with layers:
+        1. Bi-LSTM
+        2. Linear layer
+        3. Dropout
+        4. Linear layer
     """
+    def __init__(
+        self,
+        input_type: PitchType,
+        output_type: PitchType,
+        use_inversions: bool,
+        lstm_layers: int = 1,
+        lstm_dim: int = 256,
+        hidden_dim: int = 256,
+        dropout: float = 0.0,
+    ):
+        """
+        Create a new SimpleChordClassifier.
 
-    def __init__(self, input_dim, num_classes, lstm_layers=1, lstm_dim=256, hidden_dim=256,
-                 dropout=0, input_mask=None):
-        super().__init__()
+        Parameters
+        ----------
+        input_type : PitchType
+            The pitch type to use for inputs to this model. Used to derive the input length.
+        output_type : PitchType
+            The pitch type to use for outputs of this model. Used to derive the output length.
+        use_inversions : bool
+            Whether to use different inversions as different chords in the output. Used to
+            derive the output length.
+        lstm_layers : int
+            The number of Bi-LSTM layers to use.
+        lstm_dim : int
+            The size of each LSTM layer's hidden vector.
+        hidden_dim : int
+            The size of the output vector of the first linear layer.
+        dropout : float
+            The dropout proportion of the first linear layer's output.
+        """
+        super().__init__(input_type, output_type)
 
-        self.input_dim = input_dim
+        # Input and output derived from pitch_type and use_inversions
+        self.input_dim = (
+            hc.NUM_PITCHES[input_type] +  # Pitch class
+            127 // hc.NUM_PITCHES[PitchType.MIDI] +  # octave
+            12  # 4 onset level, 4 offset level, (onset, offset, dur) proportions, is_lowest
+        )
+        self.num_classes = len(hu.get_chord_label_list(output_type, use_inversions=use_inversions))
+
+        # LSTM hidden layer and depth
         self.lstm_dim = lstm_dim
         self.lstm_layers = lstm_layers
+        self.lstm = nn.LSTM(
+            self.input_dim,
+            self.lstm_dim,
+            num_layers=self.lstm_layers,
+            bidirectional=True,
+            batch_first=True
+        )
+
+        # Linear layers post-LSTM
         self.hidden_dim = hidden_dim
         self.dropout = dropout
-        self.num_classes = num_classes
-        self.input_mask = input_mask
-
-        self.lstm = nn.LSTM(self.input_dim,
-                            self.lstm_dim,
-                            num_layers=self.lstm_layers,
-                            bidirectional=True,
-                            batch_first=True)
-
-        self.fc1 = nn.Linear(2 * self.lstm_dim, self.hidden_dim)
+        self.fc1 = nn.Linear(2 * self.lstm_dim, self.hidden_dim)  # 2 * because bi-directional
         self.fc2 = nn.Linear(self.hidden_dim, self.num_classes)
         self.dropout1 = nn.Dropout(self.dropout)
 
-    def init_hidden(self, batch_size: int) -> (Variable, Variable):
+    def init_hidden(self, batch_size: int) -> Tuple[Variable, Variable]:
         """
         Initialize the LSTM's hidden layer for a given batch size.
 
@@ -126,9 +169,9 @@ class BasicChordClassifier(ChordClassifierModel):
         last_backward = lstm_out_backward[:, 0, :]
         lstm_out = torch.cat((last_forward, last_backward), 1)
 
-        relu1 = f.relu(lstm_out)
+        relu1 = F.relu(lstm_out)
         fc1 = self.fc1(relu1)
-        relu2 = f.relu(fc1)
+        relu2 = F.relu(fc1)
         drop1 = self.dropout1(relu2)
         output = self.fc2(drop1)
 
@@ -212,25 +255,25 @@ class TranspositionInvariantCNNClassifier(nn.Module):
             data *= self.input_mask
 
         # Conv layer
-        conv = f.relu(self.conv(data.unsqueeze(1)))
+        conv = F.relu(self.conv(data.unsqueeze(1)))
 
         # Parallel linear layers
         parallel_in = conv.reshape(conv.shape[0] * 12, -1)
 
         # Input layer
-        parallel = self.dropouts[0](f.relu(self.input(parallel_in)))
+        parallel = self.dropouts[0](F.relu(self.input(parallel_in)))
         if self.batch_norms[0] is not None:
             parallel = self.batch_norms[0](parallel)
 
         # Hidden layers
         for layer, dropout, batch_norm in zip(self.linear, self.dropouts[1:],
                                               self.batch_norms[1:]):
-            parallel = dropout(f.relu(layer(parallel)))
+            parallel = dropout(F.relu(layer(parallel)))
             if batch_norm is not None:
                 parallel = batch_norm(parallel)
 
         # Output layer
-        parallel_out = f.relu(self.output(parallel))
+        parallel_out = F.relu(self.output(parallel))
 
         # Final output combination
         output = parallel_out.reshape(parallel_out.shape[0] / 12, -1)
