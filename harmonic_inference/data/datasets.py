@@ -1,9 +1,11 @@
-from typing import List, Iterable
+from typing import List, Iterable, Union, Tuple
+from pathlib import Path
 import logging
 
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
+import h5py
 from torch.utils.data import Dataset
 
 from harmonic_inference.data.piece import Piece, ScorePiece
@@ -11,18 +13,75 @@ import harmonic_inference.utils.harmonic_utils as hu
 
 
 class HarmonicDataset(Dataset):
+    def __init__(self):
+        self.padded = False
+
     def __len__(self):
         return len(self.inputs)
 
     def __getitem__(self, item):
         return {
-            "inputs": self.inputs[item],
-            "targets": self.targets[item],
+            "inputs": (
+                self.inputs[item, :self.input_lengths[item]]
+                if hasattr(self, 'input_lengths')
+                else self.inputs[item]
+            ),
+            "targets": (
+                self.targets[item, :self.target_lengths[item]]
+                if hasattr(self, 'target_lengths')
+                else self.targets[item]
+            ),
         }
+
+    def pad(self):
+        """
+        Default padding function to pad a HarmonicDataset's input and target arrays to be of the
+        same size, so that they can be combined into a numpy nd-array, one element per row
+        (with 0's padded to the end).
+
+        This function works if input and target are lists of np.ndarrays, and the ndarrays match
+        in every dimension except possibly the first.
+
+        This also adds fields input_lengths and target_lengths (both arrays, with 1 integer per
+        input and target), representing the lengths of the non-padded entries for each piece.
+
+        Finally, this sets self.padded to True.
+        """
+        self.targets, self.target_lengths = pad_array(self.targets)
+        self.inputs, self.input_lengths = pad_array(self.inputs)
+        self.padded = True
+
+    def to_h5(self, h5_path: Union[str, Path]):
+        """
+        Write this HarmonicDataset out to an h5 file, containing its inputs and targets.
+
+        Parameters
+        ----------
+        h5_path : Union[str, Path]
+            The filename of the h5 file to write to.
+        """
+        if isinstance(h5_path, str):
+            h5_path = Path(h5_path)
+
+        if not h5_path.parent.exists():
+            h5_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if not self.padded:
+            self.pad()
+
+        h5_file = h5py.File(h5_path, 'w')
+        h5_file.create_dataset('inputs', data=self.inputs, compression="gzip")
+        h5_file.create_dataset('targets', data=self.targets, compression="gzip")
+        if hasattr(self, 'input_lengths'):
+            h5_file.create_dataset('input_lengths', data=self.input_lengths, compression="gzip")
+        if hasattr(self, 'target_lengths'):
+            h5_file.create_dataset('target_lengths', data=self.target_lengths, compression="gzip")
+        h5_file.close()
 
 
 class ChordTransitionDataset(HarmonicDataset):
     def __init__(self, pieces: List[Piece]):
+        super().__init__()
         self.targets = [piece.get_chord_change_indices() for piece in pieces]
         self.inputs = [
             np.vstack([note.to_vec() for note in piece.get_inputs()]) for piece in pieces
@@ -31,7 +90,8 @@ class ChordTransitionDataset(HarmonicDataset):
 
 class ChordClassificationDataset(HarmonicDataset):
     def __init__(self, pieces: List[Piece]):
-        self.targets = [
+        super().__init__()
+        self.targets = np.array([
             hu.get_chord_one_hot_index(
                 chord.chord_type,
                 chord.root,
@@ -41,8 +101,13 @@ class ChordClassificationDataset(HarmonicDataset):
             )
             for piece in pieces
             for chord in piece.get_chords()
-        ]
-        self.inputs = [piece.get_chord_note_inputs(window=2) for piece in pieces]
+        ])
+        self.inputs = []
+        for piece in pieces:
+            self.inputs.extend(piece.get_chord_note_inputs(window=2))
+
+    def pad(self):
+        self.inputs, self.input_lengths = pad_array(self.inputs)
 
 
 class ChordSequenceDataset(HarmonicDataset):
@@ -55,6 +120,71 @@ class KeyTransitionDataset(HarmonicDataset):
 
 class KeySequenceDataset(HarmonicDataset):
     pass
+
+
+def h5_to_dataset(h5_path: Union[str, Path], dataset_class: HarmonicDataset) -> HarmonicDataset:
+    """
+    Load a harmonic dataset object from an h5 file into the given HarmonicDataset subclass.
+
+    Parameters
+    ----------
+    h5_path : str or Path
+        The h5 file to load the data from.
+    dataset_class : HarmonicDataset
+        The dataset class to load the data into and return.
+
+    Returns
+    -------
+    dataset : HarmonicDataset
+        A HarmonicDataset of the given class, loaded with inputs and targets from the given
+        h5 file.
+    """
+    dataset = dataset_class([])
+
+    with h5py.File(h5_path, 'r') as h5_file:
+        dataset.inputs = np.array(h5_file['inputs'])
+        dataset.targets = np.array(h5_file['targets'])
+        if 'input_lengths' in h5_file:
+            dataset.input_lengths = np.array(h5_file['input_lengths'])
+        if 'target_lengths' in h5_file:
+            dataset.target_lengths = np.array(h5_file['target_lengths'])
+        dataset.padded = True
+
+    return dataset
+
+
+def pad_array(array: List[np.array]) -> Tuple[np.array, np.array]:
+    """
+    Pad the given list, whose elements must only match in dimensions past the first, into a
+    numpy nd-array of equal dimensions.
+
+    Parameters
+    ----------
+    array : List[np.array]
+        A list of numpy ndarrays. The shape of each ndarray must match in every dimension except
+        the first.
+
+    Returns
+    -------
+    padded_array : np.array
+        The given list, packed into a numpy nd-array. Since the first dimension of each given
+        nested numpy array need not be equal, each is padded with zeros to match the longest.
+    array_lengths : np.array
+        The size of the first dimension of each nested numpy nd-array before padding. Using this,
+        the original array[i] can be gotten with padded_array[i, :array_lengths[i]].
+    """
+    array_lengths = np.array([len(item) for item in array])
+
+    full_array_size = [len(array), max(array_lengths)]
+    if len(array[0].shape) > 1:
+        full_array_size += list(array[0].shape)[1:]
+    full_array_size = tuple(full_array_size)
+
+    padded_array = np.zeros(full_array_size)
+    for index, item in enumerate(array):
+        padded_array[index, :len(item)] = item
+
+    return padded_array, array_lengths
 
 
 def get_dataset_splits(
