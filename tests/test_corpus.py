@@ -111,7 +111,7 @@ def test_chords():
     if invalid_dur.any():
         with pd.option_context('display.max_rows', None, 'display.max_columns', None):
             invalid_string = chords_dfs["offsets"].loc[
-                ~invalid_dur,
+                invalid_dur,
                 ['mc', 'onset', 'mc_next', 'onset_next', 'duration'],
             ]
             logging.warning(
