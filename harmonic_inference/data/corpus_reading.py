@@ -5,6 +5,7 @@ from fractions import Fraction
 from glob import glob
 from tqdm import tqdm
 from pathlib import Path
+import logging
 
 import pandas as pd
 
@@ -158,6 +159,52 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path]):
     chords_df = cu.remove_unmatched(chords_df, measures_df)
     chords_df = chords_df.drop(chords_df.loc[(chords_df.numeral == '@none') | chords_df.numeral.isnull()].index)
 
+    # Remove notes with invalid onset times
+    note_measures = pd.merge(
+        notes_df.reset_index(),
+        measures_df.reset_index(),
+        how='left',
+        on=['file_id', 'mc'],
+    )
+
+    valid_onsets = (
+        (note_measures["offset"] <= note_measures["onset"]) &
+        (note_measures["onset"] < note_measures["act_dur"] + note_measures["offset"])
+    )
+    if not valid_onsets.all():
+        with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+            invalid_string = note_measures.loc[
+                ~valid_onsets,
+                ['file_id', 'note_id', 'mc', 'onset', 'offset', 'act_dur'],
+            ]
+            logging.warning(
+                f"{(~valid_onsets).sum()} notes have invalid onset times:\n{invalid_string}"
+            )
+        notes_df = notes_df.loc[valid_onsets.values]
+
+    # Remove chords with invalid onset times
+    chord_measures = pd.merge(
+        chords_df.reset_index(),
+        measures_df.reset_index(),
+        how='left',
+        on=['file_id', 'mc'],
+    )
+
+    valid_onsets = (
+        (chord_measures["offset"] <= chord_measures["onset"]) &
+        (chord_measures["onset"] < chord_measures["act_dur"] + chord_measures["offset"])
+    )
+    if not valid_onsets.all():
+        with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+            invalid_string = chord_measures.loc[
+                ~valid_onsets,
+                ['file_id', 'chord_id', 'mc', 'onset', 'offset', 'act_dur'],
+            ]
+            logging.warning(
+                f"{(~valid_onsets).sum()} chords have invalid onset times:\n{invalid_string}"
+            )
+        chords_df = chords_df.loc[valid_onsets.values]
+
     # Add offsets
     if not all([column in notes_df.columns for column in ['offset_beat', 'offset_mc']]):
         notes_df = cu.add_note_offsets(notes_df, measures_df)
@@ -167,6 +214,19 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path]):
 
     # Add chord metrical info
     chords_df = cu.add_chord_metrical_data(chords_df, measures_df)
+
+    # Remove chords with dur 0
+    invalid_dur = chords_df["duration"] <= 0
+    if invalid_dur.any():
+        with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+            invalid_string = chords_df.loc[
+                ~invalid_dur,
+                ['mc', 'onset', 'mc_next', 'onset_next', 'duration'],
+            ]
+            logging.warning(
+                f"{(invalid_dur).sum()} chords have invalid durations:\n{invalid_string}"
+            )
+        chords_df = chords_df.loc[~invalid_dur].copy()
 
     return files_df, measures_df, chords_df, notes_df
 

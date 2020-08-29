@@ -2,13 +2,14 @@
 from fractions import Fraction
 from typing import Tuple, List
 from pathlib import Path
+import logging
 
 import pandas as pd
 import numpy as np
 
 from harmonic_inference.utils import rhythmic_utils as ru
 from harmonic_inference.utils import corpus_utils as cu
-from harmonic_inference.data.corpus_reading import read_dump
+from harmonic_inference.data.corpus_reading import read_dump, load_clean_corpus_dfs
 
 TSV_BASE = Path('corpus_data')
 FILES_TSV = TSV_BASE / 'files.tsv'
@@ -77,8 +78,46 @@ def test_chords():
         chords_dfs['removed'].loc[(chords_dfs['removed'].numeral == '@none') |
                                   chords_dfs['removed'].numeral.isnull()].index
     )
-    chords_dfs['offsets'] = cu.add_chord_metrical_data(chords_dfs['dropped'],
-                                                       measures_dfs['removed'])
+
+    # Check for invalid onset times
+    chord_measures = pd.merge(
+        chords_dfs['dropped'].reset_index(),
+        measures_dfs['removed'].reset_index(),
+        how='left',
+        on=['file_id', 'mc'],
+    )
+
+    valid_onsets = (
+        (chord_measures["offset"] <= chord_measures["onset"]) &
+        (chord_measures["onset"] < chord_measures["act_dur"] + chord_measures["offset"])
+    )
+    if not valid_onsets.all():
+        with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+            invalid_string = chord_measures.loc[
+                ~valid_onsets,
+                ['file_id', 'chord_id', 'mc', 'onset', 'offset', 'act_dur'],
+            ]
+            logging.warning(
+                f"{(~valid_onsets).sum()} chords have invalid onset times:\n{invalid_string}"
+            )
+        chords_dfs['dropped'] = chords_dfs['dropped'].loc[valid_onsets.values]
+
+    chords_dfs['offsets'] = cu.add_chord_metrical_data(
+        chords_dfs['dropped'], measures_dfs['removed']
+    )
+
+    # Remove chords with dur 0
+    invalid_dur = chords_dfs["offsets"]["duration"] <= 0
+    if invalid_dur.any():
+        with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+            invalid_string = chords_dfs["offsets"].loc[
+                ~invalid_dur,
+                ['mc', 'onset', 'mc_next', 'onset_next', 'duration'],
+            ]
+            logging.warning(
+                f"{(invalid_dur).sum()} chords have invalid durations:\n{invalid_string}"
+            )
+        chords_dfs["offsets"] = chords_dfs["offsets"].loc[~invalid_dur].copy()
 
     for df in chords_dfs.values():
         assert all(df.index.get_level_values(0).isin(files_dfs['default'].index))
@@ -95,6 +134,30 @@ def test_notes():
     notes_dfs['default'] = read_dump(NOTES_TSV)
     notes_dfs['removed'] = cu.remove_unmatched(notes_dfs['default'], measures_dfs['removed'])
     notes_dfs['offsets'] = cu.add_note_offsets(notes_dfs['removed'], measures_dfs['removed'])
+
+    # Check for invalid onset times
+    note_measures = pd.merge(
+        notes_dfs['offsets'].reset_index(),
+        measures_dfs['removed'].reset_index(),
+        how='left',
+        on=['file_id', 'mc'],
+    )
+
+    valid_onsets = (
+        (note_measures["offset"] <= note_measures["onset"]) &
+        (note_measures["onset"] < note_measures["act_dur"] + note_measures["offset"])
+    )
+    if not valid_onsets.all():
+        with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+            invalid_string = note_measures.loc[
+                ~valid_onsets,
+                ['file_id', 'note_id', 'mc', 'onset', 'offset', 'act_dur'],
+            ]
+            logging.warning(
+                f"{(~valid_onsets).sum()} notes have invalid onset times:\n{invalid_string}"
+            )
+        notes_dfs['offsets'] = notes_dfs['offsets'].loc[valid_onsets.values]
+
     notes_dfs['merged'] = cu.merge_ties(notes_dfs['offsets'])
 
     for df in notes_dfs.values():
@@ -106,3 +169,13 @@ def test_notes():
     assert all(notes_dfs['offsets'].offset_mc.isin(measures_dfs['removed'].mc))
     assert all(notes_dfs['merged'].mc.isin(measures_dfs['removed'].mc))
     assert all(notes_dfs['merged'].offset_mc.isin(measures_dfs['removed'].mc))
+
+
+def test_get_clean_corpus_dfs():
+    global files_dfs, measures_dfs, chords_dfs, notes_dfs
+    files, measures, chords, notes = load_clean_corpus_dfs(TSV_BASE)
+
+    assert files.equals(files_dfs['default'])
+    assert measures.equals(measures_dfs['removed'])
+    assert chords.equals(chords_dfs['offsets'])
+    assert notes.equals(notes_dfs['merged'])

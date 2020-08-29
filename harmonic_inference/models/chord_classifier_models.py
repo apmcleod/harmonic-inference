@@ -81,7 +81,7 @@ class SimpleChordClassifier(ChordClassifierModel):
         output_type: PitchType,
         use_inversions: bool,
         lstm_layers: int = 1,
-        lstm_dim: int = 256,
+        lstm_hidden_dim: int = 256,
         hidden_dim: int = 256,
         dropout: float = 0.0,
     ):
@@ -99,7 +99,7 @@ class SimpleChordClassifier(ChordClassifierModel):
             derive the output length.
         lstm_layers : int
             The number of Bi-LSTM layers to use.
-        lstm_dim : int
+        lstm_hidden_dim : int
             The size of each LSTM layer's hidden vector.
         hidden_dim : int
             The size of the output vector of the first linear layer.
@@ -117,11 +117,11 @@ class SimpleChordClassifier(ChordClassifierModel):
         self.num_classes = len(hu.get_chord_label_list(output_type, use_inversions=use_inversions))
 
         # LSTM hidden layer and depth
-        self.lstm_dim = lstm_dim
+        self.lstm_hidden_dim = lstm_hidden_dim
         self.lstm_layers = lstm_layers
         self.lstm = nn.LSTM(
             self.input_dim,
-            self.lstm_dim,
+            self.lstm_hidden_dim,
             num_layers=self.lstm_layers,
             bidirectional=True,
             batch_first=True
@@ -143,8 +143,10 @@ class SimpleChordClassifier(ChordClassifierModel):
         batch_size : int
             The batch size.
         """
-        return (Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_dim)),
-                Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_dim)))
+        return (
+            Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden_dim)),
+            Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden_dim))
+        )
 
     def forward(self, notes, lengths):
         # pylint: disable=arguments-differ
