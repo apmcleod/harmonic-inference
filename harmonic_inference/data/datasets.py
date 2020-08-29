@@ -15,23 +15,42 @@ import harmonic_inference.utils.harmonic_utils as hu
 class HarmonicDataset(Dataset):
     def __init__(self):
         self.padded = False
+        self.h5_path = None
 
     def __len__(self):
+        if self.h5_path:
+            with h5py.File(self.h5_path, 'r') as h5_file:
+                length = len(h5_file['inputs'])
+            return length
         return len(self.inputs)
 
     def __getitem__(self, item):
-        return {
-            "inputs": (
+        data = {}
+
+        if self.h5_path:
+            with h5py.File(self.h5_path, 'r') as h5_file:
+                data["inputs"] = (
+                    h5_file["inputs"][item, :h5_file['input_lengths'][item]]
+                    if 'input_lengths' in h5_file
+                    else h5_file["inputs"][item]
+                )
+                data["targets"] = (
+                    h5_file["targets"][item, :h5_file['target_lengths'][item]]
+                    if 'target_lengths' in h5_file
+                    else h5_file["targets"][item]
+                )
+        else:
+            data["inputs"] = (
                 self.inputs[item, :self.input_lengths[item]]
                 if hasattr(self, 'input_lengths')
                 else self.inputs[item]
-            ),
-            "targets": (
+            )
+            data["targets"] = (
                 self.targets[item, :self.target_lengths[item]]
                 if hasattr(self, 'target_lengths')
                 else self.targets[item]
-            ),
-        }
+            )
+        return data
 
     def pad(self):
         """
@@ -142,13 +161,10 @@ def h5_to_dataset(h5_path: Union[str, Path], dataset_class: HarmonicDataset) -> 
     dataset = dataset_class([])
 
     with h5py.File(h5_path, 'r') as h5_file:
-        dataset.inputs = np.array(h5_file['inputs'])
-        dataset.targets = np.array(h5_file['targets'])
-        if 'input_lengths' in h5_file:
-            dataset.input_lengths = np.array(h5_file['input_lengths'])
-        if 'target_lengths' in h5_file:
-            dataset.target_lengths = np.array(h5_file['target_lengths'])
+        assert 'inputs' in h5_file
+        assert 'targets' in h5_file
         dataset.padded = True
+        dataset.h5_path = h5_path
 
     return dataset
 
