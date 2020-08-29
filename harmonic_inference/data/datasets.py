@@ -1,6 +1,7 @@
 from typing import List, Iterable, Union, Tuple
 from pathlib import Path
 import logging
+import shutil
 
 from tqdm import tqdm
 import numpy as np
@@ -73,6 +74,8 @@ class HarmonicDataset(Dataset):
     def to_h5(self, h5_path: Union[str, Path]):
         """
         Write this HarmonicDataset out to an h5 file, containing its inputs and targets.
+        If the dataset is already being read from an h5py file, this simply copies that
+        file (self.h5_path) over to the given location and updates self.h5_path.
 
         Parameters
         ----------
@@ -84,6 +87,16 @@ class HarmonicDataset(Dataset):
 
         if not h5_path.parent.exists():
             h5_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if self.h5_path:
+            try:
+                shutil.copy(self.h5_path, h5_path)
+                self.h5_path = h5_path
+            except BaseException as e:
+                logging.exception(
+                    f"Error copying existing h5 file {self.h5_path} to {h5_path}:\n{e}"
+                )
+            return
 
         if not self.padded:
             self.pad()
