@@ -1,4 +1,4 @@
-from typing import List, Iterable, Union, Tuple
+from typing import List, Iterable, Union, Tuple, Callable
 from pathlib import Path
 import logging
 import shutil
@@ -14,9 +14,10 @@ import harmonic_inference.utils.harmonic_utils as hu
 
 
 class HarmonicDataset(Dataset):
-    def __init__(self):
+    def __init__(self, transform=None):
         self.h5_path = None
         self.padded = False
+        self.transform = transform
 
     def __len__(self):
         if self.h5_path:
@@ -48,6 +49,15 @@ class HarmonicDataset(Dataset):
                 data["input_lengths"] = self.input_lengths[item]
             if hasattr(self, "target_lengths"):
                 data["target_lengths"] = self.target_lengths[item]
+
+        if self.transform:
+            transformed_data = {}
+            for k, value in data.items():
+                if isinstance(value, np.ndarray):
+                    transformed_data[k] = self.transform(value)
+                else:
+                    transformed_data[k] = value
+            data = transformed_data
 
         return data
 
@@ -110,8 +120,8 @@ class HarmonicDataset(Dataset):
 
 
 class ChordTransitionDataset(HarmonicDataset):
-    def __init__(self, pieces: List[Piece]):
-        super().__init__()
+    def __init__(self, pieces: List[Piece], transform=None):
+        super().__init__(transform=transform)
         self.targets = [piece.get_chord_change_indices() for piece in pieces]
         self.inputs = [
             np.vstack([note.to_vec() for note in piece.get_inputs()]) for piece in pieces
@@ -119,8 +129,8 @@ class ChordTransitionDataset(HarmonicDataset):
 
 
 class ChordClassificationDataset(HarmonicDataset):
-    def __init__(self, pieces: List[Piece]):
-        super().__init__()
+    def __init__(self, pieces: List[Piece], transform=None):
+        super().__init__(transform=transform)
         self.targets = np.array([
             hu.get_chord_one_hot_index(
                 chord.chord_type,
@@ -152,7 +162,11 @@ class KeySequenceDataset(HarmonicDataset):
     pass
 
 
-def h5_to_dataset(h5_path: Union[str, Path], dataset_class: HarmonicDataset) -> HarmonicDataset:
+def h5_to_dataset(
+    h5_path: Union[str, Path],
+    dataset_class: HarmonicDataset,
+    transform: Callable = None
+) -> HarmonicDataset:
     """
     Load a harmonic dataset object from an h5 file into the given HarmonicDataset subclass.
 
@@ -162,6 +176,9 @@ def h5_to_dataset(h5_path: Union[str, Path], dataset_class: HarmonicDataset) -> 
         The h5 file to load the data from.
     dataset_class : HarmonicDataset
         The dataset class to load the data into and return.
+    transform : Callable
+        A function to pass each element of the dataset's returned data dicts to. For example,
+        torch.from_numpy().
 
     Returns
     -------
@@ -169,7 +186,7 @@ def h5_to_dataset(h5_path: Union[str, Path], dataset_class: HarmonicDataset) -> 
         A HarmonicDataset of the given class, loaded with inputs and targets from the given
         h5 file.
     """
-    dataset = dataset_class([])
+    dataset = dataset_class([], transform=transform)
 
     with h5py.File(h5_path, 'r') as h5_file:
         assert 'inputs' in h5_file

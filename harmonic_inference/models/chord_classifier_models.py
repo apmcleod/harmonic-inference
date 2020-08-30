@@ -1,12 +1,12 @@
 """Models that generate probability distributions over chord classifications of a given input."""
-from typing import Collection
+from typing import Collection, Tuple
 
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import torch.nn.functional as F
-from pytorch_lightning import pl
+import pytorch_lightning as pl
 
 from harmonic_inference.data.data_types import PieceType, PitchType
 import harmonic_inference.utils.harmonic_constants as hc
@@ -130,7 +130,7 @@ class SimpleChordClassifier(ChordClassifierModel):
         # Linear layers post-LSTM
         self.hidden_dim = hidden_dim
         self.dropout = dropout
-        self.fc1 = nn.Linear(2 * self.lstm_dim, self.hidden_dim)  # 2 * because bi-directional
+        self.fc1 = nn.Linear(2 * self.lstm_hidden_dim, self.hidden_dim)  # 2 * because bi-directional
         self.fc2 = nn.Linear(self.hidden_dim, self.num_classes)
         self.dropout1 = nn.Dropout(self.dropout)
 
@@ -151,8 +151,6 @@ class SimpleChordClassifier(ChordClassifierModel):
     def forward(self, notes, lengths):
         # pylint: disable=arguments-differ
         batch_size = notes.shape[0]
-        if self.input_mask is not None:
-            notes *= self.input_mask
         lengths = torch.clamp(lengths, min=1)
         h_0, c_0 = self.init_hidden(batch_size)
 
@@ -209,18 +207,12 @@ class TranspositionInvariantCNNClassifier(nn.Module):
         The percentage of nodes in the input layer and each hidden layer to
         dropout. This is applied after activation (and before batch normalization
         if batch_norm is True, although it is not recommended to use both).
-
-    input_mask : torch.tensor
-        A binary tensor to multiply by the input (in forward()). Should be 1 in all
-        locations except where to mask.
     """
 
     def __init__(self, num_chord_types, num_input_channels=1, pitch_vector_length=12,
                  num_conv_channels=10, num_hidden=1, hidden_size=100, batch_norm=False,
-                 dropout=0.0, input_mask=None):
+                 dropout=0.0):
         super().__init__()
-
-        self.input_mask = input_mask
 
         # Convolutional layer
         self.num_input_channels = num_input_channels
@@ -252,10 +244,6 @@ class TranspositionInvariantCNNClassifier(nn.Module):
         self.dropouts = nn.ModuleList([nn.Dropout(dropout) for i in range(num_hidden + 1)])
 
     def forward(self, data):
-        # pylint: disable=arguments-differ
-        if self.input_mask is not None:
-            data *= self.input_mask
-
         # Conv layer
         conv = F.relu(self.conv(data.unsqueeze(1)))
 
