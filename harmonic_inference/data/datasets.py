@@ -15,8 +15,8 @@ import harmonic_inference.utils.harmonic_utils as hu
 
 class HarmonicDataset(Dataset):
     def __init__(self):
-        self.padded = False
         self.h5_path = None
+        self.padded = False
 
     def __len__(self):
         if self.h5_path:
@@ -26,31 +26,29 @@ class HarmonicDataset(Dataset):
         return len(self.inputs)
 
     def __getitem__(self, item):
-        data = {}
+        if not self.padded:
+            self.pad()
 
         if self.h5_path:
             with h5py.File(self.h5_path, 'r') as h5_file:
-                data["inputs"] = (
-                    h5_file["inputs"][item, :h5_file['input_lengths'][item]]
-                    if 'input_lengths' in h5_file
-                    else h5_file["inputs"][item]
-                )
-                data["targets"] = (
-                    h5_file["targets"][item, :h5_file['target_lengths'][item]]
-                    if 'target_lengths' in h5_file
-                    else h5_file["targets"][item]
-                )
+                data = {
+                    "inputs": h5_file["inputs"][item],
+                    "targets": h5_file["targets"][item],
+                }
+                if "input_lengths" in h5_file:
+                    data["input_lengths"] = h5_file["input_lengths"][item]
+                if "target_lengths" in h5_file:
+                    data["target_lengths"] = h5_file["target_lengths"][item]
         else:
-            data["inputs"] = (
-                self.inputs[item, :self.input_lengths[item]]
-                if hasattr(self, 'input_lengths')
-                else self.inputs[item]
-            )
-            data["targets"] = (
-                self.targets[item, :self.target_lengths[item]]
-                if hasattr(self, 'target_lengths')
-                else self.targets[item]
-            )
+            data = {
+                "inputs": self.inputs[item],
+                "targets": self.targets[item],
+            }
+            if hasattr(self, "input_lengths"):
+                data["input_lengths"] = self.input_lengths[item]
+            if hasattr(self, "target_lengths"):
+                data["target_lengths"] = self.target_lengths[item]
+
         return data
 
     def pad(self):
@@ -65,11 +63,11 @@ class HarmonicDataset(Dataset):
         This also adds fields input_lengths and target_lengths (both arrays, with 1 integer per
         input and target), representing the lengths of the non-padded entries for each piece.
 
-        Finally, this sets self.padded to True.
+        This also sets self.padded to True.
         """
         self.targets, self.target_lengths = pad_array(self.targets)
         self.inputs, self.input_lengths = pad_array(self.inputs)
-        self.padded = True
+        self.paddded = True
 
     def to_h5(self, h5_path: Union[str, Path]):
         """
@@ -88,6 +86,9 @@ class HarmonicDataset(Dataset):
         if not h5_path.parent.exists():
             h5_path.parent.mkdir(parents=True, exist_ok=True)
 
+        if not self.padded:
+            self.pad()
+
         if self.h5_path:
             try:
                 shutil.copy(self.h5_path, h5_path)
@@ -97,9 +98,6 @@ class HarmonicDataset(Dataset):
                     f"Error copying existing h5 file {self.h5_path} to {h5_path}:\n{e}"
                 )
             return
-
-        if not self.padded:
-            self.pad()
 
         h5_file = h5py.File(h5_path, 'w')
         h5_file.create_dataset('inputs', data=self.inputs, compression="gzip")
@@ -176,8 +174,8 @@ def h5_to_dataset(h5_path: Union[str, Path], dataset_class: HarmonicDataset) -> 
     with h5py.File(h5_path, 'r') as h5_file:
         assert 'inputs' in h5_file
         assert 'targets' in h5_file
-        dataset.padded = True
         dataset.h5_path = h5_path
+        dataset.padded = True
 
     return dataset
 
