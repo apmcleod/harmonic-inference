@@ -30,34 +30,21 @@ class HarmonicDataset(Dataset):
         if not self.padded:
             self.pad()
 
+        keys = ["inputs", "targets", "input_lengths", "target_lengths"]
         if self.h5_path:
             with h5py.File(self.h5_path, 'r') as h5_file:
-                data = {
-                    "inputs": h5_file["inputs"][item],
-                    "targets": h5_file["targets"][item],
-                }
-                if "input_lengths" in h5_file:
-                    data["input_lengths"] = h5_file["input_lengths"][item]
-                if "target_lengths" in h5_file:
-                    data["target_lengths"] = h5_file["target_lengths"][item]
+                data = {key: h5_file[key][item] for key in keys if key in h5_file}
         else:
-            data = {
-                "inputs": self.inputs[item],
-                "targets": self.targets[item],
-            }
-            if hasattr(self, "input_lengths"):
-                data["input_lengths"] = self.input_lengths[item]
-            if hasattr(self, "target_lengths"):
-                data["target_lengths"] = self.target_lengths[item]
+            data = {key: getattr(self, key)[item] for key in keys if hasattr(self, key)}
 
         if self.transform:
-            transformed_data = {}
-            for k, value in data.items():
-                if isinstance(value, np.ndarray):
-                    transformed_data[k] = self.transform(value)
-                else:
-                    transformed_data[k] = value
-            data = transformed_data
+            data.update(
+                {
+                    key: self.transform(value)
+                    for key, value in data.items()
+                    if isinstance(value, np.ndarray)
+                }
+            )
 
         return data
 
@@ -110,16 +97,23 @@ class HarmonicDataset(Dataset):
             return
 
         h5_file = h5py.File(h5_path, 'w')
-        h5_file.create_dataset('inputs', data=self.inputs, compression="gzip")
-        h5_file.create_dataset('targets', data=self.targets, compression="gzip")
-        if hasattr(self, 'input_lengths'):
-            h5_file.create_dataset('input_lengths', data=self.input_lengths, compression="gzip")
-        if hasattr(self, 'target_lengths'):
-            h5_file.create_dataset('target_lengths', data=self.target_lengths, compression="gzip")
+
+        keys = ["inputs", "targets", "input_lengths", "target_lengths"]
+        for key in keys:
+            if hasattr(self, key):
+                h5_file.create_dataset(key, data=getattr(self, key), compression="gzip")
         h5_file.close()
 
 
 class ChordTransitionDataset(HarmonicDataset):
+    """
+    A dataset to detect chord transitions.
+
+    Each input is the sequence of input vectors of a piece.
+
+    Each target is a list of the indexes at which there is a chord change in that list of input
+    vectors.
+    """
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
         self.targets = [piece.get_chord_change_indices() for piece in pieces]
@@ -129,16 +123,18 @@ class ChordTransitionDataset(HarmonicDataset):
 
 
 class ChordClassificationDataset(HarmonicDataset):
+    """
+    A dataset to classify chords.
+
+    Each input is a list of note vectors of the notes in each chord
+    in a piece, plus some window length (2) on each end.
+
+    The targets are the one_hot indexes of each of those chords.
+    """
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
         self.targets = np.array([
-            hu.get_chord_one_hot_index(
-                chord.chord_type,
-                chord.root,
-                chord.pitch_type,
-                inversion=chord.inversion,
-                use_inversion=True,
-            )
+            chord.get_one_hot_index(relative=False, use_inversion=True)
             for piece in pieces
             for chord in piece.get_chords()
         ])
@@ -151,15 +147,119 @@ class ChordClassificationDataset(HarmonicDataset):
 
 
 class ChordSequenceDataset(HarmonicDataset):
-    pass
+    """
+    A dataset representing chord sequences relative to the key.
+
+    The inputs are one list per piece.
+    Each input list is a list of a chord vectors with some additional information. Specifically,
+    they are the size of a chord vector plus a key change vector, plus 1. These are usually a chord
+    vector, relative to the current key (in which case the rest of the vector is 0). In the
+    special case of the first chord after a key change, the key change vector is also populated and
+    the additional slot is set to 1.
+
+    The targets are the one-hot index of the following chord, relative to its key. Back-propagation
+    should not be performed on the target of the last chord in each key section.
+    """
+    def __init__(self, pieces: List[Piece], transform=None):
+        super().__init__(transform=transform)
+        self.inputs = []
+
+        for piece in pieces:
+            chords = piece.get_chords()
+            key_changes = piece.get_key_change_indices()
+
+            for key, start, end in zip(key_changes, list(key_changes[1:]) + [len(key_changes)]):
+                chord_vectors = np.vstack([chord.to_vec() for chord in chords[start:end]])
+
+                self.inputs.append(
+                    np.vstack([
+                        chord.to_vec()
+                        for chord in chords[start:end]
+                    ])
+                )
+                self.targets.append(
+
+                )
 
 
 class KeyTransitionDataset(HarmonicDataset):
-    pass
+    """
+    A dataset representing key change locations.
+
+    The inputs are lists of relative chord vectors for
+    each sequence of chords without a key change, plus the following one chord, relative to the
+    current chord sequence's key.
+
+    The targets are 1 if the last chord is on a chord change, and 0 otherwise
+    (if the last chord is the last chord of a piece).
+    """
+    def __init__(self, pieces: List[Piece], transform=None):
+        super().__init__(transform=transform)
+        self.inputs = []
+        self.targets = []
+
+        for piece in pieces:
+            chords = piece.get_chords()
+            key_changes = piece.get_key_change_indices()
+
+            for key, start, end in zip(
+                piece.get_keys(),
+                key_changes,
+                list(key_changes[1:]) + [len(chords)]
+            ):
+                target = 0
+                # If not the last chord, extend the input vector by 1 and set target to 1
+                if end != len(chords):
+                    end += 1
+                    target = 1
+                self.targets.append(np.array([0] * (end - start - 1) + [target]))
+
+                self.inputs.append(
+                    np.vstack([
+                        chord.to_vec(relative_to=key)
+                        for chord in chords[start:end]
+                    ])
+                )
 
 
 class KeySequenceDataset(HarmonicDataset):
-    pass
+    """
+    A dataset representing key changes.
+
+    The inputs are lists of relative chord vectors for
+    each sequence of chords without a key change, plus the following one chord, all relative to
+    the current chord sequence's key. The last chord sequence of each key is not used because
+    it does not end in a key change.
+
+    There is one target per input list: a one-hot index representing the key change (transposition
+    and new mode of the new key).
+    """
+    def __init__(self, pieces: List[Piece], transform=None):
+        super().__init__(transform=transform)
+        self.inputs = []
+        self.targets = []
+
+        for piece in pieces:
+            chords = piece.get_chords()
+            key_changes = piece.get_key_change_indices()
+            keys = piece.get_keys()
+
+            for key, next_key, start, end in zip(
+                keys[:-1],
+                keys[1:],
+                key_changes[:-1],
+                list(key_changes[1:])
+            ):
+                self.inputs.append(
+                    np.vstack([
+                        chord.to_vec(relative_to=key)
+                        for chord in chords[start:end + 1]
+                    ])
+                )
+                self.targets.append(key.get_key_change_one_hot_index(next_key))
+
+    def pad(self):
+        self.inputs, self.input_lengths = pad_array(self.inputs)
 
 
 def h5_to_dataset(

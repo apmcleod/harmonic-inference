@@ -231,6 +231,8 @@ class Chord():
         self,
         root: int,
         bass: int,
+        key_tonic: int,
+        key_mode: KeyMode,
         chord_type: ChordType,
         inversion: int,
         onset: Union[float, Tuple[int, Fraction]],
@@ -253,6 +255,11 @@ class Chord():
             An integer representing the bass note of this chord, either as semitones above C
             (if pitch_type is MIDI; with B#, C = 0), or as tonal pitch class (if pitch_type is TPC;
             with C = 0, G = 1, etc. around the circle of fifths).
+        key_tonic : int
+            An integer representing the pitch of the tonic of the key during this chord. Used to
+            easily get the chords root and bass relative to the key.
+        key_mode : KeyMode
+            The mode of the current key.
         chord_type : ChordType
             The type of chord this is (major, minor, diminished, etc.)
         inversion : int
@@ -276,6 +283,8 @@ class Chord():
         """
         self.root = root
         self.bass = bass
+        self.key_tonic = key_tonic
+        self.key_mode = key_mode
         self.chord_type = chord_type
         self.inversion = inversion
         self.onset = onset
@@ -285,12 +294,91 @@ class Chord():
         self.duration = duration
         self.pitch_type = pitch_type
 
+    def get_one_hot_index(self, relative: bool = False, use_inversion: bool = True) -> int:
+        if relative:
+            if self.pitch_type == PitchType.TPC:
+                root = hu.transpose_pitch(self.root, -(self.key_tonic - hc.TPC_C), PitchType.TPC)
+            elif self.pitch_type == PitchType.MIDI:
+                root = hu.transpose_pitch(self.root, -self.key_tonic, PitchType.MIDI)
+        else:
+            root = self.root
+
+        return hu.get_chord_one_hot_index(
+            self.chord_type,
+            root,
+            self.pitch_type,
+            inversion=self.inversion,
+            use_inversion=use_inversion
+        )
+
+    def to_vec(self, relative_to=None) -> np.ndarray:
+        """
+        Get the vectorized representation of this note given a chord.
+
+        Parameters
+        ----------
+        relative_to : Key
+            The key to make this chord vector relative to, if not its key.
+
+        Returns
+        -------
+        chord : np.ndarray
+            The vector of this Chord.
+        """
+        key_tonic = self.key_tonic if relative_to is None else relative_to.relative_tonic
+        key_mode = self.key_mode if relative_to is None else relative_to.relative_mode
+
+        vectors = []
+
+        # Relative root as one-hot
+        pitch = np.zeros(hc.NUM_PITCHES[self.pitch_type])
+        if self.pitch_type == PitchType.TPC:
+            root = hu.transpose_pitch(self.root, -(key_tonic - hc.TPC_C), PitchType.TPC)
+        elif self.pitch_type == PitchType.MIDI:
+            root = hu.transpose_pitch(self.root, -key_tonic, PitchType.MIDI)
+        pitch[root] = 1
+        vectors.append(pitch)
+
+        # Relative bass as one-hot
+        bass_note = np.zeros(hc.NUM_PITCHES[self.pitch_type])
+        if self.pitch_type == PitchType.TPC:
+            bass = hu.transpose_pitch(self.bass, -(key_tonic - hc.TPC_C), PitchType.TPC)
+        elif self.pitch_type == PitchType.MIDI:
+            bass = hu.transpose_pitch(self.bass, -key_tonic, PitchType.MIDI)
+        bass_note[bass] = 1
+        vectors.append(bass_note)
+
+        # Inversion as one-hot
+        inversion = np.zeros(4)
+        inversion[self.inversion] = 1
+        vectors.append(inversion)
+
+        # Onset metrical level as one-hot
+        onset_level = np.zeros(4)
+        onset_level[self.onset_level] = 1
+        vectors.append(onset_level)
+
+        # Offset metrical level as one-hot
+        offset_level = np.zeros(4)
+        offset_level[self.offset_level] = 1
+        vectors.append(offset_level)
+
+        # Binary -- is the current key major
+        is_major = np.array(
+            [1 if key_mode == KeyMode.MAJOR else 0]
+        )
+        vectors.append(is_major)
+
+        return np.concatenate(vectors)
+
     def __eq__(self, other):
         if not isinstance(other, Chord):
             return False
         return (
             self.root == other.root and
             self.bass == other.bass and
+            self.key_tonic == other.key_tonic and
+            self.key_mode == other.key_mode and
             self.chord_type == other.chord_type and
             self.inversion == other.inversion and
             self.onset == other.onset and
@@ -322,7 +410,12 @@ class Chord():
                 f'{self.onset}--{self.offset}')
 
     @staticmethod
-    def from_series(chord_row: pd.Series, measures_df: pd.Series, pitch_type: PitchType):
+    def from_series(
+        chord_row: pd.Series,
+        measures_df: pd.Series,
+        pitch_type: PitchType,
+        key=None,
+    ):
         """
         Create a Chord object of the given pitch_type from the given pd.Series.
 
@@ -359,6 +452,8 @@ class Chord():
                 'timesig' (str): The time signature of the measure.
         pitch_type : PitchType
             The pitch type to use for the Chord.
+        key : Key
+            The key during this Chord. If not given, it will be calculated from chord_row.
 
         Returns
         -------
@@ -371,7 +466,8 @@ class Chord():
                 return None
 
             # Root and bass note are relative to local key (not applied dominant)
-            local_key = Key.from_series(chord_row, pitch_type, do_relative=False)
+            if key is None:
+                key = Key.from_series(chord_row, pitch_type)
 
             # Root and bass note of chord, as intervals above the local key tonic
             root_interval = chord_row["root"]
@@ -381,8 +477,8 @@ class Chord():
                 bass_interval = hu.tpc_interval_to_midi_interval(bass_interval)
 
             # Absolute root and bass
-            root = hu.transpose_pitch(local_key.tonic, root_interval, pitch_type=pitch_type)
-            bass = hu.transpose_pitch(local_key.tonic, bass_interval, pitch_type=pitch_type)
+            root = hu.transpose_pitch(key.local_tonic, root_interval, pitch_type=pitch_type)
+            bass = hu.transpose_pitch(key.local_tonic, bass_interval, pitch_type=pitch_type)
 
             # Additional chord info
             chord_type = hu.get_chord_type_from_string(chord_row['chord_type'])
@@ -403,8 +499,8 @@ class Chord():
 
             duration = chord_row.duration
 
-            return Chord(root, bass, chord_type, inversion, onset, onset_level, offset,
-                         offset_level, duration, pitch_type)
+            return Chord(root, bass, key.relative_tonic, key.relative_mode, chord_type, inversion,
+                         onset, onset_level, offset, offset_level, duration, pitch_type)
 
         except BaseException as e:
             logging.error(f"Error parsing chord from row {chord_row}")
@@ -416,33 +512,73 @@ class Key():
     """
     A musical key, with tonic and mode.
     """
-    def __init__(self, tonic: int, mode: KeyMode, tonic_type: PitchType):
+    def __init__(
+        self,
+        relative_tonic: int,
+        local_tonic: int,
+        relative_mode: KeyMode,
+        local_mode: KeyMode,
+        tonic_type: PitchType
+    ):
         """
         Create a new musical key object.
 
         Parameters
         ----------
-        tonic : int
-            An integer representing the pitch class of the tonic of this key. If tonic_type is
-            TPC, this is stored as a tonal pitch class (with C = 0, G = 1, etc. around the circle
-            of fifths). If tonic_type is MIDI, this is stored as semitones above C
-            (with C, B# = 0).
-        mode : KeyMode
-            The mode of this key.
+        relative_tonic : int
+            An integer representing the pitch class of the tonic of this key, including applied
+            roots. If tonic_type is TPC, this is stored as a tonal pitch class (with C = 0,
+            G = 1, etc. around the circle of fifths). If tonic_type is MIDI, this is stored as
+            semitones above C (with C, B# = 0).
+        local_tonic : int
+            An integer representing the pitch class of the tonic of this key without taking
+            applied roots into account, in the same format as relative_tonic.
+        relative_mode : KeyMode
+            The mode of this key, including applied roots.
+        local_mode : KeyMode
+            The mode of this key, without taking applied roots into account.
         tonic_type : PitchType
             The PitchType in which this key's tonic is stored. If this is TPC, the
             tonic can be later converted into MIDI type, but not vice versa.
         """
-        self.tonic = tonic
-        self.mode = mode
+        self.relative_tonic = relative_tonic
+        self.local_tonic = local_tonic
+        self.relative_mode = relative_mode
+        self.local_mode = local_mode
         self.tonic_type = tonic_type
+
+    def get_key_change_one_hot_index(self, next_key) -> int:
+        """
+        Get the key change as a one-hot index. The one-hot index is based on the mode of the next
+        key and the interval from this key to the next one.
+
+        Parameters
+        ----------
+        next_key : Key
+            The next key in sequence.
+
+        Returns
+        -------
+        index : int
+            The one hot index of this key change.
+        """
+        if self.tonic_type == PitchType.TPC:
+            transposition = next_key.relative_tonic - self.relative_tonic + hc.TPC_C
+        elif self.tonic_type == PitchType.MIDI:
+            transposition = hu.transpose_pitch(
+                next_key.relative_tonic, -self.relative_tonic, PitchType.MIDI
+            )
+
+        return hu.get_key_one_hot_index(next_key.relative_mode, transposition, self.tonic_type)
 
     def __eq__(self, other):
         if not isinstance(other, Key):
             return False
         return (
-            self.tonic == other.tonic and
-            self.mode == other.mode and
+            self.relative_tonic == other.relative_tonic and
+            self.local_tonic == other.local_tonic and
+            self.relative_mode == other.relative_mode and
+            self.local_mode == other.local_mode and
             self.tonic_type == other.tonic_type
         )
 
@@ -450,10 +586,10 @@ class Key():
         return self.__str__()
 
     def __str__(self):
-        return f'{hu.get_pitch_string(self.tonic, self.tonic_type)} {self.mode}'
+        return f'{hu.get_pitch_string(self.relative_tonic, self.tonic_type)} {self.relative_mode}'
 
     @staticmethod
-    def from_series(chord_row: pd.Series, tonic_type: PitchType, do_relative: bool = True):
+    def from_series(chord_row: pd.Series, tonic_type: PitchType):
         """
         Create a Key object of the given pitch_type from the given pd.Series.
 
@@ -474,14 +610,11 @@ class Key():
                                       same format as 'localkey'.
         pitch_type : PitchType
             The pitch type to use for the Key's tonic.
-        do_relative : bool
-            True to treat slash chords (e.g., applied dominants) as Keys. False to stop after
-            considering the local key only.
 
         Returns
         -------
-        chord : Chord, or None
-            The created Note object. If an error occurs, None is returned and the error is logged.
+        key : Key, or None
+            The created Key object. If an error occurs, None is returned and the error is logged.
         """
         try:
             # Global key, absolute
@@ -493,11 +626,15 @@ class Key():
             local_transposition = hu.get_interval_from_numeral(
                 chord_row['localkey'], global_mode, pitch_type=tonic_type
             )
-            local_tonic = hu.transpose_pitch(global_tonic, local_transposition, pitch_type=tonic_type)
+            local_tonic = hu.transpose_pitch(
+                global_tonic, local_transposition, pitch_type=tonic_type
+            )
 
             # Treat applied dominants (and other slash chords) as new keys
             relative_full = chord_row['relativeroot']
-            if do_relative and not pd.isna(relative_full):
+            relative_tonic = local_tonic
+            relative_mode = local_mode
+            if not pd.isna(relative_full):
                 # Handle doubly-relative chords iteratively
                 for relative in reversed(relative_full.split('/')):
                     # Relativeroot is listed relative to local key. We want it absolute.
@@ -507,9 +644,8 @@ class Key():
                     )
                     relative_tonic = hu.transpose_pitch(local_tonic, relative_transposition,
                                                         pitch_type=tonic_type)
-                    local_mode, local_tonic = relative_mode, relative_tonic
 
-            return Key(local_tonic, local_mode, tonic_type)
+            return Key(relative_tonic, local_tonic, relative_mode, local_mode, tonic_type)
 
         except BaseException as e:
             logging.error(f"Error parsing key from row {chord_row}")
@@ -672,11 +808,14 @@ class ScorePiece(Piece):
         changes = key_cols.ne(key_cols.shift()).fillna(True)
 
         self.key_changes = changes.loc[changes.any(axis=1)].index.to_numpy()
-        self.keys = np.array([
-            key for key in chords_df.loc[chords_df.index[self.chord_ilocs[self.key_changes]]].apply(
-                Key.from_series, axis='columns', tonic_type=PitchType.TPC, do_relative=True
-            ) if key is not None
-        ])
+        self.keys = np.array(
+            [
+                key for key in chords_df.loc[
+                    chords_df.index[self.chord_ilocs[self.key_changes]]
+                ].apply(Key.from_series, axis='columns', tonic_type=PitchType.TPC)
+                if key is not None
+            ]
+        )
 
     def get_inputs(self) -> np.array:
         return self.notes

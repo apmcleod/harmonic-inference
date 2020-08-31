@@ -115,7 +115,7 @@ def read_dump(file: str, index_col: Union[int, Iterable] = (0, 1), converters: D
                        **kwargs)
 
 
-def load_clean_corpus_dfs(dir_path: Union[str, Path]):
+def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
     """
     Return cleaned DataFrames from the corpus data in the given directory. The DataFrames will
     be read from files: 'files.tsv', 'measures.tsv', 'chords.tsv', and 'notes.df'.
@@ -134,6 +134,9 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path]):
         The path to a directory containing the files: 'files.tsv', 'measures.tsv', 'chords.tsv',
         and 'notes.df'.
 
+    count : int
+        If given, the number of pieces to read in. Else, read all of them.
+
     Returns
     -------
     files_df : pd.DataFrame
@@ -149,6 +152,12 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path]):
     measures_df = read_dump(Path(dir_path, 'measures.tsv'))
     chords_df = read_dump(Path(dir_path, 'chords.tsv'), low_memory=False)
     notes_df = read_dump(Path(dir_path, 'notes.tsv'))
+
+    if count is not None:
+        files_df = files_df.iloc[:count]
+        measures_df = measures_df.loc[files_df.index]
+        chords_df = chords_df.loc[files_df.index]
+        notes_df = notes_df.loc[files_df.index]
 
     # Remove measure repeats
     if isinstance(measures_df.iloc[0].next, tuple):
