@@ -10,7 +10,9 @@ import h5py
 from torch.utils.data import Dataset
 
 from harmonic_inference.data.piece import Piece, ScorePiece
+from harmonic_inference.data.data_types import KeyMode
 import harmonic_inference.utils.harmonic_utils as hu
+import harmonic_inference.utils.harmonic_constants as hc
 
 
 class HarmonicDataset(Dataset):
@@ -163,23 +165,31 @@ class ChordSequenceDataset(HarmonicDataset):
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
         self.inputs = []
+        self.targets = []
 
         for piece in pieces:
+            piece_input = []
             chords = piece.get_chords()
             key_changes = piece.get_key_change_indices()
+            keys = piece.get_keys()
+            key_vector_length = hc.NUM_PITCHES[keys[0].tonic_type] * len(KeyMode) + 1
 
-            for key, start, end in zip(key_changes, list(key_changes[1:]) + [len(key_changes)]):
+            for prev_key, key, start, end in zip(
+                [None] + list(keys[:-1]),
+                keys,
+                key_changes,
+                list(key_changes[1:]) + [len(chords)]
+            ):
                 chord_vectors = np.vstack([chord.to_vec() for chord in chords[start:end]])
+                key_vectors = np.zeros((len(chord_vectors), key_vector_length))
+                if prev_key is not None:
+                    key_vectors[0, prev_key.get_key_change_one_hot_index(key)] = 1
+                    key_vectors[0, -1] = 1
 
-                self.inputs.append(
-                    np.vstack([
-                        chord.to_vec()
-                        for chord in chords[start:end]
-                    ])
-                )
-                self.targets.append(
+                piece_input.append(np.hstack([chord_vectors, key_vectors]))
 
-                )
+            self.inputs.append(np.vstack(piece_input))
+            self.targets.append(np.array([chord.get_one_hot_index() for chord in chords]))
 
 
 class KeyTransitionDataset(HarmonicDataset):
