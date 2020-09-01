@@ -12,8 +12,8 @@ import harmonic_inference.models.key_transition_models as ktm
 import harmonic_inference.models.key_sequence_models as ksm
 from harmonic_inference.data.data_types import PitchType, PieceType
 
-MODEL = csm.SimpleChordSequenceModel(PitchType.TPC)
-DATASET = ds.ChordSequenceDataset
+MODEL = ksm.SimpleKeySequenceModel(PitchType.TPC, PitchType.TPC)
+DATASET = ds.KeySequenceDataset
 H5_DIR = Path('h5_data')
 
 h5_path = Path(H5_DIR / f'{DATASET.__name__}_train_seed_0.h5')
