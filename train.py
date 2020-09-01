@@ -7,10 +7,13 @@ import pytorch_lightning as pl
 import harmonic_inference.data.datasets as ds
 import harmonic_inference.models.chord_classifier_models as ccm
 import harmonic_inference.models.chord_transition_models as ctm
+import harmonic_inference.models.chord_sequence_models as csm
+import harmonic_inference.models.key_transition_models as ktm
+import harmonic_inference.models.key_sequence_models as ksm
 from harmonic_inference.data.data_types import PitchType, PieceType
 
-MODEL = ctm.SimpleChordTransitionModel(PieceType.SCORE)
-DATASET = ds.ChordTransitionDataset
+MODEL = csm.SimpleChordSequenceModel(PitchType.TPC)
+DATASET = ds.ChordSequenceDataset
 H5_DIR = Path('h5_data')
 
 h5_path = Path(H5_DIR / f'{DATASET.__name__}_train_seed_0.h5')

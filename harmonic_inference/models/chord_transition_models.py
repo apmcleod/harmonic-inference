@@ -28,9 +28,10 @@ class ChordTransitionModel(pl.LightningModule):
         super().__init__()
         self.input_type = input_type
 
-    def training_step(self, batch, batch_idx):
+    def get_data_from_batch(self, batch):
         inputs = batch['inputs'].float()
         input_lengths = batch['input_lengths']
+        inputs = inputs[:, :max(input_lengths)]
 
         target_indexes = batch['targets'].long()
         target_lengths = batch['target_lengths'].long()
@@ -38,11 +39,14 @@ class ChordTransitionModel(pl.LightningModule):
         for i, (index, length) in enumerate(zip(target_indexes, target_lengths)):
             targets[i, index[:length]] = 1.0
 
-        longest = max(batch['input_lengths'])
-        inputs = inputs[:, :longest]
+        mask = (inputs.sum(axis=2) > 0).long()
+
+        return inputs, input_lengths, targets, mask
+
+    def training_step(self, batch, batch_idx):
+        inputs, input_lengths, targets, mask = self.get_data_from_batch(batch)
 
         outputs = self.forward(inputs, input_lengths)
-        mask = (inputs.sum(axis=2) > 0).long()
 
         loss = F.binary_cross_entropy(outputs * mask, targets)
 
@@ -51,20 +55,9 @@ class ChordTransitionModel(pl.LightningModule):
         return result
 
     def validation_step(self, batch, batch_idx):
-        inputs = batch['inputs'].float()
-        input_lengths = batch['input_lengths']
-
-        target_indexes = batch['targets'].long()
-        target_lengths = batch['target_lengths'].long()
-        targets = torch.zeros(inputs.shape[:2]).float()
-        for i, (index, length) in enumerate(zip(target_indexes, target_lengths)):
-            targets[i, index[:length]] = 1.0
-
-        longest = max(batch['input_lengths'])
-        inputs = inputs[:, :longest]
+        inputs, input_lengths, targets, mask = self.get_data_from_batch(batch)
 
         outputs = self.forward(inputs, input_lengths)
-        mask = (inputs.sum(axis=2) > 0).long()
 
         loss = F.binary_cross_entropy(outputs * mask, targets)
 
@@ -83,6 +76,14 @@ class ChordTransitionModel(pl.LightningModule):
 
 
 class SimpleChordTransitionModel(ChordTransitionModel):
+    """
+    The most simple chord transition model, with layers:
+        1. Linear embedding layer
+        2. Bi-LSTM
+        3. Linear layer
+        4. Dropout
+        5. Linear layer
+    """
     def __init__(
         self,
         input_type: PieceType,
@@ -93,22 +94,22 @@ class SimpleChordTransitionModel(ChordTransitionModel):
         dropout: float = 0.0,
     ):
         """
-        [summary]
+        Create a new simple chord transition model.
 
         Parameters
         ----------
         input_type : PieceType
-            [description]
+            The type of piece that the input data is coming from.
         embed_dim : int
-            [description]
+            The size of the input embedding.
         lstm_layers : int
-            [description]
+            The number of bi-directional LSTM layers.
         lstm_hidden_dim : int
-            [description]
+            The size of the LSTM's hidden dimension.
         hidden_dim : int
-            [description]
+            The size of the hidden dimension between the 2 consecutive linear layers.
         dropout : float
-            [description]
+            The dropout proportion.
         """
         super().__init__(input_type)
 
