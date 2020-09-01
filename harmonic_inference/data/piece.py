@@ -638,11 +638,11 @@ class Key():
                 # Handle doubly-relative chords iteratively
                 for relative in reversed(relative_full.split('/')):
                     # Relativeroot is listed relative to local key. We want it absolute.
-                    relative_mode = KeyMode.MINOR if relative[-1].islower() else KeyMode.MAJOR
                     relative_transposition = hu.get_interval_from_numeral(
-                        relative, local_mode, pitch_type=tonic_type
+                        relative, relative_mode, pitch_type=tonic_type
                     )
-                    relative_tonic = hu.transpose_pitch(local_tonic, relative_transposition,
+                    relative_mode = KeyMode.MINOR if relative[-1].islower() else KeyMode.MAJOR
+                    relative_tonic = hu.transpose_pitch(relative_tonic, relative_transposition,
                                                         pitch_type=tonic_type)
 
             return Key(relative_tonic, local_tonic, relative_mode, local_mode, tonic_type)

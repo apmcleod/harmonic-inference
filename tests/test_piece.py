@@ -70,7 +70,7 @@ def test_note_from_series():
 
 
 def test_chord_from_series():
-    def check_equals(chord_dict, chord, measures_df, pitch_type, local_key):
+    def check_equals(chord_dict, chord, measures_df, pitch_type, key):
         assert chord.pitch_type == pitch_type
         assert chord.chord_type == hu.get_chord_type_from_string(chord_dict['chord_type'])
         assert chord.inversion == hu.get_chord_inversion(chord_dict['figbass'])
@@ -91,8 +91,8 @@ def test_chord_from_series():
         if pitch_type == PitchType.MIDI:
             root = hu.tpc_interval_to_midi_interval(root)
             bass = hu.tpc_interval_to_midi_interval(bass)
-        assert chord.root == hu.transpose_pitch(local_key.tonic, root, pitch_type)
-        assert chord.bass == hu.transpose_pitch(local_key.tonic, bass, pitch_type)
+        assert chord.root == hu.transpose_pitch(key.local_tonic, root, pitch_type)
+        assert chord.bass == hu.transpose_pitch(key.local_tonic, bass, pitch_type)
 
     chord_dict = {
         'numeral': 'III',
@@ -138,9 +138,7 @@ def test_chord_from_series():
             chord_series = pd.Series(chord_dict)
             for pitch_type in PitchType:
                 chord = Chord.from_series(chord_series, measures_df, pitch_type)
-                local_key = Key.from_series(
-                    chord_series, pitch_type, do_relative=False
-                )
+                local_key = Key.from_series(chord_series, pitch_type)
                 check_equals(chord_dict, chord, measures_df, pitch_type, local_key)
 
     # @none returns None
@@ -158,11 +156,11 @@ def test_chord_from_series():
         assert Chord.from_series(chord_series, measures_df, pitch_type) is None
     chord_dict['localkey'] = 'iii'
 
-    # Bad relativeroot is ok
+    # Bad relativeroot is not ok
     chord_dict['relativeroot'] = 'Error'
     chord_series = pd.Series(chord_dict)
     for pitch_type in PitchType:
-        assert Chord.from_series(chord_series, measures_df, pitch_type) is not None
+        assert Chord.from_series(chord_series, measures_df, pitch_type) is None
 
 
 def test_key_from_series():
@@ -172,34 +170,42 @@ def test_key_from_series():
         local_tonic = hu.transpose_pitch(global_tonic, local_interval, pitch_type)
         return local_tonic
 
-    def check_equals(key_dict, key, pitch_type, do_relative):
+    def check_equals(key_dict, key, pitch_type):
         assert key.tonic_type == pitch_type
 
         # Check mode
-        if do_relative and not pd.isnull(key_dict['relativeroot']):
+        if not pd.isnull(key_dict['relativeroot']):
             final_root = key_dict['relativeroot'].split('/')[0]
-            assert key.mode == KeyMode.MINOR if final_root[-1].islower() else KeyMode.MAJOR
+            assert (
+                key.relative_mode == KeyMode.MINOR if final_root[-1].islower() else KeyMode.MAJOR
+            )
         else:
-            assert key.mode == KeyMode.MINOR if key_dict['localkey_is_minor'] else KeyMode.MAJOR
+            assert key.relative_mode == key.local_mode
+
+        assert key.local_mode == KeyMode.MINOR if key_dict['localkey_is_minor'] else KeyMode.MAJOR
 
         # Check tonic
-        if do_relative and not pd.isnull(key_dict['relativeroot']):
+        if not pd.isnull(key_dict['relativeroot']):
             # We can rely on this non-relative local key. It is checked below
-            local_key = Key.from_series(pd.Series(key_dict), pitch_type, do_relative=False)
-            key_tonic = local_key.tonic
-            key_mode = local_key.mode
+            key_tonic = key.local_tonic
+            key_mode = key.local_mode
             for relative_numeral in reversed(key_dict['relativeroot'].split('/')):
                 key_tonic = get_relative(key_mode, relative_numeral, pitch_type)
                 key_mode = KeyMode.MINOR if relative_numeral[-1].islower() else KeyMode.MAJOR
+            assert key_tonic == key.relative_tonic
+            assert key_mode == key.relative_mode
         else:
-            global_key_tonic = hu.get_pitch_from_string(key_dict['globalkey'], pitch_type)
-            global_mode = KeyMode.MINOR if key_dict['globalkey_is_minor'] else KeyMode.MAJOR
-            local_key_tonic = get_relative(
-                global_key_tonic, global_mode, key_dict['localkey'], pitch_type
-            )
-            local_key_mode = KeyMode.MINOR if key_dict['localkey_is_minor'] else KeyMode.MAJOR
-            assert key.tonic == local_key_tonic
-            assert key.mode == local_key_mode
+            assert key.relative_tonic == key.local_tonic
+            assert key.relative_mode == key.local_mode
+
+        global_key_tonic = hu.get_pitch_from_string(key_dict['globalkey'], pitch_type)
+        global_mode = KeyMode.MINOR if key_dict['globalkey_is_minor'] else KeyMode.MAJOR
+        local_key_tonic = get_relative(
+            global_key_tonic, global_mode, key_dict['localkey'], pitch_type
+        )
+        local_key_mode = KeyMode.MINOR if key_dict['localkey_is_minor'] else KeyMode.MAJOR
+        assert key.local_tonic == local_key_tonic
+        assert key.local_mode == local_key_mode
 
     key_dict = {
         'globalkey': 'A',
@@ -212,37 +218,37 @@ def test_key_from_series():
     # A few ad-hoc
     key_tpc = Key.from_series(pd.Series(key_dict), PitchType.TPC)
     key_midi = Key.from_series(pd.Series(key_dict), PitchType.MIDI)
-    assert key_tpc.mode == KeyMode.MINOR == key_midi.mode
-    assert key_tpc.tonic == hc.TPC_C + hc.ACCIDENTAL_ADJUSTMENT[PitchType.TPC]
-    assert key_midi.tonic == 1
+    assert key_tpc.local_mode == KeyMode.MINOR == key_midi.local_mode
+    assert key_tpc.local_tonic == hc.TPC_C + hc.ACCIDENTAL_ADJUSTMENT[PitchType.TPC]
+    assert key_midi.local_tonic == 1
 
     key_dict['globalkey_is_minor'] = True
     key_tpc = Key.from_series(pd.Series(key_dict), PitchType.TPC)
     key_midi = Key.from_series(pd.Series(key_dict), PitchType.MIDI)
-    assert key_tpc.mode == KeyMode.MINOR == key_midi.mode
-    assert key_tpc.tonic == hc.TPC_C
-    assert key_midi.tonic == 0
+    assert key_tpc.local_mode == KeyMode.MINOR == key_midi.local_mode
+    assert key_tpc.local_tonic == hc.TPC_C
+    assert key_midi.local_tonic == 0
 
     key_dict['localkey_is_minor'] = False
     key_tpc = Key.from_series(pd.Series(key_dict), PitchType.TPC)
     key_midi = Key.from_series(pd.Series(key_dict), PitchType.MIDI)
-    assert key_tpc.mode == KeyMode.MAJOR == key_midi.mode
-    assert key_tpc.tonic == hc.TPC_C
-    assert key_midi.tonic == 0
+    assert key_tpc.local_mode == KeyMode.MAJOR == key_midi.local_mode
+    assert key_tpc.local_tonic == hc.TPC_C
+    assert key_midi.local_tonic == 0
 
     key_dict['localkey'] = 'ii'
     key_tpc = Key.from_series(pd.Series(key_dict), PitchType.TPC)
     key_midi = Key.from_series(pd.Series(key_dict), PitchType.MIDI)
-    assert key_tpc.mode == KeyMode.MAJOR == key_midi.mode
-    assert key_tpc.tonic == hc.TPC_C + 5
-    assert key_midi.tonic == 11
+    assert key_tpc.local_mode == KeyMode.MAJOR == key_midi.local_mode
+    assert key_tpc.local_tonic == hc.TPC_C + 5
+    assert key_midi.local_tonic == 11
 
     key_dict['globalkey'] = 'C'
     key_tpc = Key.from_series(pd.Series(key_dict), PitchType.TPC)
     key_midi = Key.from_series(pd.Series(key_dict), PitchType.MIDI)
-    assert key_tpc.mode == KeyMode.MAJOR == key_midi.mode
-    assert key_tpc.tonic == hc.TPC_C + 2
-    assert key_midi.tonic == 2
+    assert key_tpc.local_mode == KeyMode.MAJOR == key_midi.local_mode
+    assert key_tpc.local_tonic == hc.TPC_C + 2
+    assert key_midi.local_tonic == 2
 
     key_values = {
         'globalkey': ['A', 'B#', 'Bb', 'C'],
@@ -256,9 +262,8 @@ def test_key_from_series():
             key_dict[key] = value
             key_series = pd.Series(key_dict)
             for pitch_type in PitchType:
-                for do_relative in [False, True]:
-                    key_obj = Key.from_series(key_series, pitch_type, do_relative=do_relative)
-                    check_equals(key_dict, key_obj, pitch_type, do_relative)
+                key_obj = Key.from_series(key_series, pitch_type)
+                check_equals(key_dict, key_obj, pitch_type)
 
     # Try with localkey minor, relatives major
     key_dict['localkey_is_minor'] = True
@@ -283,18 +288,19 @@ def test_key_from_series():
             interval_tpc = initial_interval_tpc + (repeats - 1) * relative_interval_tpc
             interval_midi = initial_interval_midi + (repeats - 1) * relative_interval_midi
             key_series = pd.Series(key_dict)
-            old_key_tpc = Key.from_series(key_series, PitchType.TPC, do_relative=True)
-            old_key_midi = Key.from_series(key_series, PitchType.MIDI, do_relative=True)
+            key_series['relativeroot'] = pd.NA
+            old_key_tpc = Key.from_series(key_series, PitchType.TPC)
+            old_key_midi = Key.from_series(key_series, PitchType.MIDI)
             key_series['relativeroot'] = relative_root
-            key_tpc = Key.from_series(key_series, PitchType.TPC, do_relative=True)
-            key_midi = Key.from_series(key_series, PitchType.MIDI, do_relative=True)
-            target_tpc = old_key_tpc.tonic + interval_tpc
+            key_tpc = Key.from_series(key_series, PitchType.TPC)
+            key_midi = Key.from_series(key_series, PitchType.MIDI)
+            target_tpc = old_key_tpc.relative_tonic + interval_tpc
             if target_tpc < 0 or target_tpc >= hc.NUM_PITCHES[PitchType.TPC]:
                 assert key_tpc is None
             else:
-                assert key_tpc.tonic == old_key_tpc.tonic + interval_tpc
-            target_midi = (old_key_midi.tonic + interval_midi) % hc.NUM_PITCHES[PitchType.MIDI]
-            assert key_midi.tonic == target_midi
+                assert key_tpc.relative_tonic == target_tpc
+            target_midi = (old_key_midi.relative_tonic + interval_midi) % hc.NUM_PITCHES[PitchType.MIDI]
+            assert key_midi.relative_tonic == target_midi
 
     # Try with localkey major, relatives minor
     key_dict['localkey_is_minor'] = False
@@ -319,18 +325,19 @@ def test_key_from_series():
             interval_tpc = initial_interval_tpc + (repeats - 1) * relative_interval_tpc
             interval_midi = initial_interval_midi + (repeats - 1) * relative_interval_midi
             key_series = pd.Series(key_dict)
-            old_key_tpc = Key.from_series(key_series, PitchType.TPC, do_relative=True)
-            old_key_midi = Key.from_series(key_series, PitchType.MIDI, do_relative=True)
+            key_series['relativeroot'] = pd.NA
+            old_key_tpc = Key.from_series(key_series, PitchType.TPC)
+            old_key_midi = Key.from_series(key_series, PitchType.MIDI)
             key_series['relativeroot'] = relative_root
-            key_tpc = Key.from_series(key_series, PitchType.TPC, do_relative=True)
-            key_midi = Key.from_series(key_series, PitchType.MIDI, do_relative=True)
-            target_tpc = old_key_tpc.tonic + interval_tpc
+            key_tpc = Key.from_series(key_series, PitchType.TPC)
+            key_midi = Key.from_series(key_series, PitchType.MIDI)
+            target_tpc = old_key_tpc.relative_tonic + interval_tpc
             if target_tpc < 0 or target_tpc >= hc.NUM_PITCHES[PitchType.TPC]:
                 assert key_tpc is None
             else:
-                assert key_tpc.tonic == old_key_tpc.tonic + interval_tpc
-            target_midi = (old_key_midi.tonic + interval_midi) % hc.NUM_PITCHES[PitchType.MIDI]
-            assert key_midi.tonic == target_midi
+                assert key_tpc.relative_tonic == target_tpc
+            target_midi = (old_key_midi.relative_tonic + interval_midi) % hc.NUM_PITCHES[PitchType.MIDI]
+            assert key_midi.relative_tonic == target_midi
 
 
 def test_score_piece():
@@ -411,3 +418,6 @@ def test_score_piece():
         inputs[1][2] ==
         notes[2].to_vec(not_none_chords[1], measures_df, (notes[2].octave, notes[2].pitch_class))
     )
+
+
+test_key_from_series()
