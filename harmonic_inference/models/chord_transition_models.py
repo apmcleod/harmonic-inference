@@ -180,4 +180,4 @@ class SimpleChordTransitionModel(ChordTransitionModel):
         relu2 = F.relu(fc1)
         output = torch.squeeze(self.fc2(relu2), -1)
 
-        return F.sigmoid(output)
+        return torch.sigmoid(output)
