@@ -80,7 +80,7 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
     """
     The most simple key transition model, with layers:
         1. Linear embedding layer
-        2. Bi-LSTM
+        2. LSTM
         3. Linear layer
         4. Dropout
         5. Linear layer

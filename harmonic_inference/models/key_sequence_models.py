@@ -77,7 +77,14 @@ class KeySequenceModel(pl.LightningModule):
 
 
 class SimpleKeySequenceModel(KeySequenceModel):
-
+    """
+    The simplest key sequence model, with layers:
+    1. Linear embedding layer
+    2. Bi-LSTM
+    3. Linear layer
+    4. Dropout
+    5. Linear layer
+    """
     def __init__(
         self,
         input_type: PitchType,
@@ -88,6 +95,26 @@ class SimpleKeySequenceModel(KeySequenceModel):
         hidden_dim: int = 128,
         dropout: float = 0.0,
     ):
+        """
+        Vreate a new Simple Key Sequence Model.
+
+        Parameters
+        ----------
+        input_type : PitchType
+            The pitch representation used in the input data.
+        key_type : PitchType
+            The pitch representation used for the output data.
+        embed_dim : int
+            The size of the linear embedding layer.
+        lstm_layers : int
+            The number of lstm layers to use.
+        lstm_hidden_dim : int
+            The size of the LSTM hidden vector.
+        hidden_dim : int
+            The size of the first linear layer output.
+        dropout : float
+            The dropout proportion to use.
+        """
         super().__init__(key_type, input_type)
 
         # Input and output derived from input type and use_inversions
