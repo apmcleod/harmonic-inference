@@ -2,6 +2,7 @@
 from typing import Union, Tuple, List
 from fractions import Fraction
 import logging
+import sys
 
 import pandas as pd
 import numpy as np
@@ -217,6 +218,9 @@ class Note():
             return Note(pitch, octave, onset, onset_level, note_row.duration, offset,
                         offset_level, pitch_type)
 
+
+        except KeyboardInterrupt:
+            sys.exit(2)
         except BaseException as e:
             logging.error(f"Error parsing note from row {note_row}")
             logging.exception(e)
@@ -502,6 +506,9 @@ class Chord():
             return Chord(root, bass, key.relative_tonic, key.relative_mode, chord_type, inversion,
                          onset, onset_level, offset, offset_level, duration, pitch_type)
 
+
+        except KeyboardInterrupt:
+            sys.exit(2)
         except BaseException as e:
             logging.error(f"Error parsing chord from row {chord_row}")
             logging.exception(e)
@@ -647,6 +654,9 @@ class Key():
 
             return Key(relative_tonic, local_tonic, relative_mode, local_mode, tonic_type)
 
+
+        except KeyboardInterrupt:
+            sys.exit(2)
         except BaseException as e:
             logging.error(f"Error parsing key from row {chord_row}")
             logging.exception(e)
@@ -807,7 +817,7 @@ class ScorePiece(Piece):
         key_cols = key_cols.fillna('-1')
         changes = key_cols.ne(key_cols.shift()).fillna(True)
 
-        self.key_changes = changes.loc[changes.any(axis=1)].index.to_numpy()
+        self.key_changes = np.arange(len(changes))[changes.any(axis=1)]
         self.keys = np.array(
             [
                 key for key in chords_df.loc[

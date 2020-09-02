@@ -365,20 +365,20 @@ def test_score_piece():
     ]
 
     chord_dict = {
-        'numeral': ['III', 'III', 'III', 'IV', 'IV', '@none'],
+        'numeral': ['III', 'III', '@none', 'III', 'IV', 'IV', '@none'],
         'root': 5,
         'bass_note': 5,
         'chord_type': 'M',
         'figbass': '',
         'globalkey': 'A',
         'globalkey_is_minor': False,
-        'localkey': ['iii', 'iii', 'III', 'III', 'I', pd.NA],
-        'localkey_is_minor': [True, True, False, False, False, pd.NA],
-        'relativeroot': [pd.NA, pd.NA, pd.NA, 'V', 'V', pd.NA],
+        'localkey': ['iii', 'iii', pd.NA, 'III', 'III', 'I', pd.NA],
+        'localkey_is_minor': [True, True, pd.NA, False, False, False, pd.NA],
+        'relativeroot': [pd.NA, pd.NA, pd.NA, pd.NA, 'V', 'V', pd.NA],
         'duration': Fraction(5, 6),
-        'mc': [0, 2, 5, 6, 8, 10],
+        'mc': [0, 2, 4, 5, 6, 8, 10],
         'onset': Fraction(1, 2),
-        'mc_next': [2, 5, 6, 8, 10, 12],
+        'mc_next': [2, 5, 5, 6, 8, 10, 12],
         'onset_next': Fraction(1, 2),
         'duration': Fraction(2),
     }
@@ -418,6 +418,3 @@ def test_score_piece():
         inputs[1][2] ==
         notes[2].to_vec(not_none_chords[1], measures_df, (notes[2].octave, notes[2].pitch_class))
     )
-
-
-test_key_from_series()

@@ -2,6 +2,7 @@ from typing import List, Iterable, Union, Tuple, Callable
 from pathlib import Path
 import logging
 import shutil
+import sys
 
 from tqdm import tqdm
 import numpy as np
@@ -406,8 +407,10 @@ def get_dataset_splits(
             piece = ScorePiece(notes.loc[i], chords.loc[i], measures.loc[i])
             pieces.append(piece)
             df_indexes.append(i)
+        except KeyboardInterrupt:
+            sys.exit(2)
         except BaseException as e:
-            logging.error(f"Error parsing index {i}: {e}")
+            logging.exception(f"Error parsing index {i}: {e}")
             continue
 
     # Shuffle the pieces and the df_indexes the same way
