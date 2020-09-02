@@ -1,5 +1,6 @@
 from pathlib import Path
 import argparse
+import os
 
 import torch
 from torch.utils.data import DataLoader
@@ -29,6 +30,14 @@ if __name__ == '__main__':
         required=True,
     )
 
+    DEFAULT_CHECKPOINT_PATH = os.path.join('checkpoints', '`model`')
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=DEFAULT_CHECKPOINT_PATH,
+        help='The directory to save model checkpoints into.',
+    )
+
     parser.add_argument(
         "-h5",
         "--h5_dir",
@@ -38,6 +47,9 @@ if __name__ == '__main__':
     )
 
     ARGS = parser.parse_args()
+
+    if ARGS.checkpoint == DEFAULT_CHECKPOINT_PATH:
+        ARGS.checkpoint = os.path.join('checkpoints', ARGS.model)
 
     if ARGS.model == 'ccm':
         model = ccm.SimpleChordClassifier(PitchType.TPC, PitchType.TPC, use_inversions=True)
@@ -64,5 +76,5 @@ if __name__ == '__main__':
     dl_train = DataLoader(dataset_train, batch_size=128, shuffle=True)
     dl_valid = DataLoader(dataset_valid, batch_size=128, shuffle=False)
 
-    trainer = pl.Trainer()
+    trainer = pl.Trainer(default_root_dir=ARGS.checkpoint)
     trainer.fit(model, dl_train, dl_valid)
