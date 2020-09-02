@@ -797,7 +797,7 @@ class ScorePiece(Piece):
         self.chord_changes = np.zeros(len(self.chords), dtype=int)
         note_index = 0
         for chord_index, chord in enumerate(self.chords):
-            while self.notes[note_index].onset < chord.onset:
+            while note_index + 1 < len(self.notes) and self.notes[note_index].onset < chord.onset:
                 note_index += 1
             self.chord_changes[chord_index] = note_index
 
