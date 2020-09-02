@@ -383,6 +383,7 @@ def test_score_piece():
         'duration': Fraction(2),
     }
     chord_df = pd.DataFrame(chord_dict)
+    chord_df.drop(labels=2, axis='index')
     chords = [
         Chord.from_series(chord_row, measures_df, PitchType.TPC)
         for _, chord_row in chord_df.iterrows()

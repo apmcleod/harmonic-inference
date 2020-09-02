@@ -218,10 +218,7 @@ class Note():
             return Note(pitch, octave, onset, onset_level, note_row.duration, offset,
                         offset_level, pitch_type)
 
-
-        except KeyboardInterrupt:
-            sys.exit(2)
-        except BaseException as e:
+        except Exception as e:
             logging.error(f"Error parsing note from row {note_row}")
             logging.exception(e)
             return None
@@ -506,10 +503,7 @@ class Chord():
             return Chord(root, bass, key.relative_tonic, key.relative_mode, chord_type, inversion,
                          onset, onset_level, offset, offset_level, duration, pitch_type)
 
-
-        except KeyboardInterrupt:
-            sys.exit(2)
-        except BaseException as e:
+        except Exception as e:
             logging.error(f"Error parsing chord from row {chord_row}")
             logging.exception(e)
             return None
@@ -654,10 +648,7 @@ class Key():
 
             return Key(relative_tonic, local_tonic, relative_mode, local_mode, tonic_type)
 
-
-        except KeyboardInterrupt:
-            sys.exit(2)
-        except BaseException as e:
+        except Exception as e:
             logging.error(f"Error parsing key from row {chord_row}")
             logging.exception(e)
             return None

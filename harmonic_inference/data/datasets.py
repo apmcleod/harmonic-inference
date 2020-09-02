@@ -407,9 +407,7 @@ def get_dataset_splits(
             piece = ScorePiece(notes.loc[i], chords.loc[i], measures.loc[i])
             pieces.append(piece)
             df_indexes.append(i)
-        except KeyboardInterrupt:
-            sys.exit(2)
-        except BaseException as e:
+        except Exception as e:
             logging.exception(f"Error parsing index {i}: {e}")
             continue
 
