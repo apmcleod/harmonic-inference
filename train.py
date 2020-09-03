@@ -46,6 +46,14 @@ if __name__ == '__main__':
         help="The directory that holds the h5 data to train on.",
     )
 
+    parser.add_argument(
+        "-w",
+        "--workers",
+        default=4,
+        type=int,
+        help="The number of workers per DataLoader.",
+    )
+
     ARGS = parser.parse_args()
 
     if ARGS.checkpoint == DEFAULT_CHECKPOINT_PATH:
@@ -73,8 +81,8 @@ if __name__ == '__main__':
     dataset_train = ds.h5_to_dataset(h5_path, dataset, transform=torch.from_numpy)
     dataset_valid = ds.h5_to_dataset(h5_path_valid, dataset, transform=torch.from_numpy)
 
-    dl_train = DataLoader(dataset_train, batch_size=128, shuffle=True)
-    dl_valid = DataLoader(dataset_valid, batch_size=128, shuffle=False)
+    dl_train = DataLoader(dataset_train, batch_size=128, shuffle=True, num_workers=ARGS.workers)
+    dl_valid = DataLoader(dataset_valid, batch_size=128, shuffle=False, num_workers=ARGS.workers)
 
     trainer = pl.Trainer(default_root_dir=ARGS.checkpoint)
     trainer.fit(model, dl_train, dl_valid)
