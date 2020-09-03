@@ -91,7 +91,7 @@ class SimpleKeySequenceModel(KeySequenceModel):
         key_type: PitchType,
         embed_dim: int = 64,
         lstm_layers: int = 1,
-        lstm_hidden_dim: int = 256,
+        lstm_hidden_dim: int = 128,
         hidden_dim: int = 128,
         dropout: float = 0.0,
     ):

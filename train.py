@@ -90,10 +90,21 @@ if __name__ == '__main__':
     dataset_train = ds.h5_to_dataset(h5_path, dataset, transform=torch.from_numpy)
     dataset_valid = ds.h5_to_dataset(h5_path_valid, dataset, transform=torch.from_numpy)
 
+    dl_train = DataLoader(
+        dataset_train,
+        batch_size=dataset.train_batch_size,
+        shuffle=True,
+        num_workers=ARGS.workers
+    )
+    dl_valid = DataLoader(
+        dataset_valid,
+        batch_size=dataset.valid_batch_size,
+        shuffle=False,
+        num_workers=ARGS.workers
+    )
+
     if ARGS.profile:
         ARGS.profile = AdvancedProfiler(output_filename=os.path.join(ARGS.checkpoint, 'profile.log'))
-    dl_train = DataLoader(dataset_train, batch_size=128, shuffle=True, num_workers=ARGS.workers)
-    dl_valid = DataLoader(dataset_valid, batch_size=128, shuffle=False, num_workers=ARGS.workers)
 
     trainer = pl.Trainer(default_root_dir=ARGS.checkpoint, profiler=ARGS.profile)
     trainer.fit(model, dl_train, dl_valid)

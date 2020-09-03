@@ -92,8 +92,8 @@ class SimpleChordSequenceModel(ChordSequenceModel):
         use_inversions: bool = True,
         embed_dim: int = 64,
         lstm_layers: int = 1,
-        lstm_hidden_dim: int = 256,
-        hidden_dim: int = 512,
+        lstm_hidden_dim: int = 128,
+        hidden_dim: int = 256,
         dropout: float = 0.0,
     ):
         """

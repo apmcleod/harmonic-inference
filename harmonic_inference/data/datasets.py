@@ -134,6 +134,10 @@ class ChordTransitionDataset(HarmonicDataset):
     Each target is a list of the indexes at which there is a chord change in that list of input
     vectors.
     """
+    train_batch_size = 16
+    valid_batch_size = 32
+    chunk_size = 128
+
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
         self.targets = [piece.get_chord_change_indices() for piece in pieces]
@@ -151,6 +155,10 @@ class ChordClassificationDataset(HarmonicDataset):
 
     The targets are the one_hot indexes of each of those chords.
     """
+    train_batch_size = 128
+    valid_batch_size = 256
+    chunk_size = 256
+
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
         self.targets = np.array([
@@ -180,6 +188,10 @@ class ChordSequenceDataset(HarmonicDataset):
     The targets are the one-hot index of the following chord, relative to its key. Back-propagation
     should not be performed on the target of the last chord in each key section.
     """
+    train_batch_size = 32
+    valid_batch_size = 64
+    chunk_size = 256
+
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
         self.inputs = []
@@ -221,6 +233,10 @@ class KeyTransitionDataset(HarmonicDataset):
     The targets are 1 if the last chord is on a chord change, and 0 otherwise
     (if the last chord is the last chord of a piece).
     """
+    train_batch_size = 32
+    valid_batch_size = 64
+    chunk_size = 256
+
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
         self.inputs = []
@@ -262,6 +278,10 @@ class KeySequenceDataset(HarmonicDataset):
     There is one target per input list: a one-hot index representing the key change (transposition
     and new mode of the new key).
     """
+    train_batch_size = 64
+    valid_batch_size = 32
+    chunk_size = 256
+
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
         self.inputs = []
@@ -322,12 +342,12 @@ def h5_to_dataset(
         dataset.h5_path = h5_path
         dataset.padded = False
         dataset.in_ram = False
+        chunk_size = dataset.chunk_size
 
         try:
             if 'input_lengths' in h5_file:
                 dataset.input_lengths = np.array(h5_file['input_lengths'])
                 dataset.inputs = []
-                chunk_size = 1024
                 for chunk_start in tqdm(
                     range(0, len(dataset.input_lengths), chunk_size),
                     desc=f"Loading input chunks from {h5_path}",
@@ -347,7 +367,6 @@ def h5_to_dataset(
             if 'target_lengths' in h5_file:
                 dataset.target_lengths = np.array(h5_file['target_lengths'])
                 dataset.targets = []
-                chunk_size = 1024
                 for chunk_start in tqdm(
                     range(0, len(dataset.target_lengths), chunk_size),
                     desc=f"Loading target chunks from {h5_path}",
