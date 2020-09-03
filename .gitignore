@@ -1,6 +1,6 @@
 **/__pycache__
 **/.ipynb_checkpoints
-lightning_logs/**
+checkpoints/**
 .idea/**
 data/**
 h5_data/**

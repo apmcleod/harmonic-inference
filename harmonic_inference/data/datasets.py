@@ -20,25 +20,42 @@ class HarmonicDataset(Dataset):
     def __init__(self, transform=None):
         self.h5_path = None
         self.padded = False
+        self.in_ram = True
         self.transform = transform
 
     def __len__(self):
-        if self.h5_path:
+        if not self.in_ram:
             with h5py.File(self.h5_path, 'r') as h5_file:
                 length = len(h5_file['inputs'])
             return length
         return len(self.inputs)
 
     def __getitem__(self, item):
-        if not self.padded:
-            self.pad()
-
         keys = ["inputs", "targets", "input_lengths", "target_lengths"]
-        if self.h5_path:
+        if not self.in_ram:
+            assert self.h5_path is not None, "Data must be either in ram or in an h5_file."
             with h5py.File(self.h5_path, 'r') as h5_file:
                 data = {key: h5_file[key][item] for key in keys if key in h5_file}
         else:
-            data = {key: getattr(self, key)[item] for key in keys if hasattr(self, key)}
+            data = {
+                "inputs": self.inputs[item],
+                "targets": self.targets[item],
+            }
+            if hasattr(self, "input_lengths"):
+                if not hasattr(self, "max_input_length"):
+                    self.max_input_length = max(self.input_lengths)
+                padded_input = np.zeros(([self.max_input_length] + list(data["inputs"][0].shape)))
+                padded_input[:len(data["inputs"])] = data["inputs"]
+                data["inputs"] = padded_input
+                data["input_lengths"] = self.input_lengths[item]
+
+            if hasattr(self, "target_lengths"):
+                if not hasattr(self, "max_target_length"):
+                    self.max_target_length = max(self.target_lengths)
+                padded_target = np.zeros(([self.max_target_length] + list(data["targets"][0].shape)))
+                padded_target[:len(data["targets"])] = data["targets"]
+                data["targets"] = padded_target
+                data["target_lengths"] = self.target_lengths[item]
 
         if self.transform:
             data.update(
@@ -67,7 +84,7 @@ class HarmonicDataset(Dataset):
         """
         self.targets, self.target_lengths = pad_array(self.targets)
         self.inputs, self.input_lengths = pad_array(self.inputs)
-        self.paddded = True
+        self.padded = True
 
     def to_h5(self, h5_path: Union[str, Path]):
         """
@@ -303,7 +320,54 @@ def h5_to_dataset(
         assert 'inputs' in h5_file
         assert 'targets' in h5_file
         dataset.h5_path = h5_path
-        dataset.padded = True
+        dataset.padded = False
+        dataset.in_ram = False
+
+        try:
+            if 'input_lengths' in h5_file:
+                dataset.input_lengths = np.array(h5_file['input_lengths'])
+                dataset.inputs = []
+                chunk_size = 1024
+                for chunk_start in tqdm(
+                    range(0, len(dataset.input_lengths), chunk_size),
+                    desc=f"Loading input chunks from {h5_path}",
+                ):
+                    input_chunk = h5_file['inputs'][chunk_start:chunk_start + chunk_size]
+                    chunk_lengths = dataset.input_lengths[chunk_start:chunk_start + chunk_size]
+                    dataset.inputs.extend(
+                        [
+                            list(item[:length])
+                            for item, length
+                            in zip(input_chunk, chunk_lengths)
+                        ]
+                    )
+            else:
+                dataset.inputs = np.array(h5_file['inputs'])
+
+            if 'target_lengths' in h5_file:
+                dataset.target_lengths = np.array(h5_file['target_lengths'])
+                dataset.targets = []
+                chunk_size = 1024
+                for chunk_start in tqdm(
+                    range(0, len(dataset.target_lengths), chunk_size),
+                    desc=f"Loading target chunks from {h5_path}",
+                ):
+                    target_chunk = h5_file['targets'][chunk_start:chunk_start + chunk_size]
+                    chunk_lengths = dataset.target_lengths[chunk_start:chunk_start + chunk_size]
+                    dataset.targets.extend(
+                        [
+                            list(item[:length])
+                            for item, length
+                            in zip(target_chunk, chunk_lengths)
+                        ]
+                    )
+            else:
+                dataset.targets = np.array(h5_file['targets'])
+            dataset.in_ram = True
+
+        except Exception:
+            logging.exception("Dataset too large to fit into RAM. Reading from h5 file.")
+            dataset.padded = True
 
     return dataset
 

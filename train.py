@@ -5,6 +5,7 @@ import os
 import torch
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl
+from pytorch_lightning.profiler import AdvancedProfiler
 
 import harmonic_inference.data.datasets as ds
 import harmonic_inference.models.chord_classifier_models as ccm
@@ -54,10 +55,18 @@ if __name__ == '__main__':
         help="The number of workers per DataLoader.",
     )
 
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Run a profiler during training. The results are saved to "
+        f"{os.path.join('`--checkpoint`', 'profile.log')}",
+    )
+
     ARGS = parser.parse_args()
 
     if ARGS.checkpoint == DEFAULT_CHECKPOINT_PATH:
         ARGS.checkpoint = os.path.join('checkpoints', ARGS.model)
+        os.makedirs(ARGS.checkpoint, exist_ok=True)
 
     if ARGS.model == 'ccm':
         model = ccm.SimpleChordClassifier(PitchType.TPC, PitchType.TPC, use_inversions=True)
@@ -81,8 +90,10 @@ if __name__ == '__main__':
     dataset_train = ds.h5_to_dataset(h5_path, dataset, transform=torch.from_numpy)
     dataset_valid = ds.h5_to_dataset(h5_path_valid, dataset, transform=torch.from_numpy)
 
+    if ARGS.profile:
+        ARGS.profile = AdvancedProfiler(output_filename=os.path.join(ARGS.checkpoint, 'profile.log'))
     dl_train = DataLoader(dataset_train, batch_size=128, shuffle=True, num_workers=ARGS.workers)
     dl_valid = DataLoader(dataset_valid, batch_size=128, shuffle=False, num_workers=ARGS.workers)
 
-    trainer = pl.Trainer(default_root_dir=ARGS.checkpoint)
+    trainer = pl.Trainer(default_root_dir=ARGS.checkpoint, profiler=ARGS.profile)
     trainer.fit(model, dl_train, dl_valid)
