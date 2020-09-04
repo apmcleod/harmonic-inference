@@ -68,7 +68,7 @@ class ChordSequenceModel(pl.LightningModule):
         targets = targets[targets != -100]
         acc = 100 * (outputs == targets).sum().float() / len(targets)
 
-        result = pl.EvalResult(checkpoint_on=loss)
+        result = pl.EvalResult(checkpoint_on=loss, early_stop_on=loss)
         result.log('val_loss', loss)
         result.log('val_acc', acc)
         return result

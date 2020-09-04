@@ -66,7 +66,7 @@ class ChordTransitionModel(pl.LightningModule):
         targets = targets.reshape(-1)[flat_mask]
         acc = 100 * (outputs.round() == targets).sum().float() / len(outputs)
 
-        result = pl.EvalResult(checkpoint_on=loss)
+        result = pl.EvalResult(checkpoint_on=loss, early_stop_on=loss)
         result.log('val_loss', loss)
         result.log('val_acc', acc)
         return result

@@ -54,7 +54,7 @@ class ChordClassifierModel(pl.LightningModule):
         loss = F.cross_entropy(outputs, targets)
         acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
 
-        result = pl.EvalResult(checkpoint_on=loss)
+        result = pl.EvalResult(checkpoint_on=loss, early_stop_on=loss)
         result.log('val_loss', loss)
         result.log('val_acc', acc)
         return result
