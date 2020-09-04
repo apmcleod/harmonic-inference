@@ -61,9 +61,11 @@ class KeySequenceModel(pl.LightningModule):
         outputs = self.forward(inputs, input_lengths)
 
         loss = F.nll_loss(outputs, targets)
+        acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
 
         result = pl.EvalResult(checkpoint_on=loss)
         result.log('val_loss', loss)
+        result.log('val_acc', acc)
         return result
 
     def configure_optimizers(self):

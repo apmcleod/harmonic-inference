@@ -61,8 +61,14 @@ class ChordTransitionModel(pl.LightningModule):
 
         loss = F.binary_cross_entropy(outputs * mask, targets)
 
+        flat_mask = mask.reshape(-1)
+        outputs = outputs.reshape(-1)[flat_mask]
+        targets = targets.reshape(-1)[flat_mask]
+        acc = 100 * (outputs.round() == targets).sum().float() / len(outputs)
+
         result = pl.EvalResult(checkpoint_on=loss)
         result.log('val_loss', loss)
+        result.log('val_acc', acc)
         return result
 
     def configure_optimizers(self):

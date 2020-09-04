@@ -233,7 +233,7 @@ class KeyTransitionDataset(HarmonicDataset):
     The targets are 1 if the last chord is on a chord change, and 0 otherwise
     (if the last chord is the last chord of a piece).
     """
-    train_batch_size = 256
+    train_batch_size = 128
     valid_batch_size = 512
     chunk_size = 1024
 

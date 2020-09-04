@@ -33,12 +33,10 @@ class KeyTransitionModel(pl.LightningModule):
     def get_data_from_batch(self, batch):
         inputs = batch['inputs'].float()
         input_lengths = batch['input_lengths']
-        inputs = inputs[:, :max(input_lengths)]
+        max_length = max(input_lengths)
+        inputs = inputs[:, :max_length]
 
-        target_indexes = batch['targets'].long()
-        targets = torch.zeros(inputs.shape[:2]).float()
-        for i, (index, length) in enumerate(zip(target_indexes, input_lengths)):
-            targets[i, index[:length]] = 1.0
+        targets = batch['targets'].float()[:, :max_length]
 
         mask = (inputs.sum(axis=2) > 0).long()
 
@@ -62,8 +60,14 @@ class KeyTransitionModel(pl.LightningModule):
 
         loss = F.binary_cross_entropy(outputs * mask, targets)
 
+        flat_mask = mask.reshape(-1)
+        outputs = outputs.reshape(-1)[flat_mask]
+        targets = targets.reshape(-1)[flat_mask]
+        acc = 100 * (outputs.round().long() == targets).sum().float() / len(outputs)
+
         result = pl.EvalResult(checkpoint_on=loss)
         result.log('val_loss', loss)
+        result.log('val_acc', acc)
         return result
 
     def configure_optimizers(self):
