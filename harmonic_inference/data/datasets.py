@@ -134,9 +134,9 @@ class ChordTransitionDataset(HarmonicDataset):
     Each target is a list of the indexes at which there is a chord change in that list of input
     vectors.
     """
-    train_batch_size = 16
-    valid_batch_size = 32
-    chunk_size = 128
+    train_batch_size = 8
+    valid_batch_size = 64
+    chunk_size = 64
 
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
@@ -155,9 +155,9 @@ class ChordClassificationDataset(HarmonicDataset):
 
     The targets are the one_hot indexes of each of those chords.
     """
-    train_batch_size = 128
-    valid_batch_size = 256
-    chunk_size = 256
+    train_batch_size = 256
+    valid_batch_size = 512
+    chunk_size = 1024
 
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
@@ -233,9 +233,9 @@ class KeyTransitionDataset(HarmonicDataset):
     The targets are 1 if the last chord is on a chord change, and 0 otherwise
     (if the last chord is the last chord of a piece).
     """
-    train_batch_size = 32
-    valid_batch_size = 64
-    chunk_size = 256
+    train_batch_size = 256
+    valid_batch_size = 512
+    chunk_size = 1024
 
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
@@ -278,9 +278,9 @@ class KeySequenceDataset(HarmonicDataset):
     There is one target per input list: a one-hot index representing the key change (transposition
     and new mode of the new key).
     """
-    train_batch_size = 64
-    valid_batch_size = 32
-    chunk_size = 256
+    train_batch_size = 256
+    valid_batch_size = 512
+    chunk_size = 512
 
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
@@ -356,7 +356,7 @@ def h5_to_dataset(
                     chunk_lengths = dataset.input_lengths[chunk_start:chunk_start + chunk_size]
                     dataset.inputs.extend(
                         [
-                            list(item[:length])
+                            np.array(item[:length], dtype=np.float32)
                             for item, length
                             in zip(input_chunk, chunk_lengths)
                         ]
@@ -375,7 +375,7 @@ def h5_to_dataset(
                     chunk_lengths = dataset.target_lengths[chunk_start:chunk_start + chunk_size]
                     dataset.targets.extend(
                         [
-                            list(item[:length])
+                            np.array(item[:length], dtype=np.float32)
                             for item, length
                             in zip(target_chunk, chunk_lengths)
                         ]
