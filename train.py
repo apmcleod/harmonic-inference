@@ -104,7 +104,13 @@ if __name__ == '__main__':
     )
 
     if ARGS.profile:
-        ARGS.profile = AdvancedProfiler(output_filename=os.path.join(ARGS.checkpoint, 'profile.log'))
+        ARGS.profile = AdvancedProfiler(
+            output_filename=os.path.join(ARGS.checkpoint, 'profile.log')
+        )
 
-    trainer = pl.Trainer(default_root_dir=ARGS.checkpoint, profiler=ARGS.profile)
+    trainer = pl.Trainer(
+        default_root_dir=ARGS.checkpoint,
+        profiler=ARGS.profile,
+        early_stop_callback=True
+    )
     trainer.fit(model, dl_train, dl_valid)
