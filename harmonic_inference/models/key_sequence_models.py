@@ -27,6 +27,8 @@ class KeySequenceModel(pl.LightningModule):
             The way a given model will output its key tonics.
         input_type : PitchType, optional
             If a model will take input data, the format of that data.
+        learning_rate : float
+            The learning rate.
         """
         super().__init__()
         # pylint: disable=invalid-name
