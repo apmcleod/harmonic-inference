@@ -16,17 +16,20 @@ class ChordTransitionModel(pl.LightningModule):
     """
     The base class for all Chord Transition Models which model when a chord change will occur.
     """
-    def __init__(self, input_type: PieceType):
+    def __init__(self, input_type: PieceType, learning_rate: float):
         """
         Create a new base model.
 
         Parameters
         ----------
-        input_type : PieceType, optional
+        input_type : PieceType
             What type of input the model is expecting.
+        learning_rate : float
+            The learning rate.
         """
         super().__init__()
         self.input_type = input_type
+        self.lr = learning_rate
 
     def get_data_from_batch(self, batch):
         inputs = batch['inputs'].float()
@@ -74,7 +77,7 @@ class ChordTransitionModel(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(
             self.parameters(),
-            lr=0.001,
+            lr=self.lr,
             betas=(0.9, 0.999),
             eps=1e-08,
             weight_decay=0.001
@@ -98,6 +101,7 @@ class SimpleChordTransitionModel(ChordTransitionModel):
         lstm_hidden_dim: int = 128,
         hidden_dim: int = 64,
         dropout: float = 0.0,
+        learning_rate: float = 0.001,
     ):
         """
         Create a new simple chord transition model.
@@ -116,8 +120,10 @@ class SimpleChordTransitionModel(ChordTransitionModel):
             The size of the hidden dimension between the 2 consecutive linear layers.
         dropout : float
             The dropout proportion.
+        learning_rate : float
+            The learning rate.
         """
-        super().__init__(input_type)
+        super().__init__(input_type, learning_rate)
 
         # Input and output derived from input type and use_inversions
         if input_type == PieceType.SCORE:

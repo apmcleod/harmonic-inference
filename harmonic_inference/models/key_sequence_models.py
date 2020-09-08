@@ -17,7 +17,7 @@ class KeySequenceModel(pl.LightningModule):
     """
     The base class for all Key Sequence Models, which model the sequence of keys of a Piece.
     """
-    def __init__(self, key_type: PitchType, input_type: PitchType):
+    def __init__(self, key_type: PitchType, input_type: PitchType, learning_rate: float):
         """
         Create a new base KeySequenceModel with the given output and input data types.
 
@@ -33,6 +33,7 @@ class KeySequenceModel(pl.LightningModule):
         self.INPUT_TYPE = input_type
         # pylint: disable=invalid-name
         self.KEY_TYPE = key_type
+        self.lr = learning_rate
 
     def get_data_from_batch(self, batch):
         inputs = batch['inputs'].float()
@@ -71,7 +72,7 @@ class KeySequenceModel(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(
             self.parameters(),
-            lr=0.001,
+            lr=self.lr,
             betas=(0.9, 0.999),
             eps=1e-08,
             weight_decay=0.001
@@ -96,6 +97,7 @@ class SimpleKeySequenceModel(KeySequenceModel):
         lstm_hidden_dim: int = 128,
         hidden_dim: int = 128,
         dropout: float = 0.0,
+        learning_rate: float = 0.001,
     ):
         """
         Vreate a new Simple Key Sequence Model.
@@ -116,8 +118,10 @@ class SimpleKeySequenceModel(KeySequenceModel):
             The size of the first linear layer output.
         dropout : float
             The dropout proportion to use.
+        learning_rate : float
+            The learning rate.
         """
-        super().__init__(key_type, input_type)
+        super().__init__(key_type, input_type, learning_rate)
 
         # Input and output derived from input type and use_inversions
         self.input_dim = (

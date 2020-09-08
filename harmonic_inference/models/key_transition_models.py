@@ -17,18 +17,21 @@ class KeyTransitionModel(pl.LightningModule):
     """
     The base class for all Key Transition Models which model when a key change will occur.
     """
-    def __init__(self, input_type: PitchType = None):
+    def __init__(self, input_type: PitchType, learning_rate: float):
         """
         Create a new base model.
 
         Parameters
         ----------
-        input_type : PitchType, optional
+        input_type : PitchType
             What type of input the model is expecting in get_change_prob(input_data).
+        learning_rate : float
+            The learning rate.
         """
         super().__init__()
         # pylint: disable=invalid-name
         self.INPUT_TYPE = input_type
+        self.lr = learning_rate
 
     def get_data_from_batch(self, batch):
         inputs = batch['inputs'].float()
@@ -73,7 +76,7 @@ class KeyTransitionModel(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(
             self.parameters(),
-            lr=0.001,
+            lr=self.lr,
             betas=(0.9, 0.999),
             eps=1e-08,
             weight_decay=0.001
@@ -97,6 +100,7 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
         lstm_hidden_dim: int = 128,
         hidden_dim: int = 64,
         dropout: float = 0.0,
+        learning_rate: float = 0.001,
     ):
         """
         Create a new simple key transition model.
@@ -115,8 +119,10 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
             The size of the hidden dimension between the 2 consecutive linear layers.
         dropout : float
             The dropout proportion.
+        learning_rate : float
+            The learning rate.
         """
-        super().__init__(input_type)
+        super().__init__(input_type, learning_rate)
 
         # Input derived from input type
         self.input_dim = (

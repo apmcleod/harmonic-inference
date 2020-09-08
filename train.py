@@ -62,6 +62,13 @@ if __name__ == '__main__':
         f"{os.path.join('`--checkpoint`', 'profile.log')}",
     )
 
+    parser.add_argument(
+        "-lr",
+        default=0.001,
+        type=float,
+        help="The learning rate to use.",
+    )
+
     ARGS = parser.parse_args()
 
     if ARGS.checkpoint == DEFAULT_CHECKPOINT_PATH:
@@ -69,19 +76,24 @@ if __name__ == '__main__':
         os.makedirs(ARGS.checkpoint, exist_ok=True)
 
     if ARGS.model == 'ccm':
-        model = ccm.SimpleChordClassifier(PitchType.TPC, PitchType.TPC, use_inversions=True)
+        model = ccm.SimpleChordClassifier(
+            PitchType.TPC,
+            PitchType.TPC,
+            use_inversions=True,
+            learning_rate=ARGS.lr,
+        )
         dataset = ds.ChordClassificationDataset
     elif ARGS.model == 'ctm':
-        model = ctm.SimpleChordTransitionModel(PieceType.SCORE)
+        model = ctm.SimpleChordTransitionModel(PieceType.SCORE, learning_rate=ARGS.lr)
         dataset = ds.ChordTransitionDataset
     elif ARGS.model == 'csm':
-        model = csm.SimpleChordSequenceModel(PitchType.TPC)
+        model = csm.SimpleChordSequenceModel(PitchType.TPC, learning_rate=ARGS.lr)
         dataset = ds.ChordSequenceDataset
     elif ARGS.model == 'ktm':
-        model = ktm.SimpleKeyTransitionModel(PitchType.TPC)
+        model = ktm.SimpleKeyTransitionModel(PitchType.TPC, learning_rate=ARGS.lr)
         dataset = ds.KeyTransitionDataset
     elif ARGS.model == 'ksm':
-        model = ksm.SimpleKeySequenceModel(PitchType.TPC, PitchType.TPC)
+        model = ksm.SimpleKeySequenceModel(PitchType.TPC, PitchType.TPC, learning_rate=ARGS.lr)
         dataset = ds.KeySequenceDataset
 
     h5_path = Path(ARGS.h5_dir / f'{dataset.__name__}_train_seed_0.h5')

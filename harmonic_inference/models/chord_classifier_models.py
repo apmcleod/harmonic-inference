@@ -18,7 +18,7 @@ class ChordClassifierModel(pl.LightningModule):
     The base type for all Chord Classifier Models, which take as input sets of frames from Pieces,
     and output chord probabilities for them.
     """
-    def __init__(self, input_type: PieceType, output_type: PitchType):
+    def __init__(self, input_type: PieceType, output_type: PitchType, learning_rate: float):
         """
         Create a new base ChordClassifierModel with the given input and output formats.
 
@@ -28,10 +28,13 @@ class ChordClassifierModel(pl.LightningModule):
             The input type this model is expecting.
         output_type : PitchType
             The type of chord this model will output.
+        learning_rate : float
+            The learning rate.
         """
         super().__init__()
         self.input_type = input_type
         self.output_type = output_type
+        self.lr = learning_rate
 
     def training_step(self, batch, batch_idx):
         notes = batch['inputs'].float()
@@ -62,7 +65,7 @@ class ChordClassifierModel(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(
             self.parameters(),
-            lr=0.001,
+            lr=self.lr,
             betas=(0.9, 0.999),
             eps=1e-08,
             weight_decay=0.001
@@ -86,6 +89,7 @@ class SimpleChordClassifier(ChordClassifierModel):
         lstm_hidden_dim: int = 128,
         hidden_dim: int = 128,
         dropout: float = 0.0,
+        learning_rate: float = 0.001,
     ):
         """
         Create a new SimpleChordClassifier.
@@ -107,6 +111,8 @@ class SimpleChordClassifier(ChordClassifierModel):
             The size of the output vector of the first linear layer.
         dropout : float
             The dropout proportion of the first linear layer's output.
+        learning_rate : float
+            The learning rate.
         """
         super().__init__(input_type, output_type)
 
