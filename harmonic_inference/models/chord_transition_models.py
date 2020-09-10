@@ -124,6 +124,7 @@ class SimpleChordTransitionModel(ChordTransitionModel):
             The learning rate.
         """
         super().__init__(input_type, learning_rate)
+        self.save_hyperparameters()
 
         # Input and output derived from input type and use_inversions
         if input_type == PieceType.SCORE:

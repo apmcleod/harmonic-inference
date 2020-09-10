@@ -123,6 +123,7 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
             The learning rate.
         """
         super().__init__(input_type, learning_rate)
+        self.save_hyperparameters()
 
         # Input derived from input type
         self.input_dim = (

@@ -115,6 +115,7 @@ class SimpleChordClassifier(ChordClassifierModel):
             The learning rate.
         """
         super().__init__(input_type, output_type, learning_rate)
+        self.save_hyperparameters()
 
         # Input and output derived from pitch_type and use_inversions
         self.input_dim = (

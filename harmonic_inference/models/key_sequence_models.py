@@ -124,6 +124,7 @@ class SimpleKeySequenceModel(KeySequenceModel):
             The learning rate.
         """
         super().__init__(key_type, input_type, learning_rate)
+        self.save_hyperparameters()
 
         # Input and output derived from input type and use_inversions
         self.input_dim = (

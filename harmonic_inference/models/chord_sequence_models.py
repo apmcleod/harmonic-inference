@@ -129,6 +129,7 @@ class SimpleChordSequenceModel(ChordSequenceModel):
             The learning rate.
         """
         super().__init__(chord_type, learning_rate)
+        self.save_hyperparameters()
 
         # Input and output derived from input type and use_inversions
         self.input_dim = (
