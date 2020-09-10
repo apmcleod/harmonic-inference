@@ -86,7 +86,7 @@ class HarmonicDataset(Dataset):
         self.inputs, self.input_lengths = pad_array(self.inputs)
         self.padded = True
 
-    def to_h5(self, h5_path: Union[str, Path]):
+    def to_h5(self, h5_path: Union[str, Path], file_ids: Iterable[int] = None):
         """
         Write this HarmonicDataset out to an h5 file, containing its inputs and targets.
         If the dataset is already being read from an h5py file, this simply copies that
@@ -96,6 +96,9 @@ class HarmonicDataset(Dataset):
         ----------
         h5_path : Union[str, Path]
             The filename of the h5 file to write to.
+        file_ids : Iterable[int]
+            The file_ids of the pieces in this dataset. Will be added to the h5 file as `file_ids`
+            if given.
         """
         if isinstance(h5_path, str):
             h5_path = Path(h5_path)
@@ -122,6 +125,8 @@ class HarmonicDataset(Dataset):
         for key in keys:
             if hasattr(self, key):
                 h5_file.create_dataset(key, data=getattr(self, key), compression="gzip")
+        if file_ids is not None:
+            h5_file.create_dataset(key, data=np.array(file_ids), compression="gzip")
         h5_file.close()
 
 
@@ -425,6 +430,92 @@ def pad_array(array: List[np.array]) -> Tuple[np.array, np.array]:
     return padded_array, array_lengths
 
 
+def get_split_file_ids_and_pieces(
+    files: pd.DataFrame,
+    measures: pd.DataFrame,
+    chords: pd.DataFrame,
+    notes: pd.DataFrame,
+    splits: Iterable[float] = [0.8, 0.1, 0.1],
+    seed: int = None,
+) -> Tuple[Iterable[Iterable[int]], Iterable[Piece]]:
+    """
+    Get the file_ids that should go in each split of a split dataset.
+
+    Parameters
+    ----------
+    files : pd.DataFrame
+        A DataFrame with data about all of the files in the DataFrames.
+    measures : pd.DataFrame
+        A DataFrame with information about the measures of the pieces in the data.
+    chords : pd.DataFrame
+        A DataFrame with information about the chords of the pieces in the data.
+    notes : pd.DataFrame
+        A DataFrame with information about the notes of the pieces in the data.
+    splits : Iterable[float]
+        An Iterable of floats representing the proportion of pieces which will go into each split.
+        This will be normalized to sum to 1.
+    seed : int
+        A numpy random seed, if given.
+
+    Returns
+    -------
+    split_ids : Iterable[Iterable[int]]
+        An iterable, the length of `splits` containing the file_ids for each data point in each
+        split.
+    pieces : Iterable[Iterable[Piece]]
+        The loaded Pieces of each split.
+    """
+    assert sum(splits) != 0
+    splits = np.array(splits) / sum(splits)
+
+    if seed is not None:
+        np.random.seed(seed)
+
+    df_indexes = []
+    pieces = []
+
+    for i in tqdm(files.index):
+        file_name = f'{files.loc[i].corpus_name}/{files.loc[i].file_name}'
+        logging.info(f"Parsing {file_name} (id {i})")
+
+        dfs = [chords, measures, notes]
+        names = ['chords', 'measures', 'notes']
+        exists = [i in df.index.get_level_values(0) for df in dfs]
+
+        if not all(exists):
+            for exist, df, name in zip(exists, dfs, names):
+                if not exist:
+                    logging.warning(f'{name}_df does not contain {file_name} data (id {i}).')
+            continue
+
+        try:
+            piece = ScorePiece(notes.loc[i], chords.loc[i], measures.loc[i])
+            pieces.append(piece)
+            df_indexes.append(i)
+        except Exception as e:
+            logging.exception(f"Error parsing index {i}: {e}")
+            continue
+
+    # Shuffle the pieces and the df_indexes the same way
+    shuffled_indexes = np.arange(len(df_indexes))
+    np.random.shuffle(shuffled_indexes)
+    pieces = np.array(pieces)[shuffled_indexes]
+    df_indexes = np.array(df_indexes)[shuffled_indexes]
+
+    split_pieces = []
+    split_indexes = []
+    prop = 0
+    for split_index, split_prop in enumerate(splits):
+        start = int(round(prop * len(pieces)))
+        prop += split_prop
+        end = int(round(prop * len(pieces)))
+
+        split_pieces.append(pieces[start:end])
+        split_indexes.append(df_indexes[start:end])
+
+    return split_indexes, split_pieces
+
+
 def get_dataset_splits(
     files: pd.DataFrame,
     measures: pd.DataFrame,
@@ -433,7 +524,7 @@ def get_dataset_splits(
     datasets: Iterable[HarmonicDataset],
     splits: Iterable[float] = [0.8, 0.1, 0.1],
     seed: int = None,
-) -> Iterable[Iterable[HarmonicDataset]]:
+) -> Tuple[Iterable[Iterable[HarmonicDataset]], Iterable[Iterable[int]]]:
     """
     Get datasets representing splits of the data in the given DataFrames.
 
@@ -462,52 +553,21 @@ def get_dataset_splits(
     dataset_splits : Iterable[Iterable[HarmonicDataset]]
         An iterable, the length of `dataset` representing the splits for each given dataset type.
         Each element is itself an iterable the length of `splits`.
+    split_ids : Iterable[Iterable[int]]
+        An iterable, the length of `splits` containing the file_ids for each data point in each
+        split.
     """
-    assert sum(splits) != 0
-    splits = np.array(splits) / sum(splits)
+    split_ids, split_pieces = get_split_file_ids_and_pieces(
+        files,
+        measures,
+        chords,
+        notes,
+        splits=splits,
+        seed=seed,
+    )
 
-    if seed is not None:
-        np.random.seed(seed)
-
-    pieces = []
-    df_indexes = []
-
-    for i in tqdm(files.index):
-        file_name = f'{files.loc[i].corpus_name}/{files.loc[i].file_name}'
-        logging.info(f"Parsing {file_name} (id {i})")
-
-        dfs = [chords, measures, notes]
-        names = ['chords', 'measures', 'notes']
-        exists = [i in df.index.get_level_values(0) for df in dfs]
-
-        if not all(exists):
-            for exist, df, name in zip(exists, dfs, names):
-                if not exist:
-                    logging.warning(f'{name}_df does not contain {file_name} data (id {i}).')
-            continue
-
-        try:
-            piece = ScorePiece(notes.loc[i], chords.loc[i], measures.loc[i])
-            pieces.append(piece)
-            df_indexes.append(i)
-        except Exception as e:
-            logging.exception(f"Error parsing index {i}: {e}")
-            continue
-
-    # Shuffle the pieces and the df_indexes the same way
-    shuffled_indexes = np.arange(len(pieces))
-    np.random.shuffle(shuffled_indexes)
-    pieces = np.array(pieces)[shuffled_indexes]
-    df_indexes = np.array(df_indexes)[shuffled_indexes]
-
-    dataset_splits = np.full((len(datasets), len(splits)), None)
-    prop = 0
-    for split_index, split_prop in enumerate(splits):
-        start = int(round(prop * len(pieces)))
-        prop += split_prop
-        end = int(round(prop * len(pieces)))
-
-        if start == end:
+    for split_index, (split_prop, pieces) in enumerate(zip(splits, split_pieces)):
+        if len(pieces) == 0:
             logging.warning(
                 f"Split {split_index} with prop {split_prop} contains no pieces. Returning None "
                 "for those."
@@ -515,6 +575,6 @@ def get_dataset_splits(
             continue
 
         for dataset_index, dataset_class in enumerate(datasets):
-            dataset_splits[dataset_index][split_index] = dataset_class(pieces[start:end])
+            dataset_splits[dataset_index][split_index] = dataset_class(pieces)
 
-    return dataset_splits
+    return dataset_splits, split_ids
