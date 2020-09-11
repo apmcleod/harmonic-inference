@@ -9,7 +9,6 @@ from glob import glob
 
 import numpy as np
 from tqdm import tqdm
-import torch
 from torch.utils.data import DataLoader
 import h5py
 
