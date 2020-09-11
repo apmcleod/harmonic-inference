@@ -2,6 +2,7 @@ from pathlib import Path
 import logging
 import argparse
 import sys
+import pickle
 
 import numpy as np
 
@@ -84,7 +85,7 @@ if __name__ == '__main__':
         ARGS.seed = np.random.randint(0, 2 ** 32)
         logging.info(f"Using seed {ARGS.seed}")
 
-    dataset_splits, split_ids = ds.get_dataset_splits(
+    dataset_splits, split_ids, split_pieces = ds.get_dataset_splits(
         files_df[:5],
         measures_df,
         chords_df,
@@ -99,3 +100,9 @@ if __name__ == '__main__':
             if dataset_splits[i1][i2] is not None:
                 h5_path = ARGS.output / f'{data_type.__name__}_{split}_seed_{ARGS.seed}.h5'
                 dataset_splits[i1][i2].to_h5(h5_path, file_ids=split_ids[i2])
+
+    for split, pieces in zip(SPLITS, split_pieces):
+        if len(pieces) > 0:
+            pickle_path = ARGS.output / f'pieces_{split}_seed_{ARGS.seed}.pkl'
+            with open(pickle_path, 'wb') as pickle_file:
+                pickle.dump([piece.to_dict() for piece in pieces], pickle_file)

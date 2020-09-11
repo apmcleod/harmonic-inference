@@ -96,10 +96,10 @@ if __name__ == '__main__':
         model = ksm.SimpleKeySequenceModel(PitchType.TPC, PitchType.TPC, learning_rate=ARGS.lr)
         dataset = ds.KeySequenceDataset
 
-    h5_path = Path(ARGS.h5_dir / f'{dataset.__name__}_train_seed_0.h5')
+    h5_path_train = Path(ARGS.h5_dir / f'{dataset.__name__}_train_seed_0.h5')
     h5_path_valid = Path(ARGS.h5_dir / f'{dataset.__name__}_valid_seed_0.h5')
 
-    dataset_train = ds.h5_to_dataset(h5_path, dataset, transform=torch.from_numpy)
+    dataset_train = ds.h5_to_dataset(h5_path_train, dataset, transform=torch.from_numpy)
     dataset_valid = ds.h5_to_dataset(h5_path_valid, dataset, transform=torch.from_numpy)
 
     dl_train = DataLoader(

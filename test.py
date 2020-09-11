@@ -1,37 +1,54 @@
+from typing import Dict, Iterable
 from pathlib import Path
 import logging
 import argparse
 import sys
+import os
+import pickle
+from glob import glob
 
 import numpy as np
-
-from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
-import harmonic_inference.data.datasets as ds
-import os
-
+from tqdm import tqdm
 import torch
 from torch.utils.data import DataLoader
-import pytorch_lightning as pl
+import h5py
 
 import harmonic_inference.models.chord_classifier_models as ccm
 import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.chord_sequence_models as csm
 import harmonic_inference.models.key_transition_models as ktm
 import harmonic_inference.models.key_sequence_models as ksm
-from harmonic_inference.data.data_types import PitchType, PieceType
+from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
+from harmonic_inference.data.piece import Piece, ScorePiece
+import harmonic_inference.data.datasets as ds
 
 SPLITS = ["train", "valid", "test"]
 
 MODEL_CLASSES = {
-    'ccm': ccm,
-    'ctm': ctm,
-    'csm': csm,
-    'ktm': ktm,
-    'ksm': ksm,
+    'ccm': ccm.SimpleChordClassifier,
+    'ctm': ctm.SimpleChordTransitionModel,
+    # 'csm': csm.SimpleChordSequenceModel,
+    # 'ktm': ktm.SimpleKeyTransitionModel,
+    # 'ksm': ksm.SimpleKeySequenceModel,
 }
 
-def evaluate(piece, ccm_model):
-    pass
+def evaluate(models: Dict, pieces: Iterable[Piece]):
+    ctm_dataset = ds.ChordTransitionDataset(pieces)
+    ctm_loader = DataLoader(
+        ctm_dataset,
+        batch_size=ds.ChordTransitionDataset.valid_batch_size,
+        shuffle=False,
+    )
+
+    outputs = []
+    lengths = []
+    for batch in ctm_loader:
+        output, length = models['ctm'].get_output(batch)
+        outputs.extend(output.numpy())
+        lengths.extend(length.numpy())
+    outputs = np.vstack(outputs)
+    lengths = np.array(lengths)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -48,39 +65,22 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
-        "--ccm-checkpoint",
+        "--checkpoint",
         type=str,
-        required=True,
-        help="The checkpoint file to load the CCM from."
+        default='checkpoints',
+        help='The directory containing checkpoints for each type of model.',
     )
 
-    # parser.add_argument(
-    #     "--ctm-checkpoint",
-    #     type=str,
-    #     required=True,
-    #     help="The checkpoint file to load the CTM from."
-    # )
-
-    # parser.add_argument(
-    #     "--csm-checkpoint",
-    #     type=str,
-    #     required=True,
-    #     help="The checkpoint file to load the CSM from."
-    # )
-
-    # parser.add_argument(
-    #     "--ktm-checkpoint",
-    #     type=str,
-    #     required=True,
-    #     help="The checkpoint file to load the KTM from."
-    # )
-
-    # parser.add_argument(
-    #     "--ksm-checkpoint",
-    #     type=str,
-    #     required=True,
-    #     help="The checkpoint file to load the KSM from."
-    # )
+    for model in MODEL_CLASSES.keys():
+        DEFAULT_PATH = os.path.join(
+            '`--checkpoint`', model, 'lightning_logs', 'version_*', 'checkpoints', '*.ckpt'
+        )
+        parser.add_argument(
+            f"--{model}-checkpoint",
+            type=str,
+            default=DEFAULT_PATH,
+            help=f"The checkpoint file to load the {model} from."
+        )
 
     parser.add_argument(
         "-l",
@@ -91,66 +91,63 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
-        "-s",
-        "--seed",
-        type=int,
-        default=None,
-        help="The random seed to use to create the data."
-    )
-
-    parser.add_argument(
-        "--splits",
-        nargs=3,
-        type=float,
-        default=[0.8, 0.1, 0.1],
-        help=f"The proportions for splits {SPLITS}. These values will be normalized.",
+        "-h5",
+        "--h5_dir",
+        default=Path("h5_data"),
+        type=Path,
+        help="The directory that holds the h5 data containing file_ids to test on.",
     )
 
     ARGS = parser.parse_args()
 
-    # Validate and normalize splits
-    if any([split_prop < 0  for split_prop in ARGS.splits]):
-        print("--split values cannot be negative.", file=sys.stderr)
-        sys.exit(1)
-    sum_splits = sum(ARGS.splits)
-    if sum_splits == 0:
-        print("At least one --split value must be positive.", file=sys.stderr)
-        sys.exit(1)
-    ARGS.splits = [split / sum_splits for split in ARGS.splits]
-
     if ARGS.log is not sys.stderr:
         logging.basicConfig(filename=ARGS.log, level=logging.INFO, filemode='w')
-    files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(ARGS.input)
 
-    if ARGS.seed is None:
-        ARGS.seed = np.random.randint(0, 2 ** 32)
+    # Load models
+    models = {}
+    for model_name, model_class in MODEL_CLASSES.items():
+        DEFAULT_PATH = os.path.join(
+            '`--checkpoint`', model_name, 'lightning_logs', 'version_*', 'checkpoints', '*.ckpt'
+        )
+        checkpoint_arg = getattr(ARGS, f'{model_name}_checkpoint')
 
-    split_ids, split_pieces = ds.get_split_file_ids_and_pieces(
-        files_df,
-        measures_df,
-        chords_df,
-        notes_df,
-        splits=ARGS.splits,
-        seed=ARGS.seed,
-    )
+        if checkpoint_arg == DEFAULT_PATH:
+            checkpoint_arg = checkpoint_arg.replace("`--checkpoint`", ARGS.checkpoint)
 
-    # Use validation data
-    ids = split_ids[1]
-    pieces = split_pieces[1]
+        possible_checkpoints = list(glob(checkpoint_arg))
+        if len(possible_checkpoints) == 0:
+            logging.error(f'No checkpoints found for {model_name} in {checkpoint_arg}')
+            sys.exit(2)
 
-    ccm_model = ccm.load_from_checkpoint(ARGS.ccm_checkpoint)
-    # ctm_model = ctm.load_from_checkpoint(ARGS.ctm_checkpoint)
-    # csm_model = csm.load_from_checkpoint(ARGS.csm_checkpoint)
-    # ktm_model = ktm.load_from_checkpoint(ARGS.ktm_checkpoint)
-    # ksm_model = ksm.load_from_checkpoint(ARGS.ksm_checkpoint)
+        if len(possible_checkpoints) == 1:
+            checkpoint = possible_checkpoints[0]
+            logging.info(f"Loading checkpoint {checkpoint} for {model_name}.")
 
-    # trainer = pl.Trainer(
-    #     default_root_dir=ARGS.checkpoint,
-    #     profiler=ARGS.profile,
-    #     early_stop_callback=True
-    # )
-    # trainer.fit(model, dl_train, dl_valid)
+        else:
+            checkpoint = possible_checkpoints[-1]
+            logging.info(f"Multiple checkpoints found for {model_name}. Loading {checkpoint}.")
 
-    for piece in pieces:
-        ds.ChordTransitionDataset([pieces])
-        evaluate(piece, ccm_model)
+        models[model_name] = model_class.load_from_checkpoint(checkpoint)
+        models[model_name].freeze()
+
+    # Load validation data for ctm
+    h5_path = Path(ARGS.h5_dir / 'ChordTransitionDataset_valid_seed_0.h5')
+    with h5py.File(h5_path, 'r') as h5_file:
+        if 'file_ids' not in h5_file:
+            logging.error(f'file_ids not found in {h5_path}. Re-create with create_h5_data.py')
+            sys.exit(1)
+
+        file_ids = list(h5_file['file_ids'])
+
+    # Load pieces
+    _, measures_df, _, _ = load_clean_corpus_dfs(ARGS.input)
+    with open(Path(ARGS.h5_dir / 'pieces_valid_seed_0.pkl'), 'rb') as pkl_file:
+        piece_dicts = pickle.load(pkl_file)
+
+    pieces = []
+    for file_id, piece_dict in tqdm(zip(file_ids, piece_dicts), desc='Loading Pieces'):
+        pieces.append(
+            ScorePiece(None, None, measures_df.loc[file_id], piece_dict=piece_dict)
+        )
+
+    evaluate(models, pieces)

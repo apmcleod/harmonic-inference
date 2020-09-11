@@ -46,6 +46,11 @@ class ChordTransitionModel(pl.LightningModule):
 
         return inputs, input_lengths, targets, mask
 
+    def get_output(self, batch):
+        inputs, input_lengths, _, _ = self.get_data_from_batch(batch)
+        outputs = self.forward(inputs, input_lengths)
+        return outputs, input_lengths
+
     def training_step(self, batch, batch_idx):
         inputs, input_lengths, targets, mask = self.get_data_from_batch(batch)
 

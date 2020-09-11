@@ -36,6 +36,14 @@ class ChordClassifierModel(pl.LightningModule):
         self.output_type = output_type
         self.lr = learning_rate
 
+    def get_output(self, batch):
+        notes = batch['inputs'].float()
+        notes_lengths = batch['input_lengths']
+
+        outputs = self.forward(notes, notes_lengths)
+
+        return outputs
+
     def training_step(self, batch, batch_idx):
         notes = batch['inputs'].float()
         notes_lengths = batch['input_lengths']

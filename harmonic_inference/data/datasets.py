@@ -149,6 +149,8 @@ class ChordTransitionDataset(HarmonicDataset):
         self.inputs = [
             np.vstack([note.to_vec() for note in piece.get_inputs()]) for piece in pieces
         ]
+        self.target_lengths = np.array([len(target) for target in self.targets])
+        self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
 
 
 class ChordClassificationDataset(HarmonicDataset):
@@ -174,6 +176,7 @@ class ChordClassificationDataset(HarmonicDataset):
         self.inputs = []
         for piece in pieces:
             self.inputs.extend(piece.get_chord_note_inputs(window=2))
+        self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
 
     def pad(self):
         self.inputs, self.input_lengths = pad_array(self.inputs)
@@ -226,6 +229,9 @@ class ChordSequenceDataset(HarmonicDataset):
             self.inputs.append(np.vstack(piece_input))
             self.targets.append(np.array([chord.get_one_hot_index() for chord in chords]))
 
+        self.target_lengths = np.array([len(target) for target in self.targets])
+        self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
+
 
 class KeyTransitionDataset(HarmonicDataset):
     """
@@ -270,6 +276,8 @@ class KeyTransitionDataset(HarmonicDataset):
                     ])
                 )
 
+        self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
+
 
 class KeySequenceDataset(HarmonicDataset):
     """
@@ -310,6 +318,8 @@ class KeySequenceDataset(HarmonicDataset):
                     ])
                 )
                 self.targets.append(key.get_key_change_one_hot_index(next_key))
+
+        self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
 
     def pad(self):
         self.inputs, self.input_lengths = pad_array(self.inputs)
@@ -532,7 +542,7 @@ def get_dataset_splits(
     datasets: Iterable[HarmonicDataset],
     splits: Iterable[float] = [0.8, 0.1, 0.1],
     seed: int = None,
-) -> Tuple[Iterable[Iterable[HarmonicDataset]], Iterable[Iterable[int]]]:
+) -> Tuple[List[List[HarmonicDataset]], List[List[int]], List[List[Piece]]]:
     """
     Get datasets representing splits of the data in the given DataFrames.
 
@@ -558,12 +568,13 @@ def get_dataset_splits(
 
     Returns
     -------
-    dataset_splits : Iterable[Iterable[HarmonicDataset]]
+    dataset_splits : List[List[HarmonicDataset]]
         An iterable, the length of `dataset` representing the splits for each given dataset type.
         Each element is itself an iterable the length of `splits`.
-    split_ids : Iterable[Iterable[int]]
-        An iterable, the length of `splits` containing the file_ids for each data point in each
-        split.
+    split_ids : List[List[int]]
+        A list the length of `splits` containing the file_ids for each data point in each split.
+    split_pieces : List[List[Piece]]
+        A list of the pieces in each split.
     """
     split_ids, split_pieces = get_split_file_ids_and_pieces(
         files,
@@ -586,4 +597,4 @@ def get_dataset_splits(
         for dataset_index, dataset_class in enumerate(datasets):
             dataset_splits[dataset_index][split_index] = dataset_class(pieces)
 
-    return dataset_splits, split_ids
+    return dataset_splits, split_ids, split_pieces
