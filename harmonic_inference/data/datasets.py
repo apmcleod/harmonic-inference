@@ -126,7 +126,7 @@ class HarmonicDataset(Dataset):
             if hasattr(self, key):
                 h5_file.create_dataset(key, data=getattr(self, key), compression="gzip")
         if file_ids is not None:
-            h5_file.create_dataset(key, data=np.array(file_ids), compression="gzip")
+            h5_file.create_dataset("file_ids", data=np.array(file_ids), compression="gzip")
         h5_file.close()
 
 
@@ -509,9 +509,17 @@ def get_split_file_ids_and_pieces(
         start = int(round(prop * len(pieces)))
         prop += split_prop
         end = int(round(prop * len(pieces)))
+        length = end - start
 
-        split_pieces.append(pieces[start:end])
-        split_indexes.append(df_indexes[start:end])
+        if length == 0:
+            split_pieces.append([])
+            split_indexes.append([])
+        elif length == 1:
+            split_pieces.append([pieces[start]])
+            split_indexes.append([df_indexes[start]])
+        else:
+            split_pieces.append(pieces[start:end])
+            split_indexes.append(df_indexes[start:end])
 
     return split_indexes, split_pieces
 
@@ -566,6 +574,7 @@ def get_dataset_splits(
         seed=seed,
     )
 
+    dataset_splits = np.full((len(datasets), len(splits)), None)
     for split_index, (split_prop, pieces) in enumerate(zip(splits, split_pieces)):
         if len(pieces) == 0:
             logging.warning(
