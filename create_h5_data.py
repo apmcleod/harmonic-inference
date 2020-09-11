@@ -86,7 +86,7 @@ if __name__ == '__main__':
         logging.info(f"Using seed {ARGS.seed}")
 
     dataset_splits, split_ids, split_pieces = ds.get_dataset_splits(
-        files_df[:5],
+        files_df[:10],
         measures_df,
         chords_df,
         notes_df,

@@ -95,7 +95,8 @@ if __name__ == '__main__':
         "--h5_dir",
         default=Path("h5_data"),
         type=Path,
-        help="The directory that holds the h5 data containing file_ids to test on.",
+        help=("The directory that holds the h5 data containing file_ids to test on, and the piece "
+              "pkl files."),
     )
 
     ARGS = parser.parse_args()
@@ -140,14 +141,24 @@ if __name__ == '__main__':
         file_ids = list(h5_file['file_ids'])
 
     # Load pieces
-    _, measures_df, _, _ = load_clean_corpus_dfs(ARGS.input)
-    with open(Path(ARGS.h5_dir / 'pieces_valid_seed_0.pkl'), 'rb') as pkl_file:
-        piece_dicts = pickle.load(pkl_file)
+    files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(ARGS.input)
 
-    pieces = []
-    for file_id, piece_dict in tqdm(zip(file_ids, piece_dicts), desc='Loading Pieces'):
-        pieces.append(
+    # Load from pkl if available
+    pkl_path = Path(ARGS.h5_dir / 'pieces_valid_seed_0.pkl')
+    if pkl_path.exists():
+        with open(pkl_path, 'rb') as pkl_file:
+            piece_dicts = pickle.load(pkl_file)
+        pieces = [
             ScorePiece(None, None, measures_df.loc[file_id], piece_dict=piece_dict)
-        )
+            for file_id, piece_dict in zip(file_ids, piece_dicts)
+        ]
+
+    # Generate from dfs
+    else:
+        pieces = []
+        for file_id in tqdm(file_ids, desc="Loading Pieces"):
+            pieces.append(
+                ScorePiece(notes_df.loc[file_id], chords_df.loc[file_id], measures_df.loc[file_id])
+            )
 
     evaluate(models, pieces)

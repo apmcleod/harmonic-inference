@@ -106,13 +106,13 @@ if __name__ == '__main__':
         dataset_train,
         batch_size=dataset.train_batch_size,
         shuffle=True,
-        num_workers=ARGS.workers
+        num_workers=ARGS.workers,
     )
     dl_valid = DataLoader(
         dataset_valid,
         batch_size=dataset.valid_batch_size,
         shuffle=False,
-        num_workers=ARGS.workers
+        num_workers=ARGS.workers,
     )
 
     if ARGS.profile:
