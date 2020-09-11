@@ -572,7 +572,7 @@ class Key():
         return hu.get_key_one_hot_index(next_key.relative_mode, transposition, self.tonic_type)
 
     def __eq__(self, other):
-        if not isinstance(other, Chord):
+        if not isinstance(other, Key):
             return False
         for field in self.params:
             if getattr(self, field) != getattr(other, field):
@@ -584,7 +584,7 @@ class Key():
 
     def __repr__(self):
         params = ", ".join([f"{field}={getattr(self, field)}" for field in self.params])
-        return f"Chord({params})"
+        return f"Key({params})"
 
     def __str__(self):
         return f'{hu.get_pitch_string(self.relative_tonic, self.tonic_type)} {self.relative_mode}'
