@@ -26,9 +26,9 @@ SPLITS = ["train", "valid", "test"]
 MODEL_CLASSES = {
     'ccm': ccm.SimpleChordClassifier,
     'ctm': ctm.SimpleChordTransitionModel,
-    # 'csm': csm.SimpleChordSequenceModel,
-    # 'ktm': ktm.SimpleKeyTransitionModel,
-    # 'ksm': ksm.SimpleKeySequenceModel,
+    'csm': csm.SimpleChordSequenceModel,
+    'ktm': ktm.SimpleKeyTransitionModel,
+    'ksm': ksm.SimpleKeySequenceModel,
 }
 
 def evaluate(models: Dict, pieces: Iterable[Piece]):
@@ -40,13 +40,14 @@ def evaluate(models: Dict, pieces: Iterable[Piece]):
     )
 
     outputs = []
-    lengths = []
     for batch in ctm_loader:
-        output, length = models['ctm'].get_output(batch)
-        outputs.extend(output.numpy())
-        lengths.extend(length.numpy())
-    outputs = np.vstack(outputs)
-    lengths = np.array(lengths)
+        batch_outputs, batch_lengths = models['ctm'].get_output(batch)
+        outputs.extend(
+            [output[:length].numpy() for output, length in zip(batch_outputs, batch_lengths)]
+        )
+
+    print(ctm_dataset[1]['targets'])
+    print(outputs[1][:20])
 
 
 if __name__ == '__main__':
