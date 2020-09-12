@@ -1,17 +1,16 @@
 """A class storing a musical piece from score, midi, or audio format."""
-from typing import Union, Tuple, List, Dict
+from typing import Union, Tuple, Dict
 from fractions import Fraction
 import logging
-import sys
 import inspect
 
 import pandas as pd
 import numpy as np
 
 from harmonic_inference.data.data_types import KeyMode, PitchType, ChordType, PieceType
-from harmonic_inference.utils import harmonic_utils as hu
-from harmonic_inference.utils import rhythmic_utils as ru
-from harmonic_inference.utils import harmonic_constants as hc
+import harmonic_inference.utils.harmonic_utils as hu
+import harmonic_inference.utils.rhythmic_utils as ru
+import harmonic_inference.utils.harmonic_constants as hc
 
 
 class Note():
@@ -202,6 +201,8 @@ class Note():
                     raise ValueError(f"TPC pitch {pitch} is outside of valid range.")
             elif pitch_type == PitchType.MIDI:
                 pitch = note_row.midi % hc.NUM_PITCHES[PitchType.MIDI]
+            else:
+                raise ValueError(f"Invalid pitch type: {pitch_type}")
             octave = note_row.midi // hc.NUM_PITCHES[PitchType.MIDI]
 
             onset = (note_row["mc"], note_row["onset"])
@@ -304,6 +305,8 @@ class Chord():
                 root = hu.transpose_pitch(self.root, -(self.key_tonic - hc.TPC_C), PitchType.TPC)
             elif self.pitch_type == PitchType.MIDI:
                 root = hu.transpose_pitch(self.root, -self.key_tonic, PitchType.MIDI)
+            else:
+                raise ValueError(f"Invalid pitch_type: {self.pitch_type}")
         else:
             root = self.root
 
@@ -340,6 +343,8 @@ class Chord():
             root = hu.transpose_pitch(self.root, -(key_tonic - hc.TPC_C), PitchType.TPC)
         elif self.pitch_type == PitchType.MIDI:
             root = hu.transpose_pitch(self.root, -key_tonic, PitchType.MIDI)
+        else:
+            raise ValueError(f"Invalid pitch type: {self.pitch_type}")
         pitch[root] = 1
         vectors.append(pitch)
 
@@ -349,6 +354,8 @@ class Chord():
             bass = hu.transpose_pitch(self.bass, -(key_tonic - hc.TPC_C), PitchType.TPC)
         elif self.pitch_type == PitchType.MIDI:
             bass = hu.transpose_pitch(self.bass, -key_tonic, PitchType.MIDI)
+        else:
+            raise ValueError(f"Invalid pitch type: {self.pitch_type}")
         bass_note[bass] = 1
         vectors.append(bass_note)
 
@@ -568,6 +575,8 @@ class Key():
             transposition = hu.transpose_pitch(
                 next_key.relative_tonic, -self.relative_tonic, PitchType.MIDI
             )
+        else:
+            raise ValueError(f"Invalid tonic_type: {self.tonic_type}")
 
         return hu.get_key_one_hot_index(next_key.relative_mode, transposition, self.tonic_type)
 

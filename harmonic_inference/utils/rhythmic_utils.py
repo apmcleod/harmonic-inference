@@ -1,12 +1,15 @@
 """Utility functions for getting rhythmic or metrical information from the corpus DataFrames."""
-from typing import TypeVar, Tuple
+from typing import Tuple
 from fractions import Fraction
 
 import pandas as pd
 
 
-def get_range_length(range_start: Tuple[int, Fraction], range_end: Tuple[int, Fraction],
-                     measures: pd.DataFrame) -> Fraction:
+def get_range_length(
+    range_start: Tuple[int, Fraction],
+    range_end: Tuple[int, Fraction],
+    measures: pd.DataFrame
+) -> Fraction:
     """
     Get the length of a range in whole notes.
 
@@ -59,8 +62,12 @@ def get_range_length(range_start: Tuple[int, Fraction], range_end: Tuple[int, Fr
 
 
 def get_rhythmic_info_as_proportion_of_range(
-        note: pd.Series, range_start: Tuple[int, Fraction], range_end: Tuple[int, Fraction],
-        measures: pd.DataFrame, range_len: Fraction = None) -> [Fraction, Fraction, Fraction]:
+    note: pd.Series,
+    range_start: Tuple[int, Fraction],
+    range_end: Tuple[int, Fraction],
+    measures: pd.DataFrame,
+    range_len: Fraction = None
+) -> Tuple[Fraction, Fraction, Fraction]:
     """
     Get a note's onset, offset, and duration as a proportion of the given range.
 
@@ -104,7 +111,7 @@ def get_rhythmic_info_as_proportion_of_range(
 
 
 
-def get_metrical_level_lengths(timesig: str) -> [Fraction, Fraction, Fraction]:
+def get_metrical_level_lengths(timesig: str) -> Tuple[Fraction, Fraction, Fraction]:
     """
     Get the lengths of the beat and subbeat levels of the given time signature.
 

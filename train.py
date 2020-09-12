@@ -1,6 +1,8 @@
 from pathlib import Path
 import argparse
 import os
+import sys
+import logging
 
 import torch
 from torch.utils.data import DataLoader
@@ -95,6 +97,9 @@ if __name__ == '__main__':
     elif ARGS.model == 'ksm':
         model = ksm.SimpleKeySequenceModel(PitchType.TPC, PitchType.TPC, learning_rate=ARGS.lr)
         dataset = ds.KeySequenceDataset
+    else:
+        logging.error(f"Invalid model: {ARGS.model}")
+        sys.exit(1)
 
     h5_path_train = Path(ARGS.h5_dir / f'{dataset.__name__}_train_seed_0.h5')
     h5_path_valid = Path(ARGS.h5_dir / f'{dataset.__name__}_valid_seed_0.h5')

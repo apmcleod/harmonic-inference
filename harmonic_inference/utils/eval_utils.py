@@ -1,15 +1,15 @@
 """Utility functions for evaluating model outputs."""
 import os
-from typing import List
+from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
 
 import torch
 
-import harmonic_utils as hu
-import corpus_utils as cu
-from harmonic_inference.data.harmonic_inference_data import MusicScoreDataset
+import harmonic_inference.utils.harmonic_utils as hu
+import harmonic_inference.utils.corpus_utils as cu
+from harmonic_inference.data.datasets import MusicScoreDataset
 
 
 def get_conf_mat(labels: List[int], outputs: torch.tensor,
@@ -51,8 +51,10 @@ def get_conf_mat(labels: List[int], outputs: torch.tensor,
 
 
 
-def get_correct_and_incorrect_indexes(labels: List[int], outputs: torch.tensor) -> (List[int],
-                                                                                    List[int]):
+def get_correct_and_incorrect_indexes(
+    labels: List[int],
+    outputs: torch.tensor
+) -> Tuple[List[int], List[int]]:
     """
     Get the indices of correct and incorrect model outputs.
 
@@ -87,7 +89,7 @@ def get_correct_and_incorrect_indexes(labels: List[int], outputs: torch.tensor) 
 
 
 def print_result(index: int, labels: List[int], outputs: torch.tensor,
-                 limit: int = None, prob: bool = True) -> None:
+                 limit: int = None, prob: bool = True):
     """
     Print the model's output of a given data point in a nice format.
 
@@ -126,7 +128,7 @@ def print_result(index: int, labels: List[int], outputs: torch.tensor,
 
 
 
-def get_input_df_rows(index: int, dataset: MusicScoreDataset) -> (pd.Series, pd.DataFrame):
+def get_input_df_rows(index: int, dataset: MusicScoreDataset) -> Tuple[pd.Series, pd.DataFrame]:
     """
     Get the input chord and note_df rows for a particular data point from a dataset object.
 
@@ -159,7 +161,10 @@ def get_input_df_rows(index: int, dataset: MusicScoreDataset) -> (pd.Series, pd.
 
 
 
-def get_correct_ranks(labels: List[int], outputs: torch.tensor) -> (List[int], List[List[int]]):
+def get_correct_ranks(
+    labels: List[int],
+    outputs: torch.tensor
+) -> Tuple[List[int], List[List[int]]]:
     """
     Get the rank of the correct chord label in the model's output for each data point.
 

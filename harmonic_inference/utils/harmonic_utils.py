@@ -1,10 +1,10 @@
 """Utility functions for getting harmonic and pitch information from the corpus DataFrames."""
-from typing import List
+from typing import List, Tuple
 import pandas as pd
 import numpy as np
 
-from harmonic_inference.data.data_types import  KeyMode, PitchType, ChordType
-from harmonic_inference.utils import harmonic_constants as hc
+from harmonic_inference.data.data_types import KeyMode, PitchType, ChordType
+import harmonic_inference.utils.harmonic_constants as hc
 
 
 def get_chord_label_list(pitch_type: PitchType, use_inversions=True) -> List[str]:
@@ -154,7 +154,7 @@ def get_chord_inversion_count(chord_type: ChordType) -> int:
     return hc.CHORD_INVERSION_COUNT[chord_type]
 
 
-def get_accidental_adjustment(string: str, in_front: bool = True) -> (int, str):
+def get_accidental_adjustment(string: str, in_front: bool = True) -> Tuple[int, str]:
     """
     Get the accidental adjustment of the accidentals at the beginning of a string.
 
