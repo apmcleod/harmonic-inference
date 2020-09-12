@@ -5,8 +5,8 @@ import pandas as pd
 
 from harmonic_inference.data.data_types import KeyMode, PitchType, ChordType
 from harmonic_inference.data.piece import *
-from harmonic_inference.utils import harmonic_constants as hc
-from harmonic_inference.utils import rhythmic_utils as ru
+import harmonic_inference.utils.harmonic_constants as hc
+import harmonic_inference.utils.rhythmic_utils as ru
 
 
 def test_note_from_series():
@@ -364,6 +364,8 @@ def test_score_piece():
         for _, note_row in note_df.iterrows()
     ]
 
+    # TODO: Some of these have repeated chords crossing key boundaries.
+    # Check if this happens and remove.
     chord_dict = {
         'numeral': ['III', 'III', '@none', 'III', 'IV', 'IV', '@none'],
         'root': 5,
@@ -388,21 +390,30 @@ def test_score_piece():
         Chord.from_series(chord_row, measures_df, PitchType.TPC)
         for _, chord_row in chord_df.iterrows()
     ]
-    not_none_chords = [c for c in chords if c is not None]
+    not_none_chords = np.array([c for c in chords if c is not None])
+    mask = get_reduction_mask(not_none_chords)
+    correct_chords = []
+    for m, chord in zip(mask, not_none_chords):
+        if m:
+            correct_chords.append(chord)
+        else:
+            correct_chords[-1].merge_with(chord)
+    not_none_chords = correct_chords
 
     keys = [Key.from_series(chord_row, PitchType.TPC) for _, chord_row in chord_df.iterrows()]
     not_none_keys = [k for k in keys if k is not None]
     unique_keys = [not_none_keys[0]] + [
         k for k, k_prev in zip(not_none_keys[1:], not_none_keys[:-1]) if k != k_prev
     ]
+    unique_keys = [unique_keys[0], unique_keys[3]]
 
     piece = ScorePiece(note_df, chord_df, measures_df)
 
     assert all(piece.get_inputs() == notes)
     assert all(piece.get_chords() == not_none_chords)
     assert all(piece.get_keys() == unique_keys)
-    assert all(piece.get_chord_change_indices() == [0, 2, 5, 6, 8])
-    assert all(piece.get_key_change_indices() == [0, 2, 3, 4])
+    assert all(piece.get_chord_change_indices() == [0, 8])
+    assert all(piece.get_key_change_indices() == [0, 1])
 
     inputs = piece.get_chord_note_inputs(window=2)
     assert np.sum(inputs[0][:2]) == 0
@@ -417,5 +428,5 @@ def test_score_piece():
     )
     assert all(
         inputs[1][2] ==
-        notes[2].to_vec(not_none_chords[1], measures_df, (notes[2].octave, notes[2].pitch_class))
+        notes[8].to_vec(not_none_chords[1], measures_df, (notes[8].octave, notes[8].pitch_class))
     )

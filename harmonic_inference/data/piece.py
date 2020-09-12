@@ -1,5 +1,5 @@
 """A class storing a musical piece from score, midi, or audio format."""
-from typing import Union, Tuple, Dict
+from typing import List, Union, Tuple, Dict
 from fractions import Fraction
 import logging
 import inspect
@@ -382,6 +382,50 @@ class Chord():
 
         return np.concatenate(vectors)
 
+    def is_repeated(self, other, use_inversion=True) -> bool:
+        """
+        Detect if a given chord can be regarded as a repeat of this one in terms of root and
+        chord_type, plus optionally inversion.
+
+        Parameters
+        ----------
+        other : Chord
+            The other chord to check for repeat.
+        use_inversion : bool
+            True to take inversions into account. False otherwise.
+
+        Returns
+        -------
+        is_repeated : bool
+            True if the given chord is a repeat of this one. False otherwise.
+        """
+        if not isinstance(other, Chord):
+            return False
+
+        attr_names = ['pitch_type', 'root', 'chord_type']
+        if use_inversion:
+            attr_names.append('inversion')
+
+        for attr_name in attr_names:
+            if getattr(self, attr_name) != getattr(other, attr_name):
+                return False
+        return True
+
+    def merge_with(self, next_chord):
+        """
+        Merge this chord with the next one, in terms of metrical information. Specifically,
+        move this chord's offset and offset_level to the next_chord's, and set this chord's
+        duration to their combined duration sum.
+
+        Parameters
+        ----------
+        next_chord : Chord
+            The chord to merge with this one.
+        """
+        self.offset = next_chord.offset
+        self.offset_level = next_chord.offset_level
+        self.duration += next_chord.duration
+
     def __eq__(self, other):
         if not isinstance(other, Chord):
             return False
@@ -580,6 +624,38 @@ class Key():
 
         return hu.get_key_one_hot_index(next_key.relative_mode, transposition, self.tonic_type)
 
+    def is_repeated(self, other, use_relative=True) -> bool:
+        """
+        Detect if a given key can be regarded as a repeat of this one in terms of tonic and
+        mode.
+
+        Parameters
+        ----------
+        other : Key
+            The other key to check for repeat.
+        use_relative : bool
+            True to take use relative_tonic and relative_mode.
+            False to use local_tonic and local_mode.
+
+        Returns
+        -------
+        is_repeated : bool
+            True if the given key is a repeat of this one. False otherwise.
+        """
+        if not isinstance(other, Key):
+            return False
+
+        attr_names = ['tonic_type']
+        if use_relative:
+            attr_names.extend(['relative_tonic', 'relative_mode'])
+        else:
+            attr_names.extend(['local_tonic', 'local_mode'])
+
+        for attr_name in attr_names:
+            if getattr(self, attr_name) != getattr(other, attr_name):
+                return False
+        return True
+
     def __eq__(self, other):
         if not isinstance(other, Key):
             return False
@@ -661,6 +737,33 @@ class Key():
             logging.error(f"Error parsing key from row {chord_row}")
             logging.exception(e)
             return None
+
+
+def get_reduction_mask(inputs: List[Union[Chord, Key]], kwargs: Dict = {}) -> List[bool]:
+    """
+    Return a boolean mask that will remove repeated inputs when applied to the given inputs list
+    as inputs[mask].
+
+    Parameters
+    ----------
+    inputs : List[Union[Chord, Key]]
+        A List of either Chord or Key objects.
+    kwargs : Dict
+        A Dictionary of kwargs to pass along to each given input's is_repeated() function.
+
+    Returns
+    -------
+    mask : List[bool]
+        A boolean mask that will remove repeated inputs when applied to the given inputs list
+        as inputs = inputs[mask].
+    """
+    mask = np.full(len(inputs), True, dtype=bool)
+
+    for prev_index, (prev, next) in enumerate(zip(inputs[:-1], inputs[1:])):
+        if next.is_repeated(prev, **kwargs):
+            mask[prev_index + 1] = False
+
+    return mask
 
 
 class Piece():
@@ -807,9 +910,20 @@ class ScorePiece(Piece):
                     pitch_type=PitchType.TPC,
                 )) if chord is not None
             ])
-            self.chords, self.chord_ilocs = np.hsplit(chords, 2)
-            self.chords = np.squeeze(self.chords)
-            self.chord_ilocs = np.squeeze(self.chord_ilocs).astype(int)
+            chords, chord_ilocs = np.hsplit(chords, 2)
+            chords = np.squeeze(chords)
+            chord_ilocs = np.squeeze(chord_ilocs).astype(int)
+
+            # Remove accidentally repeated chords
+            non_repeated_mask = get_reduction_mask(chords, kwargs={'use_inversion': True})
+            self.chords = []
+            for chord, mask in zip(chords, non_repeated_mask):
+                if mask:
+                    self.chords.append(chord)
+                else:
+                    self.chords[-1].merge_with(chord)
+            self.chords = np.array(self.chords)
+            self.chord_ilocs = chord_ilocs[non_repeated_mask]
 
             # The index of the notes where there is a chord change
             self.chord_changes = np.zeros(len(self.chords), dtype=int)
@@ -829,15 +943,20 @@ class ScorePiece(Piece):
             key_cols = key_cols.fillna('-1')
             changes = key_cols.ne(key_cols.shift()).fillna(True)
 
-            self.key_changes = np.arange(len(changes))[changes.any(axis=1)]
-            self.keys = np.array(
+            key_changes = np.arange(len(changes))[changes.any(axis=1)]
+            keys = np.array(
                 [
                     key for key in chords_df.loc[
-                        chords_df.index[self.chord_ilocs[self.key_changes]]
+                        chords_df.index[self.chord_ilocs[key_changes]]
                     ].apply(Key.from_series, axis='columns', tonic_type=PitchType.TPC)
                     if key is not None
                 ]
             )
+
+            # Remove accidentally repeated keys
+            non_repeated_mask = get_reduction_mask(keys, kwargs={'use_relative': True})
+            self.keys = keys[non_repeated_mask]
+            self.key_changes = key_changes[non_repeated_mask]
 
         else:
             self.notes = np.array([Note(**note) for note in piece_dict['notes']])
