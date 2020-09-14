@@ -127,7 +127,7 @@ class SimpleChordClassifier(ChordClassifierModel):
 
         # Input and output derived from pitch_type and use_inversions
         self.input_dim = (
-            hc.NUM_PITCHES[input_type] +  # Pitch class
+            hc.NUM_PITCHES[PitchType.TPC] +  # Pitch class
             127 // hc.NUM_PITCHES[PitchType.MIDI] +  # octave
             12  # 4 onset level, 4 offset level, (onset, offset, dur) proportions, is_lowest
         )
