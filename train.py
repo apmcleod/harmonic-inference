@@ -79,7 +79,7 @@ if __name__ == '__main__':
 
     if ARGS.model == 'ccm':
         model = ccm.SimpleChordClassifier(
-            PitchType.TPC,
+            PieceType.SCORE,
             PitchType.TPC,
             use_inversions=True,
             learning_rate=ARGS.lr,

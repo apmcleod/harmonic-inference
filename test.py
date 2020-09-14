@@ -17,6 +17,7 @@ import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.chord_sequence_models as csm
 import harmonic_inference.models.key_transition_models as ktm
 import harmonic_inference.models.key_sequence_models as ksm
+from harmonic_inference.models.joint_model import HarmonicInferenceModel
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 from harmonic_inference.data.piece import Piece, ScorePiece
 import harmonic_inference.data.datasets as ds
@@ -32,22 +33,11 @@ MODEL_CLASSES = {
 }
 
 def evaluate(models: Dict, pieces: Iterable[Piece]):
-    ctm_dataset = ds.ChordTransitionDataset(pieces)
-    ctm_loader = DataLoader(
-        ctm_dataset,
-        batch_size=ds.ChordTransitionDataset.valid_batch_size,
-        shuffle=False,
-    )
+    model = HarmonicInferenceModel(models)
 
-    outputs = []
-    for batch in ctm_loader:
-        batch_outputs, batch_lengths = models['ctm'].get_output(batch)
-        outputs.extend(
-            [output[:length].numpy() for output, length in zip(batch_outputs, batch_lengths)]
-        )
+    harmonies = model.get_harmonies(pieces)
 
-    print(ctm_dataset[1]['targets'])
-    print(outputs[1][:20])
+    print(harmonies)
 
 
 if __name__ == '__main__':

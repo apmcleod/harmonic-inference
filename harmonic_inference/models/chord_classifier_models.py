@@ -32,8 +32,8 @@ class ChordClassifierModel(pl.LightningModule):
             The learning rate.
         """
         super().__init__()
-        self.input_type = input_type
-        self.output_type = output_type
+        self.INPUT_TYPE = input_type
+        self.OUTPUT_TYPE = output_type
         self.lr = learning_rate
 
     def get_output(self, batch):

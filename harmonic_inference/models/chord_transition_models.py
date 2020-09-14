@@ -28,7 +28,7 @@ class ChordTransitionModel(pl.LightningModule):
             The learning rate.
         """
         super().__init__()
-        self.input_type = input_type
+        self.INPUT_TYPE = input_type
         self.lr = learning_rate
 
     def get_data_from_batch(self, batch):

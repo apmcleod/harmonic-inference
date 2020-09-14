@@ -31,9 +31,7 @@ class KeySequenceModel(pl.LightningModule):
             The learning rate.
         """
         super().__init__()
-        # pylint: disable=invalid-name
         self.INPUT_TYPE = input_type
-        # pylint: disable=invalid-name
         self.KEY_TYPE = key_type
         self.lr = learning_rate
 
