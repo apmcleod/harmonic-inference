@@ -177,7 +177,7 @@ class HarmonicInferenceModel():
             chord_log_probs.append(log_probs)
 
         # TODO: Calculate chord priors for each possible chord range (batched, with CCM)
-
+        chord_classifications = self.get_chord_classifications(chord_ranges, pieces)
 
         # TODO: The remainder of the search must be done one piece at a time
 
@@ -258,7 +258,49 @@ class HarmonicInferenceModel():
 
         return chord_ranges, chord_log_probs
 
+    def get_chord_classifications(
+        self,
+        ranges: List[List[Tuple[int, int]]],
+        pieces: Iterable[Piece]
+    ) -> List[np.array]:
+        """
+        Generate a chord type prior for each potential chord (from ranges).
 
+        Parameters
+        ----------
+        ranges : List[List[Tuple[int, int]]]
+            A List of all possible chord ranges as (start, end) for each piece.
+        pieces : Iterable[Piece]
+            Each Piece for which we want to classify the chords.
+
+        Returns
+        -------
+        classifications : List[List[np.array]]
+            A chord classification prior for each given range.
+        """
+        ccm_dataset = ds.ChordClassificationDataset(pieces, ranges=ranges)
+        ccm_loader = DataLoader(
+            ccm_dataset,
+            batch_size=ds.ChordClassificationDataset.valid_batch_size,
+            shuffle=False,
+        )
+
+        # Get classifications
+        flat_classifications = []
+        for batch in tqdm(ccm_loader, desc="Classifying chords"):
+            flat_classifications.extend(
+                [output.numpy() for output in self.chord_classifier.get_output(batch)]
+            )
+
+        # Re-shape to be the same length as ranges
+        classifications = []
+        piece_start = 0
+        for piece_length in [len(piece_ranges) for piece_ranges in ranges]:
+            classifications.append(flat_classifications[piece_start:piece_start + piece_length])
+            piece_start += piece_length
+        assert piece_start == len(flat_classifications)
+
+        return classifications
 
     def get_chord_change_probs(self, pieces: Iterable[Piece]) -> List[List[float]]:
         """
@@ -281,11 +323,11 @@ class HarmonicInferenceModel():
             shuffle=False,
         )
 
-        outputs = []
-        for batch in ctm_loader:
+        change_probs = []
+        for batch in tqdm(ctm_loader, desc="Calculating chord transition probabilities"):
             batch_outputs, batch_lengths = self.chord_transition_model.get_output(batch)
-            outputs.extend(
+            change_probs.extend(
                 [output[:length].numpy() for output, length in zip(batch_outputs, batch_lengths)]
             )
 
-        return outputs
+        return change_probs

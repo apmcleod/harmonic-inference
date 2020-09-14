@@ -69,7 +69,9 @@ class Note():
 
     def to_vec(
         self,
-        chord = None,
+        chord_onset: Union[float, Tuple[int, Fraction]] = None,
+        chord_offset: Union[float, Tuple[int, Fraction]] = None,
+        chord_duration: Union[float, Fraction] = None,
         measures_df: pd.DataFrame = None,
         min_pitch: Tuple[int, int] = None
     ) -> np.array:
@@ -78,9 +80,19 @@ class Note():
 
         Parameters
         ----------
-        chord : Chord
-            The chord object the vector should be relative to (since we might want relative
-            positions or durations). None to not include chord-relative information in the
+        chord_onset : Union[float, Tuple[int, Fraction]]
+            The onset position of the chord the vector should be relative to (since we might want
+            relative positions or durations). None to not include chord-relative information in the
+            vector.
+
+        chord_offset : Union[float, Tuple[int, Fraction]]
+            The offset position of the chord the vector should be relative to (since we might want
+            relative positions or durations). None to not include chord-relative information in the
+            vector.
+
+        chord_duration : Union[float, Fraction]
+            The duration of the chord the vector should be relative to (since we might want
+            relative positions or durations). None to not include chord-relative information in the
             vector.
 
         measures_df : pd.DataFrame
@@ -120,17 +132,22 @@ class Note():
         vectors.append(offset_level)
 
         # onset, offset, duration as floats, as proportion of chord's range
-        if chord is not None and measures_df is not None:
+        if (
+            chord_onset is not None and
+            chord_offset is not None and
+            chord_duration is not None and
+            measures_df is not None
+        ):
             onset, offset, duration = ru.get_rhythmic_info_as_proportion_of_range(
                 pd.Series({
                     'mc': self.onset[0],
                     'onset': self.onset[1],
                     'duration': self.duration
                 }),
-                chord.onset,
-                chord.offset,
+                chord_onset,
+                chord_offset,
                 measures_df,
-                range_len=chord.duration,
+                range_len=chord_duration,
             )
             metrical = np.array([onset, offset, duration], dtype=float)
             vectors.append(metrical)
@@ -817,7 +834,11 @@ class Piece():
         """
         raise NotImplementedError
 
-    def get_chord_note_inputs(self, window: int = 0) -> np.array:
+    def get_chord_note_inputs(
+        self,
+        window: int = 2,
+        ranges: List[Tuple[int, int]] = None
+    ) -> np.array:
         """
         Get a list of the note input vectors for each chord in this piece, using an optional
         window on both sides. The ith element in the returned array will be an nd-array of
@@ -828,6 +849,9 @@ class Piece():
         window : int
             Add this many neighboring notes to each side of each input tensor. Fill with 0s if
             this goes beyond the bounds of all notes.
+        ranges : List[Tuple[int, int]]
+            A List of chord ranges to use to get the inputs, if not using the ground truth
+            chord symbols themselves.
 
         Returns
         -------
@@ -974,8 +998,15 @@ class ScorePiece(Piece):
     def get_chords(self) -> np.array:
         return self.chords
 
-    def get_chord_note_inputs(self, window: int = 0):
-        def get_chord_note_input(self, chord, onset_index, offset_index):
+    def get_chord_note_inputs(self, window: int = 2, ranges: List[Tuple[int, int]] = None):
+        def get_chord_note_input(
+            self,
+            chord_onset,
+            chord_offset,
+            chord_duration,
+            onset_index,
+            offset_index
+        ):
             # Get the notes within the window
             first_note_index = max(onset_index, 0)
             last_note_index = min(offset_index, len(self.notes))
@@ -984,7 +1015,15 @@ class ScorePiece(Piece):
             # Get all note vectors within the window
             min_pitch = min([(note.octave, note.pitch_class) for note in chord_notes])
             note_vectors = np.vstack(
-                [note.to_vec(chord, self.measures_df, min_pitch) for note in chord_notes]
+                [
+                    note.to_vec(
+                        chord_onset=chord_onset,
+                        chord_offset=chord_offset,
+                        chord_duration=chord_duration,
+                        measures_df=self.measures_df,
+                        min_pitch=min_pitch
+                    ) for note in chord_notes
+                ]
             )
 
             # Place the note vectors within the final tensor and return
@@ -994,14 +1033,41 @@ class ScorePiece(Piece):
             chord_note_input[start:end] = note_vectors
             return chord_note_input
 
-        chord_note_inputs = [
-            get_chord_note_input(self, chord, onset_index - window, offset_index + window)
-            for chord, onset_index, offset_index in zip(
-                self.chords,
-                self.chord_changes,
-                list(self.chord_changes[1:]) + [len(self.notes)],
-            )
-        ]
+        if ranges is None:
+            chord_note_inputs = [
+                get_chord_note_input(
+                    self,
+                    chord.onset,
+                    chord.offset,
+                    chord.duration,
+                    onset_index - window,
+                    offset_index + window
+                ) for chord, onset_index, offset_index in zip(
+                    self.chords,
+                    self.chord_changes,
+                    list(self.chord_changes[1:]) + [len(self.notes)],
+                )
+            ]
+        else:
+            chord_note_inputs = []
+            for onset_index, offset_index in ranges:
+                onset = self.notes[onset_index].onset
+                if offset_index < len(self.notes):
+                    offset = self.notes[offset_index].onset
+                else:
+                    offset = self.chords[-1].offset
+                duration = ru.get_range_length(onset, offset, self.measures_df)
+
+                chord_note_inputs.append(
+                        get_chord_note_input(
+                        self,
+                        onset,
+                        offset,
+                        duration,
+                        onset_index - window,
+                        offset_index + window
+                    ) for onset_index, offset_index in ranges
+                )
 
         return chord_note_inputs
 

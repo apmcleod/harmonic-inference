@@ -2,7 +2,6 @@ from typing import List, Iterable, Union, Tuple, Callable
 from pathlib import Path
 import logging
 import shutil
-import sys
 
 from tqdm import tqdm
 import numpy as np
@@ -12,7 +11,6 @@ from torch.utils.data import Dataset
 
 from harmonic_inference.data.piece import Piece, ScorePiece
 from harmonic_inference.data.data_types import KeyMode
-import harmonic_inference.utils.harmonic_utils as hu
 import harmonic_inference.utils.harmonic_constants as hc
 
 
@@ -166,7 +164,7 @@ class ChordClassificationDataset(HarmonicDataset):
     valid_batch_size = 512
     chunk_size = 1024
 
-    def __init__(self, pieces: List[Piece], transform=None):
+    def __init__(self, pieces: List[Piece], transform=None, ranges=None):
         super().__init__(transform=transform)
         self.targets = np.array([
             chord.get_one_hot_index(relative=False, use_inversion=True)
@@ -174,12 +172,32 @@ class ChordClassificationDataset(HarmonicDataset):
             for chord in piece.get_chords()
         ])
         self.inputs = []
-        for piece in pieces:
-            self.inputs.extend(piece.get_chord_note_inputs(window=2))
+        if ranges is None:
+            ranges = np.full(len(pieces), None)
+        for piece, piece_ranges in zip(pieces, ranges):
+            self.inputs.extend(piece.get_chord_note_inputs(window=2, ranges=piece_ranges))
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
 
     def pad(self):
         self.inputs, self.input_lengths = pad_array(self.inputs)
+
+    @staticmethod
+    def from_ranges(ranges: List[List[Tuple[int, int]]], pieces: List[Piece]):
+        """
+        [summary]
+
+        Parameters
+        ----------
+        ranges : List[List[Tuple[int, int]]]
+            [description]
+        pieces : List[Piece]
+            [description]
+
+        Returns
+        -------
+        [type]
+            [description]
+        """
 
 
 class ChordSequenceDataset(HarmonicDataset):
