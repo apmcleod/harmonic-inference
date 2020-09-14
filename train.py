@@ -16,6 +16,7 @@ import harmonic_inference.models.chord_sequence_models as csm
 import harmonic_inference.models.key_transition_models as ktm
 import harmonic_inference.models.key_sequence_models as ksm
 from harmonic_inference.data.data_types import PitchType, PieceType
+from harmonic_inference.models.joint_model import MODEL_CLASSES
 
 
 if __name__ == '__main__':
@@ -28,7 +29,7 @@ if __name__ == '__main__':
         "-m",
         "--model",
         type=str,
-        choices=['ccm', 'ctm', 'csm', 'ktm', 'ksm'],
+        choices=MODEL_CLASSES.keys(),
         help="The type of model to train.",
         required=True,
     )

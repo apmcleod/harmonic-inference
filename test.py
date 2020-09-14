@@ -7,30 +7,14 @@ import os
 import pickle
 from glob import glob
 
-import numpy as np
 from tqdm import tqdm
-from torch.utils.data import DataLoader
 import h5py
 
-import harmonic_inference.models.chord_classifier_models as ccm
-import harmonic_inference.models.chord_transition_models as ctm
-import harmonic_inference.models.chord_sequence_models as csm
-import harmonic_inference.models.key_transition_models as ktm
-import harmonic_inference.models.key_sequence_models as ksm
-from harmonic_inference.models.joint_model import HarmonicInferenceModel
+from harmonic_inference.models.joint_model import MODEL_CLASSES, HarmonicInferenceModel
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 from harmonic_inference.data.piece import Piece, ScorePiece
-import harmonic_inference.data.datasets as ds
 
 SPLITS = ["train", "valid", "test"]
-
-MODEL_CLASSES = {
-    'ccm': ccm.SimpleChordClassifier,
-    'ctm': ctm.SimpleChordTransitionModel,
-    'csm': csm.SimpleChordSequenceModel,
-    'ktm': ktm.SimpleKeyTransitionModel,
-    'ksm': ksm.SimpleKeySequenceModel,
-}
 
 def evaluate(models: Dict, pieces: Iterable[Piece]):
     model = HarmonicInferenceModel(models)
