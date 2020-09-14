@@ -81,8 +81,8 @@ class HarmonicInferenceModel():
     def __init__(
         self,
         models: Dict,
-        min_change_prob: float = 0.5,
-        max_no_change_prob: float = 0.5
+        min_change_prob: float = 0.2,
+        max_no_change_prob: float = 0.8,
     ):
         """
         Create a new HarmonicInferenceModel from a set of pre-loaded models.
@@ -102,7 +102,7 @@ class HarmonicInferenceModel():
             The maximum probability (from the CTM) on which a chord is allowed not
             to change.
         """
-        for model, model_class in MODEL_CLASSES.keys():
+        for model, model_class in MODEL_CLASSES.items():
             assert model in models.keys(), f"`{model}` not in models dict."
             assert isinstance(models[model], model_class), (
                 f"`{model}` in models dict is not of type {model_class.__name__}."
@@ -115,11 +115,9 @@ class HarmonicInferenceModel():
         self.key_transition_model = models['ktm']
 
         # Ensure all types match
-        # TODO: This block is removed now because of a bug in train.py. Once the ccm is
-        #       retrained, uncomment this assertion.
-        # assert self.chord_classifier.INPUT_TYPE == self.chord_transition_model.INPUT_TYPE, (
-        #     "Chord Classifier input type does not match Chord Transition Model input type"
-        # )
+        assert self.chord_classifier.INPUT_TYPE == self.chord_transition_model.INPUT_TYPE, (
+            "Chord Classifier input type does not match Chord Transition Model input type"
+        )
         assert self.chord_classifier.OUTPUT_TYPE == self.chord_sequence_model.CHORD_TYPE, (
             "Chord Classifier output type does not match Chord Sequence Model chord type"
         )
@@ -226,7 +224,8 @@ class HarmonicInferenceModel():
 
             # Detect any next chord change positions
             running_log_prob = 0.0
-            for index, change_prob, change_log_prob, no_change_log_prob in enumerate(
+            reached_end = True
+            for index, (change_prob, change_log_prob, no_change_log_prob) in enumerate(
                 zip(
                     change_probs[start + 1:],
                     change_log_probs[start + 1:],
@@ -246,10 +245,16 @@ class HarmonicInferenceModel():
 
                     if change_prob > self.max_no_change_prob:
                         # Chord change must occur
+                        reached_end = False
                         break
 
                 # No change can occur
                 running_log_prob += no_change_log_prob
+
+            # Detect if a chord reaches the end of the piece and add it here if so
+            if reached_end:
+                chord_ranges.append((start, len(change_probs)))
+                chord_log_probs.append(running_log_prob)
 
         return chord_ranges, chord_log_probs
 
