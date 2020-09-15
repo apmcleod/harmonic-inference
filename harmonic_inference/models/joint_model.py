@@ -1,4 +1,5 @@
 """Combined models that output a key/chord sequence given an input score, midi, or audio."""
+from fractions import Fraction
 from typing import Iterable, List, Tuple, Dict
 import heapq
 

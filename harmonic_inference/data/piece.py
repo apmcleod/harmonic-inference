@@ -3,6 +3,7 @@ from typing import List, Union, Tuple, Dict
 from fractions import Fraction
 import logging
 import inspect
+from tqdm import tqdm
 
 import pandas as pd
 import numpy as np
@@ -783,6 +784,125 @@ def get_reduction_mask(inputs: List[Union[Chord, Key]], kwargs: Dict = {}) -> Li
     return mask
 
 
+def get_chord_note_input(
+    notes: List[Note],
+    measures_df: pd.DataFrame,
+    chord_onset: Union[float, Tuple[int, Fraction]],
+    chord_offset: Union[float, Tuple[int, Fraction]],
+    chord_duration: Union[float, Fraction],
+    onset_index: int,
+    offset_index: int,
+) -> np.array:
+    """
+    Get an np.array or input vectors relative to a given chord.
+
+    Parameters
+    ----------
+    notes : List[Note]
+        A List of all of the Notes in the Piece.
+    measures_df : pd.DataFrame
+        The measures_df for this particular Piece.
+    chord_onset : Union[float, Tuple[int, Fraction]]
+        The onset location of the chord.
+    chord_offset : Union[float, Tuple[int, Fraction]]
+        The offset location of the chord.
+    chord_duration : Union[float, Fraction]
+        The duration of the chord.
+    onset_index : int
+        The index of the first note to include in the returned vectors. If this is < 0,
+        the first (-onset_index) vectors will contain only 0.
+    offset_index : int
+        The index of the last note to include in the returned vectors. If this is > len(notes),
+        the last (offset_index - len(notes)) vectors will contain only 0.
+
+    Returns
+    -------
+    chord_input : np.array
+        The input note vectors for this chord.
+    """
+    # Get the notes within the window
+    first_note_index = max(onset_index, 0)
+    last_note_index = min(offset_index, len(notes))
+    chord_notes = notes[first_note_index:last_note_index]
+
+    # Get all note vectors within the window
+    min_pitch = min([(note.octave, note.pitch_class) for note in chord_notes])
+    note_vectors = np.vstack(
+        [
+            note.to_vec(
+                chord_onset=chord_onset,
+                chord_offset=chord_offset,
+                chord_duration=chord_duration,
+                measures_df=measures_df,
+                min_pitch=min_pitch
+            ) for note in chord_notes
+        ]
+    )
+
+    # Place the note vectors within the final tensor and return
+    chord_input = np.zeros((offset_index - onset_index, note_vectors.shape[1]))
+    start = 0 + (first_note_index - onset_index)
+    end = len(chord_input) - (offset_index - last_note_index)
+    chord_input[start:end] = note_vectors
+    return chord_input
+
+
+def get_durations(
+    notes: List[Note],
+    last_offset: Tuple[int, Fraction],
+    measures_df: pd.DataFrame,
+    ranges: Tuple[int, int]
+) -> List[Fraction]:
+    """
+    Get the durations of each range in a more efficient manner.
+
+    Parameters
+    ----------
+    notes : List[Note]
+        The input notes of the Piece.
+    last_offset : Tuple[int, Fraction]
+        The last offset of the Piece.
+    measures_df : pd.DataFrame
+        The measures_df of the Piece.
+    ranges : Tuple[int, int]
+        Ranges whose duration to calculate and return, as (start, end) tuples of note indexes.
+
+    Returns
+    -------
+    durations : List[Fraction]
+        The duration of each given range tuple.
+    """
+    cached_durations = dict()
+
+    durations = np.zeros(len(ranges))
+
+    prev_start = -1
+    for start, end in ranges:
+        if start != prev_start:
+            range_start = notes[start].onset
+            range_end = notes[end].onset if end < len(notes) else last_offset
+            duration = ru.get_range_length(range_start, range_end, measures_df)
+
+            prev_start = start
+            cached_durations[start] = (end, duration)
+
+    duration = 0
+    prev_start = -1
+    prev_end = -1
+    for i, (start, end) in enumerate(ranges):
+        if prev_start != start:
+            prev_end, duration = cached_durations[start]
+            prev_start = start
+        else:
+            prev_end, dur = cached_durations[prev_end]
+            duration += dur
+
+        assert prev_end == end
+        durations[i] = duration
+
+    return durations
+
+
 class Piece():
     """
     A single musical piece, which can be from score, midi, or audio.
@@ -797,7 +917,6 @@ class Piece():
         data_type : PieceType
             The data type of the piece.
         """
-        # pylint: disable=invalid-name
         self.DATA_TYPE = data_type
 
     def get_inputs(self) -> np.array:
@@ -999,49 +1118,16 @@ class ScorePiece(Piece):
         return self.chords
 
     def get_chord_note_inputs(self, window: int = 2, ranges: List[Tuple[int, int]] = None):
-        def get_chord_note_input(
-            self,
-            chord_onset,
-            chord_offset,
-            chord_duration,
-            onset_index,
-            offset_index
-        ):
-            # Get the notes within the window
-            first_note_index = max(onset_index, 0)
-            last_note_index = min(offset_index, len(self.notes))
-            chord_notes = self.notes[first_note_index:last_note_index]
-
-            # Get all note vectors within the window
-            min_pitch = min([(note.octave, note.pitch_class) for note in chord_notes])
-            note_vectors = np.vstack(
-                [
-                    note.to_vec(
-                        chord_onset=chord_onset,
-                        chord_offset=chord_offset,
-                        chord_duration=chord_duration,
-                        measures_df=self.measures_df,
-                        min_pitch=min_pitch
-                    ) for note in chord_notes
-                ]
-            )
-
-            # Place the note vectors within the final tensor and return
-            chord_note_input = np.zeros((offset_index - onset_index, note_vectors.shape[1]))
-            start = 0 + (first_note_index - onset_index)
-            end = len(chord_note_input) - (offset_index - last_note_index)
-            chord_note_input[start:end] = note_vectors
-            return chord_note_input
-
         if ranges is None:
             chord_note_inputs = [
                 get_chord_note_input(
-                    self,
+                    self.notes,
+                    self.measures_df,
                     chord.onset,
                     chord.offset,
                     chord.duration,
                     onset_index - window,
-                    offset_index + window
+                    offset_index + window,
                 ) for chord, onset_index, offset_index in zip(
                     self.chords,
                     self.chord_changes,
@@ -1049,24 +1135,29 @@ class ScorePiece(Piece):
                 )
             ]
         else:
+            durations = get_durations(self.notes, self.chords[-1].offset, self.measures_df, ranges)
             chord_note_inputs = []
-            for onset_index, offset_index in ranges:
+            for duration, (onset_index, offset_index) in tqdm(
+                zip(durations, ranges),
+                desc="Generating input vectors for one piece",
+                total=len(ranges),
+            ):
                 onset = self.notes[onset_index].onset
                 if offset_index < len(self.notes):
                     offset = self.notes[offset_index].onset
                 else:
                     offset = self.chords[-1].offset
-                duration = ru.get_range_length(onset, offset, self.measures_df)
 
                 chord_note_inputs.append(
-                        get_chord_note_input(
-                        self,
+                    get_chord_note_input(
+                        self.notes,
+                        self.measures_df,
                         onset,
                         offset,
                         duration,
                         onset_index - window,
-                        offset_index + window
-                    ) for onset_index, offset_index in ranges
+                        offset_index + window,
+                    )
                 )
 
         return chord_note_inputs

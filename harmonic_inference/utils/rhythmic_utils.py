@@ -35,6 +35,7 @@ def get_range_length(
         tmp = range_start
         range_start = range_end
         range_end = tmp
+
     start_mc, start_beat = range_start
     end_mc, end_beat = range_end
 
@@ -103,7 +104,13 @@ def get_rhythmic_info_as_proportion_of_range(
         range_len = get_range_length(range_start, range_end, measures)
 
     duration = note.duration / range_len
-    onset = get_range_length(range_start, (note.mc, note.onset), measures) / range_len
+
+    onset_to_start = abs(note.mc - range_start[0])
+    onset_to_end = abs(note.mc - range_end[0])
+    if onset_to_start <= onset_to_end:
+        onset = get_range_length(range_start, (note.mc, note.onset), measures) / range_len
+    else:
+        onset = 1 - get_range_length((note.mc, note.onset), range_end, measures) / range_len
     offset = onset + duration
 
     return onset, offset, duration

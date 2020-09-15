@@ -166,38 +166,28 @@ class ChordClassificationDataset(HarmonicDataset):
 
     def __init__(self, pieces: List[Piece], transform=None, ranges=None):
         super().__init__(transform=transform)
+
+        if ranges is None:
+            ranges = np.full(len(pieces), None)
+
         self.targets = np.array([
             chord.get_one_hot_index(relative=False, use_inversion=True)
             for piece in pieces
             for chord in piece.get_chords()
         ])
+
         self.inputs = []
-        if ranges is None:
-            ranges = np.full(len(pieces), None)
-        for piece, piece_ranges in zip(pieces, ranges):
+        for piece, piece_ranges in tqdm(
+            zip(pieces, ranges),
+            desc="Generating chord classification inputs",
+            total=len(pieces),
+        ):
             self.inputs.extend(piece.get_chord_note_inputs(window=2, ranges=piece_ranges))
+
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
 
     def pad(self):
         self.inputs, self.input_lengths = pad_array(self.inputs)
-
-    @staticmethod
-    def from_ranges(ranges: List[List[Tuple[int, int]]], pieces: List[Piece]):
-        """
-        [summary]
-
-        Parameters
-        ----------
-        ranges : List[List[Tuple[int, int]]]
-            [description]
-        pieces : List[Piece]
-            [description]
-
-        Returns
-        -------
-        [type]
-            [description]
-        """
 
 
 class ChordSequenceDataset(HarmonicDataset):
