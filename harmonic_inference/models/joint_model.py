@@ -169,11 +169,24 @@ class HarmonicInferenceModel():
         # Calculate valid chord change locations and their probabilities
         chord_ranges = []
         chord_log_probs = []
-        for piece_change_log_probs in tqdm(
-            change_probs,
-            desc="Calculating valid chord change locations"
+        for piece, piece_change_probs in tqdm(
+            zip(pieces, change_probs),
+            desc="Calculating valid chord change locations",
+            total=len(pieces),
         ):
-            ranges, log_probs = self.get_possible_chord_indexes(piece_change_log_probs)
+            first = 0
+            invalid = np.full(len(piece_change_probs), False, dtype=bool)
+            for i, (prev_note, note) in enumerate(
+                zip(piece.get_inputs()[:-1], piece.get_inputs()[1:]),
+                start=1,
+            ):
+                if prev_note.onset == note.onset:
+                    invalid[i] = True
+                else:
+                    if first != i - 1:
+                        piece_change_probs[first] = np.max(piece_change_probs[first:i])
+                    first = i
+            ranges, log_probs = self.get_possible_chord_indexes(piece_change_probs, invalid)
             chord_ranges.append(ranges)
             chord_log_probs.append(log_probs)
 
@@ -187,7 +200,8 @@ class HarmonicInferenceModel():
 
     def get_possible_chord_indexes(
         self,
-        change_probs: List[float]
+        change_probs: List[float],
+        invalid: List[bool],
     ) -> Tuple[List[Tuple[int, int]], List[float]]:
         """
         Get the possible chord changes given a list of chord change probabilities.
@@ -196,6 +210,9 @@ class HarmonicInferenceModel():
         ----------
         change_probs : List[float]
             The probability of a chord change on each input of a single Piece.
+        invalid : List[bool]
+            Boolean list indicating invalid locations for chord changes. Should be False except
+            where a Note's onset is the same as the previous note's onset.
 
         Returns
         -------
@@ -234,6 +251,8 @@ class HarmonicInferenceModel():
                 ),
                 start=start + 1,
             ):
+                if invalid[index]:
+                    continue
 
                 if change_prob > self.min_change_prob:
                     # Chord change can occur
