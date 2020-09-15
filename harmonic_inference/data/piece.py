@@ -3,6 +3,7 @@ from typing import List, Union, Tuple, Dict
 from fractions import Fraction
 import logging
 import inspect
+from tqdm import tqdm
 
 import pandas as pd
 import numpy as np
@@ -1156,7 +1157,11 @@ class ScorePiece(Piece):
             durations = [np.sum(duration_cache[start:end]) for start, end in ranges]
 
             chord_note_inputs = []
-            for duration, (onset_index, offset_index) in zip(durations, ranges):
+            for duration, (onset_index, offset_index) in tqdm(
+                zip(durations, ranges),
+                desc="Generating inputs for piece",
+                total=len(ranges),
+            ):
                 onset = self.notes[onset_index].onset
                 try:
                     offset = self.notes[offset_index].onset
