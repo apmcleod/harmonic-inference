@@ -25,8 +25,7 @@ class HarmonicDataset(Dataset):
     def __len__(self):
         if not self.in_ram:
             with h5py.File(self.h5_path, 'r') as h5_file:
-                length = len(h5_file['inputs'])
-            return length
+                return len(h5_file['inputs'])
         return len(self.inputs)
 
     def __getitem__(self, item):
@@ -170,17 +169,12 @@ class ChordClassificationDataset(HarmonicDataset):
         pieces: List[Piece],
         transform: Callable = None,
         ranges: List[List[Tuple[int, int]]] = None,
+        dummy_targets: bool = False,
     ):
         super().__init__(transform=transform)
 
         if ranges is None:
             ranges = np.full(len(pieces), None)
-
-        self.targets = np.array([
-            chord.get_one_hot_index(relative=False, use_inversion=True)
-            for piece in pieces
-            for chord in piece.get_chords()
-        ])
 
         self.inputs = []
         for piece, piece_ranges in tqdm(
@@ -191,6 +185,15 @@ class ChordClassificationDataset(HarmonicDataset):
             self.inputs.extend(piece.get_chord_note_inputs(window=2, ranges=piece_ranges))
 
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
+
+        if dummy_targets:
+            self.targets = np.zeros(len(self.inputs))
+        else:
+            self.targets = np.array([
+                chord.get_one_hot_index(relative=False, use_inversion=True)
+                for piece in pieces
+                for chord in piece.get_chords()
+            ])
 
     def pad(self):
         self.inputs, self.input_lengths = pad_array(self.inputs)

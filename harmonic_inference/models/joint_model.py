@@ -170,7 +170,7 @@ class HarmonicInferenceModel():
         # Get chord change probabilities (batched, with CTM)
         change_probs = self.get_chord_change_probs(pieces)
 
-        # Calculate valid chord change locations and their probabilities
+        # Calculate valid chord ranges and their probabilities
         chord_ranges = []
         chord_log_probs = []
         for piece, piece_change_probs in tqdm(
@@ -200,7 +200,7 @@ class HarmonicInferenceModel():
             chord_ranges.append(ranges)
             chord_log_probs.append(log_probs)
 
-        # TODO: Calculate chord priors for each possible chord range (batched, with CCM)
+        # Calculate chord priors for each possible chord range (batched, with CCM)
         chord_classifications = self.get_chord_classifications(pieces, chord_ranges)
 
         # TODO: The remainder of the search must be done one piece at a time
@@ -318,7 +318,7 @@ class HarmonicInferenceModel():
         classifications : List[List[np.array]]
             A chord classification prior for each given range.
         """
-        ccm_dataset = ds.ChordClassificationDataset(pieces, ranges=ranges)
+        ccm_dataset = ds.ChordClassificationDataset(pieces, ranges=ranges, dummy_targets=True)
         ccm_loader = DataLoader(
             ccm_dataset,
             batch_size=ds.ChordClassificationDataset.valid_batch_size,

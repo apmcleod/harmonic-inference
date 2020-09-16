@@ -1,4 +1,4 @@
-from typing import Dict, Iterable
+from typing import Dict, List
 from pathlib import Path
 import logging
 import argparse
@@ -16,10 +16,10 @@ from harmonic_inference.data.piece import Piece, ScorePiece
 
 SPLITS = ["train", "valid", "test"]
 
-def evaluate(models: Dict, pieces: Iterable[Piece]):
+def evaluate(models: Dict, pieces: List[Piece]):
     model = HarmonicInferenceModel(models)
 
-    harmonies = model.get_harmonies(pieces)
+    harmonies = model.get_harmonies(pieces[:2])
 
     print(harmonies)
 
