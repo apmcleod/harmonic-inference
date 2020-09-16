@@ -1,3 +1,4 @@
+from fractions import Fraction
 from typing import List, Iterable, Union, Tuple, Callable
 from pathlib import Path
 import logging
@@ -164,7 +165,12 @@ class ChordClassificationDataset(HarmonicDataset):
     valid_batch_size = 512
     chunk_size = 1024
 
-    def __init__(self, pieces: List[Piece], transform=None, ranges=None):
+    def __init__(
+        self,
+        pieces: List[Piece],
+        transform: Callable = None,
+        ranges: List[List[Tuple[int, int]]] = None,
+    ):
         super().__init__(transform=transform)
 
         if ranges is None:

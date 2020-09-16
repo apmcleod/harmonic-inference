@@ -3,8 +3,8 @@ from typing import List, Union, Tuple, Dict
 from fractions import Fraction
 import logging
 import inspect
-from tqdm import tqdm
 
+from tqdm import tqdm
 import pandas as pd
 import numpy as np
 
@@ -881,40 +881,6 @@ def get_chord_note_input(
     return chord_input
 
 
-def get_duration_cache(
-    notes: List[Note],
-    last_offset: Tuple[int, Fraction],
-    measures_df: pd.DataFrame,
-) -> List[Fraction]:
-    """
-    Get the durations cache, which stores the distance between each consecutive pair of
-    notes in the given list.
-
-    Parameters
-    ----------
-    notes : List[Note]
-        The input notes of the Piece.
-    last_offset : Tuple[int, Fraction]
-        The last offset of the Piece.
-    measures_df : pd.DataFrame
-        The measures_df of the Piece.
-
-    Returns
-    -------
-    duration_cache : np.array
-        The duration from each note's onset time to the next note's onset time.
-    """
-    fake_last_note = Note(0, 0, last_offset, 0, Fraction(0), (0, Fraction(0)), 0, PitchType.TPC)
-    duration_cache = np.array(
-        [
-            ru.get_range_length(prev_note.onset, next_note.onset, measures_df)
-            for prev_note, next_note in zip(notes, list(notes[1:]) + [fake_last_note])
-        ]
-    )
-
-    return duration_cache
-
-
 class Piece():
     """
     A single musical piece, which can be from score, midi, or audio.
@@ -968,7 +934,7 @@ class Piece():
     def get_chord_note_inputs(
         self,
         window: int = 2,
-        ranges: List[Tuple[int, int]] = None
+        ranges: List[Tuple[int, int]] = None,
     ) -> np.array:
         """
         Get a list of the note input vectors for each chord in this piece, using an optional
@@ -988,6 +954,20 @@ class Piece():
         -------
         chord_inputs : np.array
             The input note tensor for each chord in this piece.
+        """
+        raise NotImplementedError
+
+    def get_duration_cache(self) -> np.array:
+        """
+        Get a List of the distance from the onset of each input of this Piece to the
+        following input. The last value will be the distance from the onset of the last
+        input to the offset of the last chord.
+
+        Returns
+        -------
+        duration_cache : np.array[Fraction]
+            A list of the distance from the onset of each input to the onset of the
+            following input.
         """
         raise NotImplementedError
 
@@ -1120,6 +1100,22 @@ class ScorePiece(Piece):
             self.chord_changes = np.array(piece_dict['chord_changes'])
             self.key_changes = np.array(piece_dict['key_changes'])
 
+    def get_duration_cache(self):
+        if not hasattr(self, 'duration_cache'):
+            fake_last_note = Note(
+                0, 0, self.chords[-1].offset, 0, Fraction(0), (0, Fraction(0)), 0, PitchType.TPC
+            )
+
+            self.duration_cache = np.array(
+                [
+                    ru.get_range_length(prev_note.onset, next_note.onset, self.measures_df)
+                    for prev_note, next_note in
+                    zip(self.notes, list(self.notes[1:]) + [fake_last_note])
+                ]
+            )
+
+        return self.duration_cache
+
     def get_inputs(self) -> np.array:
         return self.notes
 
@@ -1149,11 +1145,7 @@ class ScorePiece(Piece):
             ]
         else:
             last_offset = self.chords[-1].offset
-            duration_cache = get_duration_cache(
-                self.notes,
-                last_offset,
-                self.measures_df,
-            )
+            duration_cache = self.get_duration_cache()
             durations = [np.sum(duration_cache[start:end]) for start, end in ranges]
 
             chord_note_inputs = []

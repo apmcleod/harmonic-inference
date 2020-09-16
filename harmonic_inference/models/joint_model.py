@@ -1,6 +1,6 @@
 """Combined models that output a key/chord sequence given an input score, midi, or audio."""
 from fractions import Fraction
-from typing import Iterable, List, Tuple, Dict
+from typing import List, Tuple, Dict
 import heapq
 
 from torch.utils.data.dataloader import DataLoader
@@ -12,7 +12,7 @@ import harmonic_inference.models.chord_sequence_models as csm
 import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
-from harmonic_inference.data.piece import Chord, Piece, get_duration_cache
+from harmonic_inference.data.piece import Chord, Piece
 import harmonic_inference.data.datasets as ds
 
 
@@ -84,7 +84,7 @@ class HarmonicInferenceModel():
         models: Dict,
         min_change_prob: float = 0.2,
         max_no_change_prob: float = 0.8,
-        max_chord_length: Fraction = Fraction(12),
+        max_chord_length: Fraction = Fraction(8),
     ):
         """
         Create a new HarmonicInferenceModel from a set of pre-loaded models.
@@ -148,14 +148,14 @@ class HarmonicInferenceModel():
 
     def get_harmonies(
         self,
-        pieces: Iterable[Piece]
+        pieces: List[Piece]
     ) -> Tuple[List[List[Tuple[int, Chord]]], List[List[Tuple[int, Chord]]]]:
         """
         Run the model on the given pieces and output the harmony of them.
 
         Parameters
         ----------
-        pieces : Iterable[Piece]
+        pieces : List[Piece]
             A List of Pieces to perform harmonic inference on.
 
         Returns
@@ -173,7 +173,6 @@ class HarmonicInferenceModel():
         # Calculate valid chord change locations and their probabilities
         chord_ranges = []
         chord_log_probs = []
-        duration_caches = []
         for piece, piece_change_probs in tqdm(
             zip(pieces, change_probs),
             desc="Calculating valid chord change locations",
@@ -192,23 +191,17 @@ class HarmonicInferenceModel():
                         piece_change_probs[first] = np.max(piece_change_probs[first:i])
                     first = i
 
-            duration_cache = get_duration_cache(
-                piece.get_inputs(),
-                piece.get_chords()[-1].offset,
-                piece.measures_df,
-            )
             ranges, log_probs = self.get_possible_chord_indexes(
                 piece_change_probs,
                 invalid,
-                duration_cache,
+                piece.get_duration_cache(),
             )
 
             chord_ranges.append(ranges)
             chord_log_probs.append(log_probs)
-            duration_caches.append(duration_cache)
 
         # TODO: Calculate chord priors for each possible chord range (batched, with CCM)
-        chord_classifications = self.get_chord_classifications(chord_ranges, pieces)
+        chord_classifications = self.get_chord_classifications(pieces, chord_ranges)
 
         # TODO: The remainder of the search must be done one piece at a time
 
@@ -219,7 +212,7 @@ class HarmonicInferenceModel():
         self,
         change_probs: List[float],
         invalid: List[bool],
-        duration_cache: np.array
+        duration_cache: List[Fraction],
     ) -> Tuple[List[Tuple[int, int]], List[float]]:
         """
         Get the possible chord changes given a list of chord change probabilities.
@@ -231,6 +224,8 @@ class HarmonicInferenceModel():
         invalid : List[bool]
             Boolean list indicating invalid locations for chord changes. Should be False except
             where a Note's onset is the same as the previous note's onset.
+        duration_cache : List[Fraction]
+            A List of the duration from each input to the following input.
 
         Returns
         -------
@@ -240,8 +235,6 @@ class HarmonicInferenceModel():
         chord_log_probs : List[float]
             The log probability of each chord range occurring, according to the input
             change_probs.
-        duration_cache : np.array
-            An array of the duration between each note's onset and the following note's onset.
         """
         change_log_probs = np.log(change_probs)
         no_change_log_probs = np.log(1 - change_probs)
@@ -307,18 +300,18 @@ class HarmonicInferenceModel():
 
     def get_chord_classifications(
         self,
+        pieces: List[Piece],
         ranges: List[List[Tuple[int, int]]],
-        pieces: Iterable[Piece]
     ) -> List[np.array]:
         """
         Generate a chord type prior for each potential chord (from ranges).
 
         Parameters
         ----------
+        pieces : List[Piece]
+            Each Piece for which we want to classify the chords.
         ranges : List[List[Tuple[int, int]]]
             A List of all possible chord ranges as (start, end) for each piece.
-        pieces : Iterable[Piece]
-            Each Piece for which we want to classify the chords.
 
         Returns
         -------
@@ -349,13 +342,13 @@ class HarmonicInferenceModel():
 
         return classifications
 
-    def get_chord_change_probs(self, pieces: Iterable[Piece]) -> List[List[float]]:
+    def get_chord_change_probs(self, pieces: List[Piece]) -> List[List[float]]:
         """
         Get the Chord Transition Model's outputs for the given pieces.
 
         Parameters
         ----------
-        pieces : Iterable[Piece]
+        pieces : List[Piece]
             The Pieces whose CTM outputs to return.
 
         Returns
