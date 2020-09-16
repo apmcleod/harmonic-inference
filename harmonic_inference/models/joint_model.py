@@ -136,8 +136,8 @@ class HarmonicInferenceModel:
     def __init__(
         self,
         models: Dict,
-        min_change_prob: float = 0.2,
-        max_no_change_prob: float = 0.8,
+        min_change_prob: float = 0.5,
+        max_no_change_prob: float = 0.5,
         max_chord_length: Fraction = Fraction(8),
         beam_size: int = 500,
     ):
@@ -236,6 +236,9 @@ class HarmonicInferenceModel:
         # Calculate chord priors for each possible chord range (batched, with CCM)
         logging.info("Classifying chords")
         chord_classifications = self.get_chord_classifications(piece, chord_ranges)
+
+        naive_chords = self.naive_chords(chord_ranges, chord_log_probs, chord_classifications)
+        print(naive_chords)
 
         # Iterative beam search for other modules
         logging.info("Performing iterative beam search")
@@ -413,6 +416,36 @@ class HarmonicInferenceModel:
             )
 
         return classifications
+
+    def naive_chords(
+        self,
+        chord_ranges: List[Tuple[int, int]],
+        chord_log_probs: List[float],
+        chord_classifications: List[np.array],
+    ) -> List[int]:
+        """
+        [summary]
+
+        Parameters
+        ----------
+        chord_ranges : List[Tuple[int, int]]
+            [description]
+        chord_log_probs : List[float]
+            [description]
+        chord_classifications : List[np.array]
+            [description]
+
+        Returns
+        -------
+        chords : List[int]
+            [description]
+        """
+        priors = np.zeros((chord_ranges[-1][1], len(chord_classifications[0])))
+
+        for (start, end), prior in tqdm(zip(chord_ranges, chord_classifications)):
+            priors[start:end] += prior
+
+        return np.argmax(priors, axis=1)
 
     def beam_search(
         self,
