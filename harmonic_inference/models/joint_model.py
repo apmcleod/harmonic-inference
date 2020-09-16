@@ -206,7 +206,7 @@ class HarmonicInferenceModel():
         # TODO: The remainder of the search must be done one piece at a time
 
 
-        return chord_ranges, chord_log_probs
+        return chord_ranges, chord_log_probs, chord_classifications
 
     def get_possible_chord_indexes(
         self,
