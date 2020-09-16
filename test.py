@@ -19,7 +19,10 @@ SPLITS = ["train", "valid", "test"]
 def evaluate(models: Dict, pieces: List[Piece]):
     model = HarmonicInferenceModel(models)
 
-    harmonies = model.get_harmonies(pieces)
+    harmonies = [
+        model.get_harmony(piece)
+        for piece in tqdm(pieces, desc="Getting harmony for pieces")
+    ]
 
     print(harmonies)
 

@@ -1151,7 +1151,7 @@ class ScorePiece(Piece):
             chord_note_inputs = []
             for duration, (onset_index, offset_index) in tqdm(
                 zip(durations, ranges),
-                desc="Generating inputs for piece",
+                desc="Generating chord classification inputs",
                 total=len(ranges),
             ):
                 onset = self.notes[onset_index].onset

@@ -177,11 +177,7 @@ class ChordClassificationDataset(HarmonicDataset):
             ranges = np.full(len(pieces), None)
 
         self.inputs = []
-        for piece, piece_ranges in tqdm(
-            zip(pieces, ranges),
-            desc="Generating chord classification inputs",
-            total=len(pieces),
-        ):
+        for piece, piece_ranges in zip(pieces, ranges):
             self.inputs.extend(piece.get_chord_note_inputs(window=2, ranges=piece_ranges))
 
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
