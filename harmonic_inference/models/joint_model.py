@@ -3,6 +3,7 @@ from fractions import Fraction
 from typing import List, Tuple, Dict
 import logging
 import heapq
+from collections import defaultdict
 
 from torch.utils.data.dataloader import DataLoader
 from tqdm import tqdm
@@ -13,7 +14,7 @@ import harmonic_inference.models.chord_sequence_models as csm
 import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
-from harmonic_inference.data.piece import Chord, Piece
+from harmonic_inference.data.piece import Chord, Key, Piece
 import harmonic_inference.data.datasets as ds
 
 
@@ -25,58 +26,110 @@ MODEL_CLASSES = {
     'ksm': ksm.SimpleKeySequenceModel,
 }
 
-class Beam():
+
+class State:
     """
-    A Beam to perform beam search.
+    The state used during the model's beam search.
     """
-    def __init__(self, beam_size: int):
-        self.beam_size = beam_size
-        self.beam = []
-
-    def __len__(self):
-        return len(self.beam)
-
-    def __iter__(self):
-        return self.beam.__iter__()
-
-    def add(self, state):
+    def __init__(
+        self,
+        chord_changes: List[int] = None,
+        key_changes: List[int] = None,
+        chords: List[int] = None,
+        keys: List[int] = None,
+        log_prob: float = 0.0,
+        most_recent_chord_log_prob: float = 0.0,
+    ):
         """
-        Add the given state to this Beam.
+        [summary]
 
         Parameters
         ----------
-        state
-            The state of a HarmonicInferenceModel to add to this Beam.
+        chord_changes : List[int]
+            [description]
+        key_changes : List[int]
+            [description]
+        chords : List[int]
+            [description]
+        keys : List[int]
+            [description]
+        log_prob : float
+            [description]
+        most_recent_chord_log_prob : float
+            [description]
         """
-        self.beam.append(state)
+        self.chord_changes = [0] if chord_changes is None else chord_changes.copy()
+        self.key_changes = [0] if key_changes is None else key_changes.copy()
+        self.chords = [] if chords is None else chords.copy()
+        self.keys = [] if keys is None else keys.copy()
 
-    def get_top_state(self):
+        self.log_prob = log_prob
+        self.most_recent_chord_log_prob = most_recent_chord_log_prob
+
+    def chord_transition(
+        self,
+        chord: int,
+        change_index: int,
+        change_log_prob: float,
+        chord_log_prob: float,
+    ):
         """
-        Get the most probable state from this beam.
+        [summary]
+
+        Parameters
+        ----------
+        chord : int
+            [description]
+        change_index : int
+            [description]
+        change_log_prob : float
+            [description]
+        chord_log_prob : float
+            [description]
 
         Returns
         -------
-        top_state : State
-            The most probable state from the beam.
+        new_state : State
+            [description]
         """
-        best_state = None
-        best_prob = float("-infinity")
+        return State(
+            self.chord_changes + [change_index],
+            self.key_changes,
+            self.chords + [chord],
+            self.keys,
+            self.log_prob + change_log_prob + chord_log_prob,
+            chord_log_prob,
+        )
 
-        for state in self.beam:
-            if state['log_prob'] > best_prob:
-                best_state = state
-                best_prob = state['log_prob']
-
-        return best_state
-
-    def cut_to_size(self):
+    def key_transition(self, key: int, log_prob: float):
         """
-        Cut this beam down to the desired beam_size (set in __init__()).
+        [summary]
+
+        Parameters
+        ----------
+        key : int
+            [description]
+        log_prob : float
+            [description]
+
+        Returns
+        -------
+        new_state : State
+            [description]
         """
-        self.beam = sorted(self.beam, key=lambda s: s['log_prob'], reverse=True)[:self.beam_size]
+        return State(
+            self.chord_changes,
+            self.key_changes + [self.chord_changes[-2]],
+            self.chords,
+            self.keys + [key],
+            self.log_prob - self.most_recent_chord_log_prob + log_prob,
+        )
+
+    def __lt__(self, other):
+        return self.log_prob < other.log_prob
 
 
-class HarmonicInferenceModel():
+class HarmonicInferenceModel:
     """
     A model to perform harmonic inference on an input score, midi, or audio piece.
     """
@@ -86,6 +139,7 @@ class HarmonicInferenceModel():
         min_change_prob: float = 0.2,
         max_no_change_prob: float = 0.8,
         max_chord_length: Fraction = Fraction(8),
+        beam_size: int = 500,
     ):
         """
         Create a new HarmonicInferenceModel from a set of pre-loaded models.
@@ -106,6 +160,8 @@ class HarmonicInferenceModel():
             to change.
         max_chord_length : Fraction
             The maximum length for a chord generated by this model.
+        beam_size : int
+            The beam size to use for decoding with this model.
         """
         for model, model_class in MODEL_CLASSES.items():
             assert model in models.keys(), f"`{model}` not in models dict."
@@ -146,11 +202,12 @@ class HarmonicInferenceModel():
         self.min_change_prob = min_change_prob
         self.max_no_change_prob = max_no_change_prob
         self.max_chord_length = max_chord_length
+        self.beam_size = beam_size
 
     def get_harmony(
         self,
         piece: Piece,
-    ) -> Tuple[List[Tuple[int, Chord]], List[Tuple[int, Chord]]]:
+    ) -> Tuple[List[Tuple[int, Chord]], List[Tuple[int, Key]]]:
         """
         Run the model on a piece and output its harmony.
 
@@ -180,10 +237,16 @@ class HarmonicInferenceModel():
         logging.info("Classifying chords")
         chord_classifications = self.get_chord_classifications(piece, chord_ranges)
 
-        # TODO: Iterative beam search for other modules
+        # Iterative beam search for other modules
+        logging.info("Performing iterative beam search")
+        chords, keys = self.beam_search(
+            piece,
+            chord_ranges,
+            chord_log_probs,
+            chord_classifications,
+        )
 
-
-        return chord_ranges, chord_log_probs, chord_classifications
+        return chords, keys
 
     def get_chord_change_probs(self, piece: Piece) -> List[float]:
         """
@@ -236,6 +299,10 @@ class HarmonicInferenceModel():
             For each chord range, it's log-probability, including its end change, but not its
             start change.
         """
+        chord_ranges = []
+        chord_log_probs = []
+        duration_cache = piece.get_duration_cache()
+
         # Invalid masks all but first note at each onset position
         first = 0
         invalid = np.full(len(change_probs), False, dtype=bool)
@@ -253,10 +320,6 @@ class HarmonicInferenceModel():
         # Log everything vectorized
         change_log_probs = np.log(change_probs)
         no_change_log_probs = np.log(1 - change_probs)
-
-        chord_ranges = []
-        chord_log_probs = []
-        duration_cache = piece.get_duration_cache()
 
         # Starts is a priority queue so that we don't double-check any intervals
         starts = [0]
@@ -350,3 +413,68 @@ class HarmonicInferenceModel():
             )
 
         return classifications
+
+    def beam_search(
+        self,
+        piece: Piece,
+        chord_ranges: List[Tuple[int, int]],
+        chord_log_probs: List[float],
+        chord_classifications: List[np.array],
+    ) -> Tuple[List[Tuple[int, Chord]], List[Tuple[int, Key]]]:
+        """
+        Perform a beam search over the given Piece to label its Chords and Keys.
+
+        Parameters
+        ----------
+        piece : Piece
+            The Piece to beam search over.
+        chord_ranges : List[Tuple[int, int]]
+            A List of possible chord ranges, as (start, end) tuples.
+        chord_log_probs : List[float]
+            The log probability of each chord ranges in chord_ranges.
+        chord_classifications : List[np.array]
+            The prior distribution over all chord types for each given chord range.
+
+        Returns
+        -------
+        chords : List[Tuple[int, Chord]]
+            [description]
+        keys : List[Tuple[int, Key]]
+            [description]
+        """
+        # Dict mapping start of chord to (end, log_prob, prior) tuple
+        chord_ranges_dict = defaultdict(list)
+        for (start, end), log_prob, prior in zip(
+            chord_ranges,
+            chord_log_probs,
+            chord_classifications,
+        ):
+            chord_ranges_dict[start].append((end, log_prob, prior))
+
+        all_states = [[] for _ in range(len(piece.get_inputs()) + 1)]
+        all_states[0] = [State()]
+
+        for current_start, current_states in tqdm(
+            enumerate(all_states[:-1]),
+            desc="Beam searching through inputs",
+            total=len(all_states) - 1,
+        ):
+            if len(current_states) > self.beam_size:
+                current_states = sorted(current_states, reverse=True)[:self.beam_size]
+
+            all_states[current_start] = []
+            for state in current_states:
+                for range_end, range_log_prob, chord_prior in chord_ranges_dict[current_start]:
+                    for chord, prior in enumerate(chord_prior):
+                        all_states[range_end].append(
+                            state.chord_transition(chord, range_end, range_log_prob, prior)
+                        )
+
+        # Find and return best state
+        best_log_prob, best_state = all_states[-1][0]
+        for log_prob, state in all_states[-1][1:]:
+            if log_prob > best_log_prob:
+                best_log_prob = log_prob
+                best_state = state
+
+        return best_state
