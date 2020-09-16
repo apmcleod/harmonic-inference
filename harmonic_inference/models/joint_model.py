@@ -148,7 +148,7 @@ class HarmonicInferenceModel():
 
     def get_harmonies(
         self,
-        pieces: List[Piece]
+        pieces: List[Piece],
     ) -> Tuple[List[List[Tuple[int, Chord]]], List[List[Tuple[int, Chord]]]]:
         """
         Run the model on the given pieces and output the harmony of them.
@@ -171,13 +171,81 @@ class HarmonicInferenceModel():
         change_probs = self.get_chord_change_probs(pieces)
 
         # Calculate valid chord ranges and their probabilities
+        chord_ranges, chord_log_probs = self.get_chord_ranges(pieces, change_probs)
+
+        # Calculate chord priors for each possible chord range (batched, with CCM)
+        chord_classifications = self.get_chord_classifications(pieces, chord_ranges)
+
+        # TODO: The remainder of the search must be done one piece at a time
+
+
+        return chord_ranges, chord_log_probs, chord_classifications
+
+    def get_chord_change_probs(self, pieces: List[Piece]) -> List[List[float]]:
+        """
+        Get the Chord Transition Model's outputs for the given pieces.
+
+        Parameters
+        ----------
+        pieces : List[Piece]
+            The Pieces whose CTM outputs to return.
+
+        Returns
+        -------
+        change_probs : List[List[float]]
+            A List of the chord change probability on each input of each of the given Pieces.
+        """
+        ctm_dataset = ds.ChordTransitionDataset(pieces)
+        ctm_loader = DataLoader(
+            ctm_dataset,
+            batch_size=ds.ChordTransitionDataset.valid_batch_size,
+            shuffle=False,
+        )
+
+        change_probs = []
+        for batch in tqdm(ctm_loader, desc="Calculating chord transition probabilities"):
+            batch_outputs, batch_lengths = self.chord_transition_model.get_output(batch)
+            change_probs.extend(
+                [output[:length].numpy() for output, length in zip(batch_outputs, batch_lengths)]
+            )
+
+        return change_probs
+
+    def get_chord_ranges(
+        self,
+        pieces: List[Piece],
+        change_probs: List[List[float]],
+    ) -> Tuple[List[List[Tuple[int, int]]], List[List[float]]]:
+        """
+        Get all possible chord ranges and their log-probability, given a list of pieces
+        and the chord change probabilities for each input in each Piece.
+
+        Parameters
+        ----------
+        pieces : List[Piece]
+            The Pieces whose chord ranges to return.
+        change_probs : List[List[float]]
+            For each Piece, the probability of a chord change occurring on each input.
+
+        Returns
+        -------
+        chord_ranges : List[List[Tuple[int, int]]]
+            For each Piece, a List of possible chord ranges, as (start, end) tuples
+            representing the start (inclusive) and end (exclusive) points of each possible
+            range.
+        chord_log_probs : List[List[float]]
+            For each chord range, it's log-probability, including its end change, but not its
+            start change.
+        """
         chord_ranges = []
         chord_log_probs = []
+
         for piece, piece_change_probs in tqdm(
             zip(pieces, change_probs),
             desc="Calculating valid chord change locations",
             total=len(pieces),
         ):
+            # Invalid masks all but first note at each position
             first = 0
             invalid = np.full(len(piece_change_probs), False, dtype=bool)
             for i, (prev_note, note) in enumerate(
@@ -200,13 +268,7 @@ class HarmonicInferenceModel():
             chord_ranges.append(ranges)
             chord_log_probs.append(log_probs)
 
-        # Calculate chord priors for each possible chord range (batched, with CCM)
-        chord_classifications = self.get_chord_classifications(pieces, chord_ranges)
-
-        # TODO: The remainder of the search must be done one piece at a time
-
-
-        return chord_ranges, chord_log_probs, chord_classifications
+        return chord_ranges, chord_log_probs
 
     def get_possible_chord_indexes(
         self,
@@ -262,7 +324,7 @@ class HarmonicInferenceModel():
                     change_probs[start + 1:],
                     change_log_probs[start + 1:],
                     no_change_log_probs[start + 1:],
-                    duration_cache[start:]
+                    duration_cache[start:]  # Off-by-one because cache is dur to next note
                 ),
                 start=start + 1,
             ):
@@ -341,33 +403,3 @@ class HarmonicInferenceModel():
         assert piece_start == len(flat_classifications)
 
         return classifications
-
-    def get_chord_change_probs(self, pieces: List[Piece]) -> List[List[float]]:
-        """
-        Get the Chord Transition Model's outputs for the given pieces.
-
-        Parameters
-        ----------
-        pieces : List[Piece]
-            The Pieces whose CTM outputs to return.
-
-        Returns
-        -------
-        change_probs : List[List[float]]
-            A List of the chord change probability on each input of each of the given Pieces.
-        """
-        ctm_dataset = ds.ChordTransitionDataset(pieces)
-        ctm_loader = DataLoader(
-            ctm_dataset,
-            batch_size=ds.ChordTransitionDataset.valid_batch_size,
-            shuffle=False,
-        )
-
-        change_probs = []
-        for batch in tqdm(ctm_loader, desc="Calculating chord transition probabilities"):
-            batch_outputs, batch_lengths = self.chord_transition_model.get_output(batch)
-            change_probs.extend(
-                [output[:length].numpy() for output, length in zip(batch_outputs, batch_lengths)]
-            )
-
-        return change_probs
