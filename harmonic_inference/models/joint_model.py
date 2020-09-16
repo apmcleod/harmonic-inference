@@ -136,8 +136,8 @@ class HarmonicInferenceModel:
     def __init__(
         self,
         models: Dict,
-        min_change_prob: float = 0.5,
-        max_no_change_prob: float = 0.5,
+        min_change_prob: float = 0.25,
+        max_no_change_prob: float = 0.75,
         max_chord_length: Fraction = Fraction(8),
         beam_size: int = 500,
     ):
