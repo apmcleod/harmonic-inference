@@ -139,7 +139,7 @@ class State:
             return [], [self.change_index]
 
         chords, changes = self.prev_state.get_chords()
-        chords.append(self.self.chord)
+        chords.append(self.chord)
         changes.append(self.change_index)
 
         return chords, changes
@@ -498,15 +498,16 @@ class HarmonicInferenceModel:
         """
         # Dict mapping start of chord to (end, log_prob, prior) tuple
         chord_ranges_dict = defaultdict(list)
-        for (start, end), range_log_prob, prior, prior_argsort in zip(
+        for (start, end), range_log_prob, log_prior, prior, prior_argsort in zip(
             chord_ranges,
             chord_log_probs,
             chord_classifications,
-            # Negative sorts descending. argpartition instead of argsort because we just want
-            # the top self.branching_factor priors, but we don't care about the order
-            np.argpartition(-np.array(chord_classifications), self.branching_factor),
+            np.exp(chord_classifications),
+            np.argsort(-np.array(chord_classifications)),  # Negative to sort descending
         ):
-            chord_ranges_dict[start].append((end, range_log_prob, prior, prior_argsort))
+            chord_ranges_dict[start].append(
+                (end, range_log_prob, log_prior, prior, prior_argsort)
+            )
 
         all_states = [[] for _ in range(len(piece.get_inputs()) + 1)]
         all_states[0] = [State()]
@@ -525,14 +526,25 @@ class HarmonicInferenceModel:
             all_states[current_start] = []
             for state in current_states:
                 for range_data in chord_ranges_dict[current_start]:
-                    range_end, range_log_prob, chord_priors, chord_priors_argsort = range_data
+                    (
+                        range_end,
+                        range_log_prob,
+                        chord_log_priors,
+                        chord_priors,
+                        chord_priors_argsort
+                     ) = range_data
 
                     # Branch on the top self.branching_factor chords
-                    for chord_id in chord_priors_argsort[:self.branching_factor]:
+                    sum_branch_prob = 0.0
+                    for chord_id in chord_priors_argsort[:self.max_branching_factor]:
                         all_states[range_end].append(
                             state.chord_transition(
-                                chord_id, range_end, range_log_prob + chord_priors[chord_id]
+                                chord_id, range_end, range_log_prob + chord_log_priors[chord_id]
                             )
                         )
+
+                        sum_branch_prob += chord_priors[chord_id]
+                        if sum_branch_prob >= self.target_branch_prob:
+                            break
 
         return max(all_states[-1])
