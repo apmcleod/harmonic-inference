@@ -33,7 +33,7 @@ class Beam:
     """
     def __init__(self, beam_size):
         self.beam_size = beam_size
-        self.beam = heapq.heapify([])
+        self.beam = []
 
     def fits_in_beam(self, state):
         return len(self.beam) < self.beam_size and self.beam[0] < state
@@ -589,7 +589,7 @@ class HarmonicInferenceModel:
                             # Disallow self-transitions
                             continue
 
-                        all_states[range_end].add(
+                        next_beam.add(
                             state.chord_transition(
                                 chord_id, range_end, range_log_prob + chord_log_priors[chord_id]
                             )
@@ -597,4 +597,4 @@ class HarmonicInferenceModel:
 
             current_states.empty()
 
-        return max(all_states[-1])
+        return all_states[-1].get_top_state()
