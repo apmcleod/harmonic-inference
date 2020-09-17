@@ -27,6 +27,34 @@ MODEL_CLASSES = {
 }
 
 
+class Beam:
+    """
+    Beam class for beam search.
+    """
+    def __init__(self, beam_size):
+        self.beam_size = beam_size
+        self.beam = heapq.heapify([])
+
+    def fits_in_beam(self, state):
+        return len(self.beam) < self.beam_size and self.beam[0] < state
+
+    def add(self, state):
+        if len(self.beam) == self.beam_size:
+            if self.beam[0] < state:
+                heapq.heappushpop(self.beam, state)
+        else:
+            heapq.heappush(self.beam, state)
+
+    def get_top_state(self):
+        return max(self.beam)
+
+    def empty(self):
+        self.beam = []
+
+    def __iter__(self):
+        return self.beam.__iter__()
+
+
 class State:
     """
     The state used during the model's beam search.
@@ -496,55 +524,77 @@ class HarmonicInferenceModel:
         keys : List[Tuple[int, Key]]
             [description]
         """
-        # Dict mapping start of chord to (end, log_prob, prior) tuple
+        # Dict mapping start of chord range to list of data tuples
         chord_ranges_dict = defaultdict(list)
-        for (start, end), range_log_prob, log_prior, prior, prior_argsort in zip(
+
+        priors = np.exp(chord_classifications)
+        priors_argsort = np.argsort(-priors)  # Negative to sort descending
+        max_indexes = np.clip(
+            np.argmax(
+                np.cumsum(
+                    np.take_along_axis(priors, priors_argsort, -1),
+                    axis=-1,
+                ) >= self.target_branch_prob,
+                axis=-1,
+            ) + 1,
+            1,
+            self.max_branching_factor,
+        )
+        for (start, end), range_log_prob, log_prior, prior_argsort, max_index in zip(
             chord_ranges,
             chord_log_probs,
             chord_classifications,
-            np.exp(chord_classifications),
-            np.argsort(-np.array(chord_classifications)),  # Negative to sort descending
+            priors_argsort,
+            max_indexes,
         ):
             chord_ranges_dict[start].append(
-                (end, range_log_prob, log_prior, prior, prior_argsort)
+                (
+                    end,
+                    range_log_prob,
+                    log_prior,
+                    prior_argsort,
+                    max_index,
+                )
             )
 
-        all_states = [[] for _ in range(len(piece.get_inputs()) + 1)]
-        all_states[0] = [State()]
+        all_states = [Beam(self.beam_size) for _ in range(len(piece.get_inputs()) + 1)]
+        all_states[0].add(State())
 
         for current_start, current_states in tqdm(
             enumerate(all_states[:-1]),
             desc="Beam searching through inputs",
             total=len(all_states) - 1,
         ):
-            if len(current_states) > self.beam_size:
-                current_states = np.partition(
-                    current_states,
-                    len(current_states) - self.beam_size,
-                )[-self.beam_size:]
-
-            all_states[current_start] = []
             for state in current_states:
                 for range_data in chord_ranges_dict[current_start]:
                     (
                         range_end,
                         range_log_prob,
                         chord_log_priors,
-                        chord_priors,
-                        chord_priors_argsort
+                        chord_priors_argsort,
+                        max_index,
                      ) = range_data
 
-                    # Branch on the top self.branching_factor chords
-                    sum_branch_prob = 0.0
-                    for chord_id in chord_priors_argsort[:self.max_branching_factor]:
-                        all_states[range_end].append(
+                    next_beam = all_states[range_end]
+                    if not next_beam.fits_in_beam(state):
+                        continue
+
+                    # Ensure each state branches at least once
+                    if max_index == 1 and chord_priors_argsort[0] == state.chord:
+                        max_index = 2
+
+                    # Branch
+                    for chord_id in chord_priors_argsort[:max_index]:
+                        if chord_id == state.chord:
+                            # Disallow self-transitions
+                            continue
+
+                        all_states[range_end].add(
                             state.chord_transition(
                                 chord_id, range_end, range_log_prob + chord_log_priors[chord_id]
                             )
                         )
 
-                        sum_branch_prob += chord_priors[chord_id]
-                        if sum_branch_prob >= self.target_branch_prob:
-                            break
+            current_states.empty()
 
         return max(all_states[-1])
