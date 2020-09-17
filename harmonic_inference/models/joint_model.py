@@ -36,7 +36,7 @@ class Beam:
         self.beam = []
 
     def fits_in_beam(self, state):
-        return len(self.beam) < self.beam_size and self.beam[0] < state
+        return len(self.beam) < self.beam_size or self.beam[0] < state
 
     def add(self, state):
         if len(self.beam) == self.beam_size:
