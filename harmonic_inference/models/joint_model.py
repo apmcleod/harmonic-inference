@@ -4,6 +4,7 @@ from typing import List, Tuple, Dict
 import logging
 import heapq
 from collections import defaultdict
+import itertools
 
 from torch.utils.data.dataloader import DataLoader
 from tqdm import tqdm
@@ -159,7 +160,7 @@ class State:
             return [], [self.change_index]
 
         keys, changes = self.prev_state.get_keys()
-        if self.key != keys[-1]:
+        if len(keys) == 0 or self.key != keys[-1]:
             keys.append(self.key)
             changes.append(self.change_index)
 
@@ -623,41 +624,42 @@ class HarmonicInferenceModel:
             desc="Beam searching through inputs",
             total=len(all_states) - 1,
         ):
-            for state in current_states:
-                for range_data in chord_ranges_dict[current_start]:
-                    (
-                        range_end,
-                        range_log_prob,
-                        chord_log_priors,
-                        chord_priors_argsort,
-                        max_index,
-                     ) = range_data
+            for state, range_data in itertools.product(
+                current_states, chord_ranges_dict[current_start]
+            ):
+                (
+                    range_end,
+                    range_log_prob,
+                    chord_log_priors,
+                    chord_priors_argsort,
+                    max_index,
+                    ) = range_data
 
-                    next_beam = all_states[range_end]
-                    if not next_beam.fits_in_beam(state):
+                next_beam = all_states[range_end]
+                if not next_beam.fits_in_beam(state):
+                    continue
+
+                # Ensure each state branches at least once
+                if max_index == 1 and chord_priors_argsort[0] == state.chord:
+                    max_index = 2
+
+                # Branch
+                for chord_id in chord_priors_argsort[:max_index]:
+                    if chord_id == state.chord:
+                        # Disallow self-transitions
                         continue
 
-                    # Ensure each state branches at least once
-                    if max_index == 1 and chord_priors_argsort[0] == state.chord:
-                        max_index = 2
+                    # Calculate the new state on this absolute chord
+                    new_state = state.chord_transition(
+                        chord_id, range_end, range_log_prob + chord_log_priors[chord_id]
+                    )
 
-                    # Branch
-                    for chord_id in chord_priors_argsort[:max_index]:
-                        if chord_id == state.chord:
-                            # Disallow self-transitions
-                            continue
+                    if not next_beam.fits_in_beam(new_state):
+                        # No need to check for key-relative chord and/or key change
+                        continue
 
-                        # Calculate the new state on this absolute chord
-                        new_state = state.chord_transition(
-                            chord_id, range_end, range_log_prob + chord_log_priors[chord_id]
-                        )
-
-                        if not next_beam.fits_in_beam(new_state):
-                            # No need to check for key-relative chord and/or key change
-                            continue
-
-                        # TODO: Check relative chord and/or key change
-                        next_beam.add(new_state)
+                    # TODO: Check relative chord and/or key change
+                    next_beam.add(new_state)
 
             current_states.empty()
 
