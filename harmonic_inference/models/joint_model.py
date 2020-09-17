@@ -27,34 +27,6 @@ MODEL_CLASSES = {
 }
 
 
-class Beam:
-    """
-    Beam class for beam search.
-    """
-    def __init__(self, beam_size):
-        self.beam_size = beam_size
-        self.beam = []
-
-    def fits_in_beam(self, state):
-        return len(self.beam) < self.beam_size or self.beam[0] < state
-
-    def add(self, state):
-        if len(self.beam) == self.beam_size:
-            if self.beam[0] < state:
-                heapq.heappushpop(self.beam, state)
-        else:
-            heapq.heappush(self.beam, state)
-
-    def get_top_state(self):
-        return max(self.beam)
-
-    def empty(self):
-        self.beam = []
-
-    def __iter__(self):
-        return self.beam.__iter__()
-
-
 class State:
     """
     The state used during the model's beam search.
@@ -197,6 +169,94 @@ class State:
         return self.log_prob < other.log_prob
 
 
+class Beam:
+    """
+    Beam class for beam search, implemented as a min-heap.
+
+    A min-heap is chosen, since the important part during the beam search is to know
+    the minimum (least likely) state currently in the beam (O(1) time), and to be able
+    to remove it quickly (O(log(beam_size)) time).
+
+    Getting the maximum state (O(n) time) is only done once, at the end of the beam search.
+    """
+    def __init__(self, beam_size: int):
+        """
+        Create a new Beam of the given size.
+
+        Parameters
+        ----------
+        beam_size : int
+            The size of the Beam.
+        """
+        self.beam_size = beam_size
+        self.beam = []
+
+    def fits_in_beam(self, state: State) -> bool:
+        """
+        Check if the given state will fit in the beam, but do not add it.
+
+        This should be used only to check for early exits. If you will add the
+        state to the beam immediately anyways, it is faster to just use
+        beam.add(state) and check its return value.
+
+        Parameters
+        ----------
+        state : State
+            The state to check.
+
+        Returns
+        -------
+        fits : bool
+            True if the state will fit in the beam both by size and by log_prob.
+        """
+        return len(self.beam) < self.beam_size or self.beam[0] < state
+
+    def add(self, state: State) -> bool:
+        """
+        Add the given state to the beam, if it fits, and return a boolean indicating
+        if the state fit.
+
+        Parameters
+        ----------
+        state : State
+            The state to add to the beam.
+
+        Returns
+        -------
+        added : bool
+            True if the given state was added to the beam. False otherwise.
+        """
+        if len(self.beam) == self.beam_size:
+            if self.beam[0] < state:
+                heapq.heappushpop(self.beam, state)
+                return True
+            return False
+        else:
+            heapq.heappush(self.beam, state)
+            return True
+
+    def get_top_state(self) -> State:
+        """
+        Get the top state in this beam.
+
+        Returns
+        -------
+        top_state : State
+            The top state in this beam. This runs in O(beam_size) time, since it requires
+            a full search of the beam.
+        """
+        return max(self.beam)
+
+    def empty(self):
+        """
+        Empty this beam.
+        """
+        self.beam = []
+
+    def __iter__(self):
+        return self.beam.__iter__()
+
+
 class HarmonicInferenceModel:
     """
     A model to perform harmonic inference on an input score, midi, or audio piece.
@@ -321,14 +381,14 @@ class HarmonicInferenceModel:
 
         # Iterative beam search for other modules
         logging.info("Performing iterative beam search")
-        chords, keys = self.beam_search(
+        state = self.beam_search(
             piece,
             chord_ranges,
             chord_log_probs,
             chord_classifications,
         )
 
-        return chords, keys
+        return state.get_chords(), state.get_keys()
 
     def get_chord_change_probs(self, piece: Piece) -> List[float]:
         """
@@ -502,7 +562,7 @@ class HarmonicInferenceModel:
         chord_ranges: List[Tuple[int, int]],
         chord_log_probs: List[float],
         chord_classifications: List[np.array],
-    ) -> Tuple[List[Tuple[int, Chord]], List[Tuple[int, Key]]]:
+    ) -> State:
         """
         Perform a beam search over the given Piece to label its Chords and Keys.
 
@@ -519,10 +579,8 @@ class HarmonicInferenceModel:
 
         Returns
         -------
-        chords : List[Tuple[int, Chord]]
-            [description]
-        keys : List[Tuple[int, Key]]
-            [description]
+        state : State
+            The top state after the beam search.
         """
         # Dict mapping start of chord range to list of data tuples
         chord_ranges_dict = defaultdict(list)
@@ -589,11 +647,17 @@ class HarmonicInferenceModel:
                             # Disallow self-transitions
                             continue
 
-                        next_beam.add(
-                            state.chord_transition(
-                                chord_id, range_end, range_log_prob + chord_log_priors[chord_id]
-                            )
+                        # Calculate the new state on this absolute chord
+                        new_state = state.chord_transition(
+                            chord_id, range_end, range_log_prob + chord_log_priors[chord_id]
                         )
+
+                        if not next_beam.fits_in_beam(new_state):
+                            # No need to check for key-relative chord and/or key change
+                            continue
+
+                        # TODO: Check relative chord and/or key change
+                        next_beam.add(new_state)
 
             current_states.empty()
 
