@@ -33,46 +33,37 @@ class State:
     """
     def __init__(
         self,
-        chord_changes: List[int] = None,
-        key_changes: List[int] = None,
-        chords: List[int] = None,
-        keys: List[int] = None,
+        chord: int = None,
+        key: int = None,
+        change_index: int = 0,
         log_prob: float = 0.0,
-        most_recent_chord_log_prob: float = 0.0,
+        prev_state = None,
     ):
         """
         [summary]
 
         Parameters
         ----------
-        chord_changes : List[int]
+        chord : int
             [description]
-        key_changes : List[int]
+        key : int
             [description]
-        chords : List[int]
-            [description]
-        keys : List[int]
+        change_index : int
             [description]
         log_prob : float
             [description]
-        most_recent_chord_log_prob : float
+        prev_state : [type]
             [description]
         """
-        self.chord_changes = [0] if chord_changes is None else chord_changes.copy()
-        self.key_changes = [0] if key_changes is None else key_changes.copy()
-        self.chords = [] if chords is None else chords.copy()
-        self.keys = [] if keys is None else keys.copy()
+        self.chord = chord
+        self.key = key
+        self.change_index = change_index
 
         self.log_prob = log_prob
-        self.most_recent_chord_log_prob = most_recent_chord_log_prob
 
-    def chord_transition(
-        self,
-        chord: int,
-        change_index: int,
-        change_log_prob: float,
-        chord_log_prob: float,
-    ):
+        self.prev_state = prev_state
+
+    def chord_transition(self, chord: int, change_index: int, log_prob: float):
         """
         [summary]
 
@@ -82,9 +73,7 @@ class State:
             [description]
         change_index : int
             [description]
-        change_log_prob : float
-            [description]
-        chord_log_prob : float
+        log_prob : float
             [description]
 
         Returns
@@ -93,13 +82,23 @@ class State:
             [description]
         """
         return State(
-            self.chord_changes + [change_index],
-            self.key_changes,
-            self.chords + [chord],
-            self.keys,
-            self.log_prob + change_log_prob + chord_log_prob,
-            chord_log_prob,
+            chord=chord,
+            key=self.key,
+            change_index=change_index,
+            log_prob=self.log_prob + log_prob,
+            prev_state=self,
         )
+
+    def can_key_transition(self) -> bool:
+        """
+        [summary]
+
+        Returns
+        -------
+        can_transition : bool
+            [description]
+        """
+        return self.prev_state is not None and self.prev_state.prev_state is not None
 
     def key_transition(self, key: int, log_prob: float):
         """
@@ -118,12 +117,53 @@ class State:
             [description]
         """
         return State(
-            self.chord_changes,
-            self.key_changes + [self.chord_changes[-2]],
-            self.chords,
-            self.keys + [key],
-            self.log_prob - self.most_recent_chord_log_prob + log_prob,
+            chord=self.chord,
+            key=key,
+            change_index=self.change_index,
+            log_prob=self.prev_state.log_prob + log_prob,
+            prev_state=self.prev_state,
         )
+
+    def get_chords(self) -> Tuple[List[int], List[int]]:
+        """
+        [summary]
+
+        Returns
+        -------
+        chords : List[int]
+            [description]
+        change_indexes : List[int]
+            [description]
+        """
+        if self.prev_state is None:
+            return [], [self.change_index]
+
+        chords, changes = self.prev_state.get_chords()
+        chords.append(self.self.chord)
+        changes.append(self.change_index)
+
+        return chords, changes
+
+    def get_keys(self) -> Tuple[List[int], List[int]]:
+        """
+        [summary]
+
+        Returns
+        -------
+        keys : List[int]
+            [description]
+        change_indexes : List[int]
+            [description]
+        """
+        if self.prev_state is None:
+            return [], [self.change_index]
+
+        keys, changes = self.prev_state.get_keys()
+        if self.key != keys[-1]:
+            keys.append(self.key)
+            changes.append(self.change_index)
+
+        return keys, changes
 
     def __lt__(self, other):
         return self.log_prob < other.log_prob
@@ -140,6 +180,8 @@ class HarmonicInferenceModel:
         max_no_change_prob: float = 0.75,
         max_chord_length: Fraction = Fraction(8),
         beam_size: int = 500,
+        max_branching_factor: int = 20,
+        target_branch_prob: float = 0.95,
     ):
         """
         Create a new HarmonicInferenceModel from a set of pre-loaded models.
@@ -162,6 +204,14 @@ class HarmonicInferenceModel:
             The maximum length for a chord generated by this model.
         beam_size : int
             The beam size to use for decoding with this model.
+        max_branching_factor : int
+            For each state during the beam search, the maximum number of different chord
+            classifications to try during branching. Each of these will be potentially checked
+            for key change as well.
+        target_branch_prob : float
+            Once the branches transitioned into account for at least this much probability mass,
+            no more branches are searched, even if the max_branching_factor has not yet been
+            reached.
         """
         for model, model_class in MODEL_CLASSES.items():
             assert model in models.keys(), f"`{model}` not in models dict."
@@ -202,7 +252,11 @@ class HarmonicInferenceModel:
         self.min_change_prob = min_change_prob
         self.max_no_change_prob = max_no_change_prob
         self.max_chord_length = max_chord_length
+
+        # Beam search params
         self.beam_size = beam_size
+        self.max_branching_factor = max_branching_factor
+        self.target_branch_prob = target_branch_prob
 
     def get_harmony(
         self,
@@ -236,9 +290,6 @@ class HarmonicInferenceModel:
         # Calculate chord priors for each possible chord range (batched, with CCM)
         logging.info("Classifying chords")
         chord_classifications = self.get_chord_classifications(piece, chord_ranges)
-
-        naive_chords = self.naive_chords(chord_ranges, chord_log_probs, chord_classifications)
-        print(naive_chords)
 
         # Iterative beam search for other modules
         logging.info("Performing iterative beam search")
@@ -399,7 +450,7 @@ class HarmonicInferenceModel:
         Returns
         -------
         classifications : List[np.array]
-            The chord classification prior for each given range.
+            The prior log-probability over all chord symbols for each given range.
         """
         ccm_dataset = ds.ChordClassificationDataset([piece], ranges=[ranges], dummy_targets=True)
         ccm_loader = DataLoader(
@@ -415,37 +466,7 @@ class HarmonicInferenceModel:
                 [output.numpy() for output in self.chord_classifier.get_output(batch)]
             )
 
-        return classifications
-
-    def naive_chords(
-        self,
-        chord_ranges: List[Tuple[int, int]],
-        chord_log_probs: List[float],
-        chord_classifications: List[np.array],
-    ) -> List[int]:
-        """
-        [summary]
-
-        Parameters
-        ----------
-        chord_ranges : List[Tuple[int, int]]
-            [description]
-        chord_log_probs : List[float]
-            [description]
-        chord_classifications : List[np.array]
-            [description]
-
-        Returns
-        -------
-        chords : List[int]
-            [description]
-        """
-        priors = np.zeros((chord_ranges[-1][1], len(chord_classifications[0])))
-
-        for (start, end), prior in tqdm(zip(chord_ranges, chord_classifications)):
-            priors[start:end] += prior
-
-        return np.argmax(priors, axis=1)
+        return np.log(classifications)
 
     def beam_search(
         self,
@@ -466,7 +487,7 @@ class HarmonicInferenceModel:
         chord_log_probs : List[float]
             The log probability of each chord ranges in chord_ranges.
         chord_classifications : List[np.array]
-            The prior distribution over all chord types for each given chord range.
+            The prior log-probability over all chord symbols for each given range.
 
         Returns
         -------
@@ -477,12 +498,15 @@ class HarmonicInferenceModel:
         """
         # Dict mapping start of chord to (end, log_prob, prior) tuple
         chord_ranges_dict = defaultdict(list)
-        for (start, end), log_prob, prior in zip(
+        for (start, end), range_log_prob, prior, prior_argsort in zip(
             chord_ranges,
             chord_log_probs,
             chord_classifications,
+            # Negative sorts descending. argpartition instead of argsort because we just want
+            # the top self.branching_factor priors, but we don't care about the order
+            np.argpartition(-np.array(chord_classifications), self.branching_factor),
         ):
-            chord_ranges_dict[start].append((end, log_prob, prior))
+            chord_ranges_dict[start].append((end, range_log_prob, prior, prior_argsort))
 
         all_states = [[] for _ in range(len(piece.get_inputs()) + 1)]
         all_states[0] = [State()]
@@ -493,21 +517,22 @@ class HarmonicInferenceModel:
             total=len(all_states) - 1,
         ):
             if len(current_states) > self.beam_size:
-                current_states = sorted(current_states, reverse=True)[:self.beam_size]
+                current_states = np.partition(
+                    current_states,
+                    len(current_states) - self.beam_size,
+                )[-self.beam_size:]
 
             all_states[current_start] = []
             for state in current_states:
-                for range_end, range_log_prob, chord_prior in chord_ranges_dict[current_start]:
-                    for chord, prior in enumerate(chord_prior):
+                for range_data in chord_ranges_dict[current_start]:
+                    range_end, range_log_prob, chord_priors, chord_priors_argsort = range_data
+
+                    # Branch on the top self.branching_factor chords
+                    for chord_id in chord_priors_argsort[:self.branching_factor]:
                         all_states[range_end].append(
-                            state.chord_transition(chord, range_end, range_log_prob, prior)
+                            state.chord_transition(
+                                chord_id, range_end, range_log_prob + chord_priors[chord_id]
+                            )
                         )
 
-        # Find and return best state
-        best_log_prob, best_state = all_states[-1][0]
-        for log_prob, state in all_states[-1][1:]:
-            if log_prob > best_log_prob:
-                best_log_prob = log_prob
-                best_state = state
-
-        return best_state
+        return max(all_states[-1])

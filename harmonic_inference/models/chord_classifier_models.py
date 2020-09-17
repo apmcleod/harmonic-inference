@@ -42,7 +42,7 @@ class ChordClassifierModel(pl.LightningModule):
 
         outputs = self.forward(notes, notes_lengths)
 
-        return outputs
+        return F.softmax(outputs, dim=-1)
 
     def training_step(self, batch, batch_idx):
         notes = batch['inputs'].float()
