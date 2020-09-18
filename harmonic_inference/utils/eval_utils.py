@@ -18,7 +18,7 @@ def evaluate(piece: Piece, state: State):
     gt_chords = piece.get_chords()
     gt_changes = piece.get_chord_change_indices()
     gt_labels = np.zeros(len(piece.get_inputs()))
-    for chord, start, end in zip(gt_chords, [0] + list(gt_changes), gt_changes[1:]):
+    for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
         gt_labels[start:end] = chord.get_one_hot_index()
     gt_labels[gt_changes[-1]:] = gt_chords[-1].get_one_hot_index()
 
@@ -39,4 +39,19 @@ def evaluate(piece: Piece, state: State):
 
 
 def get_distance(target: int, estimate: int):
+    """
+    Get the distance between two chord symbols.
+
+    Parameters
+    ----------
+    target : int
+        [description]
+    estimate : int
+        [description]
+
+    Returns
+    -------
+    distance : float
+        A distance between 0 (completely correct), and 1 (completely incorrect).
+    """
     return 0.0 if target == estimate else 1.0
