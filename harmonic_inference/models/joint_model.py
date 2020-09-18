@@ -790,13 +790,8 @@ class HarmonicInferenceModel:
                 )
             )
 
-        if self.hash_length is None:
-            all_states = [Beam(self.beam_size) for _ in range(len(piece.get_inputs()) + 1)]
-        else:
-            all_states = [
-                HashedBeam(self.beam_size, self.hash_length)
-                for _ in range(len(piece.get_inputs()) + 1)
-            ]
+        beam_class = Beam if self.hash_length is None else HashedBeam
+        all_states = [beam_class(self.beam_size) for _ in range(len(piece.get_inputs()) + 1)]
         all_states[0].add(State(key=0, hash_length=self.hash_length))
 
         for current_start, current_states in tqdm(
