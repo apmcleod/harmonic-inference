@@ -13,18 +13,19 @@ import h5py
 from harmonic_inference.models.joint_model import MODEL_CLASSES, HarmonicInferenceModel
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 from harmonic_inference.data.piece import Piece, ScorePiece
+import harmonic_inference.utils.eval_utils as eu
 
 SPLITS = ["train", "valid", "test"]
 
 def evaluate(models: Dict, pieces: List[Piece]):
     model = HarmonicInferenceModel(models)
 
-    harmonies = [
-        model.get_harmony(piece)
-        for piece in tqdm(pieces, desc="Getting harmony for pieces")
-    ]
+    states = []
+    for piece in tqdm(pieces, desc="Getting harmony for pieces"):
+        state = model.get_harmony(piece)
+        print(eu.evaluate(piece, state))
 
-    print(harmonies)
+    print(states)
 
 
 if __name__ == '__main__':

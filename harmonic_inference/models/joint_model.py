@@ -15,7 +15,7 @@ import harmonic_inference.models.chord_sequence_models as csm
 import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
-from harmonic_inference.data.piece import Chord, Key, Piece
+from harmonic_inference.data.piece import Piece
 import harmonic_inference.data.datasets as ds
 
 
@@ -521,10 +521,7 @@ class HarmonicInferenceModel:
         self.target_branch_prob = target_branch_prob
         self.hash_length = hash_length
 
-    def get_harmony(
-        self,
-        piece: Piece,
-    ) -> Tuple[List[Tuple[int, Chord]], List[Tuple[int, Key]]]:
+    def get_harmony(self, piece: Piece) -> State:
         """
         Run the model on a piece and output its harmony.
 
@@ -535,12 +532,8 @@ class HarmonicInferenceModel:
 
         Returns
         -------
-        chords : List[Tuple[int, Chord]]
-            A List of (index, Chord) tuples containing the Chords of the piece and the
-            indexes at which each starts.
-        keys : List[Tuple[int, Key]]
-            A List of (index, Key) tuples containing the Keys of the piece and the
-            indexes at which each starts.
+        state : State
+            The top estimated state.
         """
         # Get chord change probabilities (with CTM)
         logging.info("Getting chord change probabilities")
@@ -563,7 +556,7 @@ class HarmonicInferenceModel:
             chord_classifications,
         )
 
-        return state.get_chords(), state.get_keys()
+        return state
 
     def get_chord_change_probs(self, piece: Piece) -> List[float]:
         """
