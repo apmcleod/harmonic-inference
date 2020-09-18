@@ -1,6 +1,6 @@
 """Combined models that output a key/chord sequence given an input score, midi, or audio."""
 from fractions import Fraction
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Union
 import logging
 import heapq
 from collections import defaultdict
@@ -30,7 +30,10 @@ MODEL_CLASSES = {
 
 class State:
     """
-    The state used during the model's beam search.
+    The state used during the model's beam search, ordered by their log-probability.
+
+    State's are reverse-linked lists, where each State holds a pointer to the previous
+    state, and only contains chord and key information for the most recent of each.
     """
     def __init__(
         self,
@@ -42,22 +45,26 @@ class State:
         hash_length: int = None,
     ):
         """
-        [summary]
+        Create a new State.
 
         Parameters
         ----------
         chord : int
-            [description]
+            This state's chord, as a one-hot-index integer.
         key : int
-            [description]
+            This state's key, as a one-hot-index integer.
         change_index : int
-            [description]
+            The index up to which this state is valid. This state's chord and key are
+            valid from the input indexes self.prev_state.change_index -- self.change_index.
         log_prob : float
-            [description]
+            The log probability of this state.
         prev_state : State
-            [description]
+            The previous state.
         hash_length : int
-            The length of hash to use.
+            The length of hash to use. If prev_state is None, this State's hash_tuple
+            will be self.hash_length Nones, as a tuple. Otherwise, this State's hash_tuple
+            will be the last self.hash_length-1 entries in prev_state.hash_tuple, with
+            this State's (key, chord) tuple appended to it.
         """
         self.valid = True
 
@@ -72,25 +79,26 @@ class State:
             if self.prev_state is None:
                 self.hash_tuple = tuple([None] * hash_length)
             else:
-                self.hash_tuple = tuple(list(prev_state.hash_tuple[1:]) + [2000 * key + chord])
+                self.hash_tuple = tuple(list(prev_state.hash_tuple[1:]) + [(key, chord)])
 
     def chord_transition(self, chord: int, change_index: int, log_prob: float):
         """
-        [summary]
+        Perform a chord transition form this State, and return the new State.
 
         Parameters
         ----------
         chord : int
-            [description]
+            The new state's chord.
         change_index : int
-            [description]
+            The input index at which the new state's chord will end.
         log_prob : float
-            [description]
+            The log-probability of the given chord transition occurring, in terms of
+            absolute chord (CCM) and the chord's index bounds (CTM).
 
         Returns
         -------
         new_state : State
-            [description]
+            The state resulting from the given transition.
         """
         return State(
             chord=chord,
@@ -103,30 +111,35 @@ class State:
 
     def can_key_transition(self) -> bool:
         """
-        [summary]
+        Detect if this state can key transition.
+
+        Key transitions are not allowed on the first chord (since then a different initial
+        key would have been set instead).
 
         Returns
         -------
         can_transition : bool
-            [description]
+            True if this state can enter a new key. False otherwise.
         """
         return self.prev_state is not None and self.prev_state.prev_state is not None
 
     def key_transition(self, key: int, log_prob: float):
         """
-        [summary]
+        Transition to a new key on the most recent chord.
 
         Parameters
         ----------
         key : int
-            [description]
+            The new key to transition to.
         log_prob : float
-            [description]
+            The log-probability of the given key transition, in terms of the input index (KTM)
+            and the new key (KSM).
 
         Returns
         -------
         new_state : State
-            [description]
+            Essentially, a replacement of this state (the new state's prev_state is the same),
+            but with a new key.
         """
         return State(
             chord=self.chord,
@@ -139,14 +152,15 @@ class State:
 
     def get_chords(self) -> Tuple[List[int], List[int]]:
         """
-        [summary]
+        Get the chords and the chord change indexes up to this state.
 
         Returns
         -------
         chords : List[int]
-            [description]
+            A List of the chord symbol indexes up to this State.
         change_indexes : List[int]
-            [description]
+            A List of the chord transition indexes up to this State. This list will be of
+            length 1 greater than chords because it includes an initial 0.
         """
         if self.prev_state is None:
             return [], [self.change_index]
@@ -159,14 +173,15 @@ class State:
 
     def get_keys(self) -> Tuple[List[int], List[int]]:
         """
-        [summary]
+        Get the keys and the key change indexes up to this state.
 
         Returns
         -------
         keys : List[int]
-            [description]
+            A List of the key symbol indexes up to this State.
         change_indexes : List[int]
-            [description]
+            A List of the key transition indexes up to this State. This list will be of
+            length 1 greater than keys because it includes an initial 0.
         """
         if self.prev_state is None:
             return [], [self.change_index]
@@ -176,9 +191,27 @@ class State:
             keys.append(self.key)
             changes.append(self.change_index)
 
+        # Key is equal to the previous one -- update change index
+        elif len(keys) != 0:
+            changes[-1] = self.change_index
+
         return keys, changes
 
-    def get_hash(self):
+    def get_hash(self) -> Union[Tuple[Tuple[int, int]], int]:
+        """
+        Get the hash of this State.
+
+        If self.hash_length is not None, this is stored in a field "hash_tuple", which is
+        a tuple of (key, chord) tuples of the last hash_length states.
+
+        If self.hash_length is None, the item's id is returned as its hash, as default.
+
+        Returns
+        -------
+        hash : Union[Tuple[Tuple[int, int]], int]
+            Either the last self.hash_length (key, chord) tuple, as a tuple, or this
+            object's id.
+        """
         try:
             return self.hash_tuple
         except:
@@ -280,10 +313,32 @@ class Beam:
 
 
 class HashedBeam(Beam):
-    def __init__(self, beam_size: int, hash_length: int):
+    """
+    A HashedBeam is like a Beam, but additionally has a dictionary mapping State hashes
+    to states, where no two States with the same hash are allowed to be in the beam,
+    regardless of the probability of other beam states.
+
+    When a state should be removed from the beam because of the hashed beam, it is easily
+    removed from the state dict, but impractical to search through the min-heap to find and
+    remove it. It is instead marked as invalid (state.valid = False), and ignored when
+    iterating through the states in the beam.
+
+    Care is also taken to ensure that the state on top of the min-heap is always valid,
+    so that the minimum log_prob is always known. Thus, when marking a state as invalid,
+    if it is on the top of the min-heap, the head of the min-heap is repeatedly removed
+    until it is valid. (See _fix_beam_min().)
+    """
+    def __init__(self, beam_size: int):
+        """
+        Create a new HashedBeam with the given overall beam size.
+
+        Parameters
+        ----------
+        beam_size : int
+            The size of the beam.
+        """
         super().__init__(beam_size)
         self.state_dict = {}
-        self.hash_length = hash_length
 
     def fits_in_beam(self, state: State) -> bool:
         """
