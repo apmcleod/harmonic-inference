@@ -39,6 +39,7 @@ class State:
         change_index: int = 0,
         log_prob: float = 0.0,
         prev_state = None,
+        hash_length: int = None,
     ):
         """
         [summary]
@@ -53,9 +54,13 @@ class State:
             [description]
         log_prob : float
             [description]
-        prev_state : [type]
+        prev_state : State
             [description]
+        hash_length : int
+            The length of hash to use.
         """
+        self.valid = True
+
         self.chord = chord
         self.key = key
         self.change_index = change_index
@@ -63,6 +68,11 @@ class State:
         self.log_prob = log_prob
 
         self.prev_state = prev_state
+        if hash_length is not None:
+            if self.prev_state is None:
+                self.hash_tuple = tuple([None] * hash_length)
+            else:
+                self.hash_tuple = tuple(list(prev_state.hash_tuple[1:]) + [2000 * key + chord])
 
     def chord_transition(self, chord: int, change_index: int, log_prob: float):
         """
@@ -88,6 +98,7 @@ class State:
             change_index=change_index,
             log_prob=self.log_prob + log_prob,
             prev_state=self,
+            hash_length=len(self.hash_tuple) if hasattr(self, 'hash_tuple') else None,
         )
 
     def can_key_transition(self) -> bool:
@@ -123,6 +134,7 @@ class State:
             change_index=self.change_index,
             log_prob=self.prev_state.log_prob + log_prob,
             prev_state=self.prev_state,
+            hash_length=len(self.hash_tuple)
         )
 
     def get_chords(self) -> Tuple[List[int], List[int]]:
@@ -165,6 +177,12 @@ class State:
             changes.append(self.change_index)
 
         return keys, changes
+
+    def get_hash(self):
+        try:
+            return self.hash_tuple
+        except:
+            return id(self)
 
     def __lt__(self, other):
         return self.log_prob < other.log_prob
@@ -210,7 +228,7 @@ class Beam:
         fits : bool
             True if the state will fit in the beam both by size and by log_prob.
         """
-        return len(self.beam) < self.beam_size or self.beam[0] < state
+        return len(self) < self.beam_size or self.beam[0] < state
 
     def add(self, state: State) -> bool:
         """
@@ -227,7 +245,7 @@ class Beam:
         added : bool
             True if the given state was added to the beam. False otherwise.
         """
-        if len(self.beam) == self.beam_size:
+        if len(self) == self.beam_size:
             if self.beam[0] < state:
                 heapq.heappushpop(self.beam, state)
                 return True
@@ -246,7 +264,7 @@ class Beam:
             The top state in this beam. This runs in O(beam_size) time, since it requires
             a full search of the beam.
         """
-        return max(self.beam)
+        return max(self)
 
     def empty(self):
         """
@@ -256,6 +274,103 @@ class Beam:
 
     def __iter__(self):
         return self.beam.__iter__()
+
+    def __len__(self):
+        return len(self.beam)
+
+
+class HashedBeam(Beam):
+    def __init__(self, beam_size: int, hash_length: int):
+        super().__init__(beam_size)
+        self.state_dict = {}
+        self.hash_length = hash_length
+
+    def fits_in_beam(self, state: State) -> bool:
+        """
+        Check if the given state will fit in the beam, but do not add it.
+
+        This should be used only to check for early exits. If you will add the
+        state to the beam immediately anyways, it is faster to just use
+        beam.add(state) and check its return value.
+
+        Parameters
+        ----------
+        state : State
+            The state to check.
+
+        Returns
+        -------
+        fits : bool
+            True if the state will fit in the beam both by size and by log_prob.
+        """
+        state_hash = state.get_hash()
+        return (
+            (len(self) < self.beam_size or self.beam[0] < state) and
+            (state_hash not in self.state_dict or self.state_dict[state_hash] < state)
+        )
+
+    def _fix_beam_min(self):
+        """
+        Remove all states with valid == False from the top of the min-heap until the min
+        state is valid.
+        """
+        while not self.beam[0].valid:
+            heapq.heappop(self.beam)
+
+    def add(self, state: State) -> bool:
+        """
+        Add the given state to the beam, if it fits, and return a boolean indicating
+        if the state fit.
+
+        Parameters
+        ----------
+        state : State
+            The state to add to the beam.
+
+        Returns
+        -------
+        added : bool
+            True if the given state was added to the beam. False otherwise.
+        """
+        state_hash = state.get_hash()
+
+        if state_hash in self.state_dict:
+            if self.state_dict[state_hash] < state:
+                self.state_dict[state_hash].valid = False
+                self.state_dict[state_hash] = state
+                heapq.heappush(self.beam, state)
+                self._fix_beam_min()
+                return True
+            return False
+
+        # Here, the state is in a new hash
+        if len(self) == self.beam_size:
+            if self.beam[0] < state:
+                removed_state = heapq.heappushpop(self.beam, state)
+                self.state_dict[state_hash] = state
+                del self.state_dict[removed_state.get_hash()]
+                self._fix_beam_min()
+                return True
+            return False
+
+        else:
+            # Beam is not yet full
+            heapq.heappush(self.beam, state)
+            self.state_dict[state_hash] = state
+            return True
+
+    def empty(self):
+        """
+        Empty this beam.
+        """
+        self.beam = []
+        self.state_dict = []
+
+    def __iter__(self):
+        return self.state_dict.values().__iter__()
+
+    def __len__(self):
+        return len(self.state_dict)
 
 
 class HarmonicInferenceModel:
@@ -271,6 +386,7 @@ class HarmonicInferenceModel:
         beam_size: int = 500,
         max_branching_factor: int = 20,
         target_branch_prob: float = 0.95,
+        hash_length: int = 5,
     ):
         """
         Create a new HarmonicInferenceModel from a set of pre-loaded models.
@@ -301,6 +417,8 @@ class HarmonicInferenceModel:
             Once the branches transitioned into account for at least this much probability mass,
             no more branches are searched, even if the max_branching_factor has not yet been
             reached.
+        hash_length : int
+            If not None, a hashed beam is used, where only 1 State is kept in the Beam
         """
         for model, model_class in MODEL_CLASSES.items():
             assert model in models.keys(), f"`{model}` not in models dict."
@@ -346,6 +464,7 @@ class HarmonicInferenceModel:
         self.beam_size = beam_size
         self.max_branching_factor = max_branching_factor
         self.target_branch_prob = target_branch_prob
+        self.hash_length = hash_length
 
     def get_harmony(
         self,
@@ -616,8 +735,14 @@ class HarmonicInferenceModel:
                 )
             )
 
-        all_states = [Beam(self.beam_size) for _ in range(len(piece.get_inputs()) + 1)]
-        all_states[0].add(State())
+        if self.hash_length is None:
+            all_states = [Beam(self.beam_size) for _ in range(len(piece.get_inputs()) + 1)]
+        else:
+            all_states = [
+                HashedBeam(self.beam_size, self.hash_length)
+                for _ in range(len(piece.get_inputs()) + 1)
+            ]
+        all_states[0].add(State(key=0, hash_length=self.hash_length))
 
         for current_start, current_states in tqdm(
             enumerate(all_states[:-1]),
