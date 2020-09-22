@@ -842,7 +842,7 @@ class HarmonicInferenceModel:
             change_log_probs = np.log(change_probs)
 
             # Branch on key changes
-            to_csm_states = []
+            to_csm_prior_states = []
             to_ksm_states = []
             for change_prob, change_log_prob, no_change_log_prob, state in zip(
                 change_probs,
@@ -862,16 +862,22 @@ class HarmonicInferenceModel:
 
                 if can_not_change:
                     state.log_prob += no_change_log_prob
-                    to_csm_states.append(state)
+                    to_csm_prior_states.append(state)
 
             # TODO: Change keys and put states into CSM
 
-            # Run CSM batched on all states
-            self.run_csm_batched(to_csm_states)
+            # Get CSM prior from previous state
+            to_csm_states = []
+            for state in to_csm_prior_states:
+                state.add_csm_prior()
 
-            # Add final states to their beam
-            for state in to_csm_states:
-                all_states[state.change_index].add(state)
+                # Add state to its beam, if it fits
+                if all_states[state.change_index].add(state):
+                    to_csm_states.append(state)
+
+            # TODO: Maybe this can be done at the beginning of each following iteration instead?
+            # Run CSM on only those states which are still valid after all beaming
+            self.run_csm_batched([state for state in to_csm_states if state.valid])
 
             current_states.empty()
 
@@ -930,3 +936,42 @@ class HarmonicInferenceModel:
         key_change_probs[valid] = outputs
 
         return outputs
+
+    def run_csm_batched(self, states: List[State]):
+        """
+        Run the CSM batched on the given states, which will have their csm_prior and
+        csm_hidden_state fields changed.
+
+        Parameters
+        ----------
+        states : List[State]
+            The states to be run on the csm. These will have their csm_prior and
+            csm_hidden_state fields changed.
+        """
+        # Get inputs and hidden states for all states
+        csm_hidden_states = [None] * len(states)
+        csm_inputs = [None] * len(states)
+        for i, state in enumerate(states):
+            csm_hidden_states[i] = state.csm_hidden_state
+            csm_inputs[i] = state.get_csm_input()
+
+        # Generate CSM loader
+        csm_dataset = ds.ChordSequenceDataset(csm_hidden_states, csm_inputs, dummy_targets=True)
+        csm_loader = DataLoader(
+            csm_dataset,
+            batch_size=ds.ChordSequenceDataset.valid_batch_size,
+            shuffle=False,
+        )
+
+        # Run CSM
+        priors = []
+        hidden_states = []
+        for batch in csm_loader:
+            batch_output, batch_hidden = self.chord_sequence_model.run_one_step(batch)
+            priors.extend(batch_output)
+            hidden_states.extend(batch_hidden)
+
+        # Update states with new priors and hidden states
+        for state, prior, hidden in zip(states, priors, hidden_states):
+            state.csm_prior = prior
+            state.csm_hidden_state = hidden
