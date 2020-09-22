@@ -60,8 +60,6 @@ def get_range_length(
     return factor * length
 
 
-
-
 def get_rhythmic_info_as_proportion_of_range(
     note: pd.Series,
     range_start: Tuple[int, Fraction],
@@ -116,8 +114,6 @@ def get_rhythmic_info_as_proportion_of_range(
     return onset, offset, duration
 
 
-
-
 def get_metrical_level_lengths(timesig: str) -> Tuple[Fraction, Fraction, Fraction]:
     """
     Get the lengths of the beat and subbeat levels of the given time signature.
@@ -150,7 +146,6 @@ def get_metrical_level_lengths(timesig: str) -> Tuple[Fraction, Fraction, Fracti
         sub_beat_length = beat_length / 2
 
     return Fraction(numerator, denominator), beat_length, sub_beat_length
-
 
 
 def get_metrical_level(beat: Fraction, measure: pd.Series) -> int:

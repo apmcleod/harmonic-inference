@@ -387,14 +387,14 @@ def get_chord_inversion(figbass: str) -> int:
         return 0
     try:
         return hc.FIGBASS_INVERSIONS[figbass]
-    except:
+    except Exception:
         raise ValueError(f"{str} is not a valid figured bass symbol for detecting inversions.")
 
 
 # Chord/Pitch string <--> object conversion functions =============================================
 
 
-def get_chord_type_from_string(chord_string : str) -> ChordType:
+def get_chord_type_from_string(chord_string: str) -> ChordType:
     """
     Map a chord type string to a ChordType.
 
@@ -416,11 +416,11 @@ def get_chord_type_from_string(chord_string : str) -> ChordType:
     """
     try:
         return hc.STRING_TO_CHORD_TYPE[chord_string]
-    except:
+    except Exception:
         raise ValueError(f"String type {chord_string} not recognized.")
 
 
-def get_chord_string(chord_type : ChordType) -> str:
+def get_chord_string(chord_type: ChordType) -> str:
     """
     Get a chord type string from a given ChordType.
 

@@ -171,7 +171,6 @@ class Note():
 
         return np.concatenate(vectors)
 
-
     def __eq__(self, other):
         if not isinstance(other, Note):
             return False
@@ -242,7 +241,7 @@ class Note():
             offset = (note_row["offset_mc"], note_row["offset_beat"])
             offset_level = ru.get_metrical_level(
                 note_row["offset_beat"],
-                measures_df.loc[measures_df["mc"]== note_row["offset_mc"]].squeeze(),
+                measures_df.loc[measures_df["mc"] == note_row["offset_mc"]].squeeze(),
             )
 
             return Note(pitch, octave, onset, onset_level, note_row.duration, offset,
@@ -489,7 +488,7 @@ class Chord():
     @staticmethod
     def from_series(
         chord_row: pd.Series,
-        measures_df: pd.Series,
+        measures_df: pd.DataFrame,
         pitch_type: PitchType,
         key=None,
     ):
@@ -1072,8 +1071,14 @@ class ScorePiece(Piece):
                 self.chord_changes[chord_index] = note_index
 
             key_cols = chords_df.loc[
-                chords_df.index[self.chord_ilocs], [
-                'globalkey', 'globalkey_is_minor', 'localkey_is_minor', 'localkey', 'relativeroot']
+                chords_df.index[self.chord_ilocs],
+                [
+                    'globalkey',
+                    'globalkey_is_minor',
+                    'localkey_is_minor',
+                    'localkey',
+                    'relativeroot',
+                ]
             ]
             key_cols = key_cols.fillna('-1')
             changes = key_cols.ne(key_cols.shift()).fillna(True)

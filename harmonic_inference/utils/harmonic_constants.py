@@ -3,7 +3,7 @@ from harmonic_inference.data.data_types import KeyMode, PitchType, ChordType
 
 
 TPC_NATURAL_PITCHES = 7
-TPC_ACCIDENTALS = 5 # bb, b, natural, #, ##. natural must be in the exact middle
+TPC_ACCIDENTALS = 5  # bb, b, natural, #, ##. natural must be in the exact middle
 TPC_C_WITHIN_PITCHES = 1
 TPC_C = int(TPC_ACCIDENTALS / 2) * TPC_NATURAL_PITCHES + TPC_C_WITHIN_PITCHES
 
@@ -36,8 +36,10 @@ NUM_PITCHES = {
 
 
 PITCH_TO_STRING = {
-    PitchType.MIDI: ['C', 'C#/Db', 'D', 'D#/Eb', 'E', 'F', 'F#/Gb', 'G', 'G#/Ab', 'A', 'A#/Bb', 'B'],
-    PitchType.TPC: {index: string for string, index in  STRING_TO_PITCH[PitchType.TPC].items()}
+    PitchType.MIDI: [
+        'C', 'C#/Db', 'D', 'D#/Eb', 'E', 'F', 'F#/Gb', 'G', 'G#/Ab', 'A', 'A#/Bb', 'B'
+    ],
+    PitchType.TPC: {index: string for string, index in STRING_TO_PITCH[PitchType.TPC].items()}
 }
 
 

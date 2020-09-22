@@ -147,7 +147,7 @@ class SimpleChordClassifier(ChordClassifierModel):
         # Linear layers post-LSTM
         self.hidden_dim = hidden_dim
         self.dropout = dropout
-        self.fc1 = nn.Linear(2 * self.lstm_hidden_dim, self.hidden_dim)  # 2 * because bi-directional
+        self.fc1 = nn.Linear(2 * self.lstm_hidden_dim, self.hidden_dim)  # 2 because bi-directional
         self.fc2 = nn.Linear(self.hidden_dim, self.num_classes)
         self.dropout1 = nn.Dropout(self.dropout)
 

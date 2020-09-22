@@ -1,6 +1,5 @@
 """Utilities for parsing corpus tsv files into pandas DataFrames."""
-import re
-from typing import Iterable, Dict, Union
+from typing import Iterable, Dict, Union, Tuple
 from fractions import Fraction
 from glob import glob
 from tqdm import tqdm
@@ -12,14 +11,23 @@ import pandas as pd
 import harmonic_inference.utils.corpus_utils as cu
 
 
-# Helper functions to be used as converters, handlling empty strings
-str2inttuple = lambda l: tuple() if l == '' else tuple(int(s) for s in l.split(', '))
-str2strtuple = lambda l: tuple() if l == '' else tuple(str(s) for s in l.split(', '))
-iterable2str = lambda iterable: ', '.join(str(s) for s in iterable)
-def int2bool(s):
+# Helper functions to be used as converters, handling empty strings
+def str2inttuple(string: str) -> Tuple[int]:
+    return tuple() if string == '' else tuple(int(s) for s in string.split(', '))
+
+
+def str2strtuple(string: str) -> Tuple[str]:
+    return tuple() if string == '' else tuple(string.split(', '))
+
+
+def iterable2str(iterable: Iterable) -> str:
+    return ', '.join(str(s) for s in iterable)
+
+
+def int2bool(s: str) -> bool:
     try:
         return bool(int(s))
-    except:
+    except Exception:
         return pd.NA
 
 
@@ -166,7 +174,9 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
     # Remove unmatched
     notes_df = cu.remove_unmatched(notes_df, measures_df)
     chords_df = cu.remove_unmatched(chords_df, measures_df)
-    chords_df = chords_df.drop(chords_df.loc[(chords_df.numeral == '@none') | chords_df.numeral.isnull()].index)
+    chords_df = chords_df.drop(
+        chords_df.loc[(chords_df.numeral == '@none') | chords_df.numeral.isnull()].index
+    )
 
     # Remove notes with invalid onset times
     note_measures = pd.merge(
@@ -277,7 +287,7 @@ def aggregate_annotation_dfs(annotations_path: Union[Path, str], out_dir: Union[
             chord_df = pd.read_csv(Path(base_path, 'harmonies', file_name), dtype=str, sep='\t')
             note_df = pd.read_csv(Path(base_path, 'notes', file_name), dtype=str, sep='\t')
             measure_df = pd.read_csv(Path(base_path, 'measures', file_name), dtype=str, sep='\t')
-        except:
+        except Exception:
             print("Error parsing file " + file_name)
             continue
 

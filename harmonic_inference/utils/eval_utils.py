@@ -4,6 +4,7 @@ import numpy as np
 from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import State
 
+
 def evaluate(piece: Piece, state: State):
     """
     Evaluate the piece's estimated harmonic structure.

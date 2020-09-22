@@ -41,7 +41,7 @@ class State:
         key: int = None,
         change_index: int = 0,
         log_prob: float = 0.0,
-        prev_state = None,
+        prev_state=None,
         hash_length: int = None,
     ):
         """
@@ -214,7 +214,7 @@ class State:
         """
         try:
             return self.hash_tuple
-        except:
+        except Exception:
             return id(self)
 
     def __lt__(self, other):

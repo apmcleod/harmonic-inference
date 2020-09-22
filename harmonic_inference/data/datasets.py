@@ -1,4 +1,3 @@
-from fractions import Fraction
 from typing import List, Iterable, Union, Tuple, Callable
 from pathlib import Path
 import logging
@@ -50,7 +49,9 @@ class HarmonicDataset(Dataset):
             if hasattr(self, "target_lengths"):
                 if not hasattr(self, "max_target_length"):
                     self.max_target_length = max(self.target_lengths)
-                padded_target = np.zeros(([self.max_target_length] + list(data["targets"][0].shape)))
+                padded_target = np.zeros(
+                    ([self.max_target_length] + list(data["targets"][0].shape))
+                )
                 padded_target[:len(data["targets"])] = data["targets"]
                 data["targets"] = padded_target
                 data["target_lengths"] = self.target_lengths[item]

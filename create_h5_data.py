@@ -68,7 +68,7 @@ if __name__ == '__main__':
     ARGS = parser.parse_args()
 
     # Validate and normalize splits
-    if any([split_prop < 0  for split_prop in ARGS.splits]):
+    if any([split_prop < 0 for split_prop in ARGS.splits]):
         print("--split values cannot be negative.", file=sys.stderr)
         sys.exit(1)
     sum_splits = sum(ARGS.splits)

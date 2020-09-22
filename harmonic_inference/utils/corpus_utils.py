@@ -1,14 +1,10 @@
 """Utility functions for working with the corpus data."""
 from typing import List, Tuple
-from fractions import Fraction
 import warnings
 import logging
 
 import pandas as pd
 import numpy as np
-from tqdm import tqdm
-
-import harmonic_inference.utils.rhythmic_utils as ru
 
 
 def remove_unmatched(dataframe: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFrame:
@@ -63,7 +59,7 @@ def remove_repeats(measures: pd.DataFrame, remove_unreachable: bool = True) -> p
     next_lengths = measures.next.apply(len)
 
     # Find potential last measures of each piece
-    last_measures = (next_lengths == 0) | [-1 in n for n in measures.next] # Default case
+    last_measures = (next_lengths == 0) | [-1 in n for n in measures.next]  # Default case
     last_measures |= (np.roll(measures.index.get_level_values('file_id').to_numpy(), -1) !=
                       measures.index.get_level_values('file_id'))
 
@@ -87,7 +83,7 @@ def remove_repeats(measures: pd.DataFrame, remove_unreachable: bool = True) -> p
     if remove_unreachable:
         # Start measures will not be in any next list, but they need to be saved as a special case
         start_measures = (np.roll(measures.index.get_level_values('file_id').to_numpy(), 1) !=
-                        measures.index.get_level_values('file_id'))
+                          measures.index.get_level_values('file_id'))
         start_indices = list(measures.index.to_numpy()[start_measures])
 
         # Save to reset type later. Needs to be nullable for the merge to work
@@ -117,7 +113,6 @@ def remove_repeats(measures: pd.DataFrame, remove_unreachable: bool = True) -> p
     return measures
 
 
-
 def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFrame:
     """
     Add 'mc_next' (int), 'onset_next' (Fraction), and 'duration' (Fraction) columns to the given
@@ -143,7 +138,7 @@ def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.
     """
     if isinstance(measures.iloc[0].next, list) or isinstance(measures.iloc[0].next, tuple):
         warnings.warn("Repeats have not been unrolled or removed. They will be unrolled here, but "
-                     "not saved. Unrolling or removing repeats first is faster.")
+                      "not saved. Unrolling or removing repeats first is faster.")
         measures = remove_repeats(measures)
 
     # Fix for measure offsets
@@ -248,12 +243,12 @@ def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFram
     """
     if isinstance(measures.iloc[0].next, list) or isinstance(measures.iloc[0].next, tuple):
         warnings.warn("Repeats have not been unrolled or removed. They will be unrolled here, but "
-                     "not saved. Unrolling or removing repeats first is faster.")
+                      "not saved. Unrolling or removing repeats first is faster.")
         measures = remove_repeats(measures)
 
     # Keep only the columns we want in measures for simplicity
     measures = measures.loc[:, ['mc', 'act_dur', 'next', 'offset']]
-    measures.loc[:, 'end'] = measures.act_dur + measures.offset # For faster computation
+    measures.loc[:, 'end'] = measures.act_dur + measures.offset  # For faster computation
 
     # Merge "next" to also have next_offset to potentially skip a loop iteration
     measures = pd.merge(measures.reset_index(), measures, how='left', left_on=['file_id', 'next'],
@@ -326,7 +321,6 @@ def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFram
     notes = notes.assign(offset_mc=note_measures.offset_mc, offset_beat=note_measures.offset_beat)
     notes.offset_mc = notes.offset_mc.astype('Int64')
     return notes
-
 
 
 def get_notes_during_chord(chord: pd.Series, notes: pd.DataFrame,
