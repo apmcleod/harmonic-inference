@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from harmonic_inference.utils import rhythmic_utils as ru
+import harmonic_inference.utils.rhythmic_utils as ru
 
 
 def test_get_range_length():
@@ -35,12 +35,12 @@ def test_get_range_length():
                     if start_mc == end_mc:
                         correct_length = end_beat - start_beat
                     elif start_mc + 1 == end_mc:
-                        correct_length = ((DURATION - (start_beat - offset[start_mc])) # Start mc
-                                          + (end_beat - offset[end_mc])) # End measure
+                        correct_length = ((DURATION - (start_beat - offset[start_mc]))  # Start mc
+                                          + (end_beat - offset[end_mc]))  # End measure
                     else:
-                        correct_length = (DURATION * (end_mc - start_mc - 1) # Full measures
-                                          + (DURATION - (start_beat - offset[start_mc])) # Start
-                                          + (end_beat - offset[end_mc])) # End
+                        correct_length = (DURATION * (end_mc - start_mc - 1)  # Full measures
+                                          + (DURATION - (start_beat - offset[start_mc]))  # Start
+                                          + (end_beat - offset[end_mc]))  # End
                     assert length == correct_length, (
                         f"Range length incorrect between {start} and {end}"
                     )
@@ -57,12 +57,12 @@ def test_get_range_length():
                     if start_mc == end_mc:
                         correct_length = end_beat - start_beat
                     elif start_mc + 1 == end_mc:
-                        correct_length = (Fraction(7, 2) - (start_beat - offset[start_mc]) # Start
-                                          + (end_beat - offset[end_mc])) # End measure
+                        correct_length = (Fraction(7, 2) - (start_beat - offset[start_mc])  # Start
+                                          + (end_beat - offset[end_mc]))  # End measure
                     else:
-                        correct_length = (Fraction(9, 2) * (end_mc - start_mc - 1) + # Full
-                                          Fraction(7, 2) - (start_beat - offset[start_mc]) # Start
-                                          + (end_beat - offset[end_mc])) # End
+                        correct_length = (Fraction(9, 2) * (end_mc - start_mc - 1) +  # Full
+                                          Fraction(7, 2) - (start_beat - offset[start_mc])  # Start
+                                          + (end_beat - offset[end_mc]))  # End
                     assert length == correct_length, (
                         f"Range length incorrect between {start} and {end}"
                     )
@@ -79,8 +79,8 @@ def test_get_range_length():
                         # One measure
                         measures.loc[start_mc, 'next'] = end_mc
                         length = ru.get_range_length(start, end, measures)
-                        correct_length = ((DURATION - (start_beat - offset[start_mc])) # Start mc
-                                          + (end_beat - offset[end_mc])) # End measure
+                        correct_length = ((DURATION - (start_beat - offset[start_mc]))  # Start mc
+                                          + (end_beat - offset[end_mc]))  # End measure
                         assert length == correct_length, (
                             f"Range length incorrect with start.next==end between {start} and "
                             f"{end}"
@@ -92,9 +92,9 @@ def test_get_range_length():
                             measures.loc[start_mc, 'next'] = 0
                             measures.loc[0, 'next'] = end_mc
                             length = ru.get_range_length(start, end, measures)
-                            correct_length = (DURATION + # Full measures
-                                              (DURATION - (start_beat - offset[start_mc])) # Start
-                                              + (end_beat - offset[end_mc])) # End
+                            correct_length = (DURATION +  # Full measures
+                                              (DURATION - (start_beat - offset[start_mc]))  # Start
+                                              + (end_beat - offset[end_mc]))  # End
                             assert length == correct_length, (
                                 f"Range length incorrect with start.next==0 between {start} and "
                                 f"{end}"
@@ -168,8 +168,6 @@ def test_get_rhythmic_info_as_proportion_of_range():
                         )
 
 
-
-
 def test_get_metrical_level_lengths():
     for num in range(1, 17):
         is_compound = num > 3 and num % 3 == 0
@@ -191,7 +189,6 @@ def test_get_metrical_level_lengths():
             assert sub_beat == sub_beat_correct, (
                 f"Sub beat length incorrect for time_sig {time_sig}"
             )
-
 
 
 def test_get_metrical_level():

@@ -1,14 +1,10 @@
 """Tests for corpus_data structure"""
-from fractions import Fraction
-from typing import Tuple, List
 from pathlib import Path
 import logging
 
 import pandas as pd
-import numpy as np
 
-from harmonic_inference.utils import rhythmic_utils as ru
-from harmonic_inference.utils import corpus_utils as cu
+import harmonic_inference.utils.corpus_utils as cu
 from harmonic_inference.data.corpus_reading import read_dump, load_clean_corpus_dfs
 
 TSV_BASE = Path('corpus_data')

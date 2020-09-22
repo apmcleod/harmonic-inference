@@ -1,9 +1,7 @@
 """Tests for corpus_utils.py"""
 from fractions import Fraction
-from typing import Tuple, List
 
 import pandas as pd
-import numpy as np
 
 import harmonic_inference.utils.corpus_utils as cu
 import harmonic_inference.utils.rhythmic_utils as ru
@@ -35,16 +33,16 @@ measures_dicts = [
                     Fraction(1),
                     Fraction(1, 4)],
         'offset': [Fraction(1, 2),
-                    Fraction(1, 2),
-                    Fraction(1, 4),
-                    Fraction(1, 2),
-                    Fraction(1, 4),
-                    Fraction(0),
-                    Fraction(1, 4)],
+                   Fraction(1, 2),
+                   Fraction(1, 4),
+                   Fraction(1, 2),
+                   Fraction(1, 4),
+                   Fraction(0),
+                   Fraction(1, 4)],
         'extra': 0,
         'next': [(1, 2), (3,), (4,), (6, 5), (6, ), (7, ), (1, 2, -1, 3)]
     }),
-    pd.DataFrame({ # Alternate offsets
+    pd.DataFrame({  # Alternate offsets
         'mc': [1, 2, 3, 4, 5, 6, 7],
         'act_dur': [Fraction(1),
                     Fraction(1),
@@ -54,12 +52,12 @@ measures_dicts = [
                     Fraction(1),
                     Fraction(1, 2)],
         'offset': [Fraction(0),
-                    Fraction(1, 2),
-                    Fraction(1, 4),
-                    Fraction(1, 2),
-                    Fraction(1, 4),
-                    Fraction(0),
-                    Fraction(1, 2)],
+                   Fraction(1, 2),
+                   Fraction(1, 4),
+                   Fraction(1, 2),
+                   Fraction(1, 4),
+                   Fraction(0),
+                   Fraction(1, 2)],
         'extra': 0,
         'next': [(1, 2, 3), (3,), (4,), (2, 5, 6), (2, 6), (7, ), (1, 2, 3, -1)]
     })
@@ -530,7 +528,10 @@ def test_merge_ties():
         index_set = set(merged_single.index) - set(always_in)
         assert sum(i in index_set for i in sometimes_in) == 2
         assert len(set(always_in) - set(merged_single.index)) == 0
-        assert all(merged_single.offset_mc == [4, 4, 2]) or all(merged_single.offset_mc == [4, 2, 4])
+        assert (
+            all(merged_single.offset_mc == [4, 4, 2]) or
+            all(merged_single.offset_mc == [4, 2, 4])
+        )
         assert all(merged_single.offset_beat == [0, 0, 0])
         assert all(merged_single.duration == [4, 3, 1]) or all(merged_single.duration == [4, 1, 3])
         # Fix for pd.NA == pd.NA returns False

@@ -17,6 +17,7 @@ import harmonic_inference.utils.eval_utils as eu
 
 SPLITS = ["train", "valid", "test"]
 
+
 def evaluate(models: Dict, pieces: List[Piece]):
     model = HarmonicInferenceModel(models)
 

@@ -5,8 +5,8 @@ import pytest
 import pandas as pd
 
 from harmonic_inference.data.data_types import KeyMode, ChordType, PitchType
-from harmonic_inference.utils import harmonic_utils as hu
-from harmonic_inference.utils import harmonic_constants as hc
+import harmonic_inference.utils.harmonic_utils as hu
+import harmonic_inference.utils.harmonic_constants as hc
 
 
 def test_get_accidental_adjustment():
@@ -98,7 +98,7 @@ def test_get_vector_from_chord_type():
                          ['C', 'Eb', 'Gb', 'Bbb'],
                          ['C', 'Eb', 'Gb', 'Bb'],
                          ['C', 'E', 'G#', 'Bb'],
-                         ['C', 'E', 'G#', 'B'],]
+                         ['C', 'E', 'G#', 'B']]
     for chord_type, midi_vector, tpc_vector in zip(chord_types, chord_vectors_midi,
                                                    chord_vectors_tpc):
         out_vector = hu.get_vector_from_chord_type(chord_type, PitchType.MIDI)
@@ -154,7 +154,7 @@ def test_get_interval_from_scale_degree():
                     else:
                         degree = degree + acc
                     out_semis = hu.get_interval_from_scale_degree(degree, prefixed, key_mode,
-                                                                PitchType.MIDI)
+                                                                  PitchType.MIDI)
                     assert out_semis == semitones[index] + adj, (
                         "Output semitones incorrect for inputs "
                         f"{(degree, key_mode, prefixed, PitchType.MIDI)}"
@@ -192,6 +192,7 @@ def test_transpose_pitch():
             correct_tpc = tpc + interval
             if 0 <= correct_tpc < hc.NUM_PITCHES[PitchType.TPC]:
                 res_tpc = hu.transpose_pitch(tpc, interval, PitchType.TPC)
+                assert res_tpc == correct_tpc
             else:
                 with pytest.raises(ValueError):
                     hu.transpose_pitch(tpc, interval, PitchType.TPC)
