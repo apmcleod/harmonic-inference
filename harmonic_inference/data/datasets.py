@@ -507,7 +507,7 @@ def get_split_file_ids_and_pieces(
         exists = [i in df.index.get_level_values(0) for df in dfs]
 
         if not all(exists):
-            for exist, df, name in zip(exists, dfs, names):
+            for exist, name in zip(exists, names):
                 if not exist:
                     logging.warning(f'{name}_df does not contain {file_name} data (id {i}).')
             continue
@@ -529,7 +529,7 @@ def get_split_file_ids_and_pieces(
     split_pieces = []
     split_indexes = []
     prop = 0
-    for split_index, split_prop in enumerate(splits):
+    for split_prop in splits:
         start = int(round(prop * len(pieces)))
         prop += split_prop
         end = int(round(prop * len(pieces)))

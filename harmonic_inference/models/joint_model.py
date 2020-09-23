@@ -43,6 +43,9 @@ class State:
         log_prob: float = 0.0,
         prev_state=None,
         hash_length: int = None,
+        csm_hidden_state: np.array = None,
+        ktm_hidden_state: np.array = None,
+        csm_log_prior: np.array = None,
     ):
         """
         Create a new State.
@@ -65,6 +68,12 @@ class State:
             will be self.hash_length Nones, as a tuple. Otherwise, this State's hash_tuple
             will be the last self.hash_length-1 entries in prev_state.hash_tuple, with
             this State's (key, chord) tuple appended to it.
+        csm_hidden_state : np.array
+            The hidden state for the CSM's next step.
+        ktm_hidden_state : np.array
+            The hidden state for the KTM's next step.
+        csm_log_prior : np.array
+            The log prior for each (relative) chord symbol, as output by the CSM.
         """
         self.valid = True
 
@@ -80,6 +89,11 @@ class State:
                 self.hash_tuple = tuple([None] * hash_length)
             else:
                 self.hash_tuple = tuple(list(prev_state.hash_tuple[1:]) + [(key, chord)])
+
+        # TODO: Initial hidden states
+        self.csm_hidden_state = None if csm_hidden_state is None else csm_hidden_state.copy()
+        self.ktm_hidden_state = None if ktm_hidden_state is None else ktm_hidden_state.copy()
+        self.csm_log_prior = None if csm_log_prior is None else csm_log_prior
 
     def chord_transition(self, chord: int, change_index: int, log_prob: float):
         """
@@ -150,6 +164,50 @@ class State:
             hash_length=len(self.hash_tuple)
         )
 
+    def add_csm_prior(self) -> None:
+        """
+        Add the log_prior for this state's current relative chord to this state's log_prob.
+
+        This has its own method essentially to notify the State that its prior, chord, and key
+        are all now valid.
+        """
+        # TODO
+
+    def get_csm_input(self) -> np.array:
+        """
+        Get the input for the next step of this state's CSM.
+
+        Returns
+        -------
+        csm_input : np.array
+            The input for the next step of this state's CSM.
+        """
+        # TODO
+
+    def get_ktm_input(self) -> np.array:
+        """
+        Get the input for the next step of this state's KTM.
+
+        Returns
+        -------
+        ktm_input : np.array
+            The input for the next step of this state's KTM.
+        """
+        # TODO
+
+    def get_ksm_input(self) -> np.array:
+        """
+        Get the input for this state's KSM. This should be run only when the KTM has decided
+        that there should be a key change, and the generated input will be from the last key
+        change to the current state.
+
+        Returns
+        -------
+        ktm_input : np.array
+            The input for the KSM form the last key change until now.
+        """
+        # TODO
+
     def get_chords(self) -> Tuple[List[int], List[int]]:
         """
         Get the chords and the chord change indexes up to this state.
@@ -214,7 +272,7 @@ class State:
         """
         try:
             return self.hash_tuple
-        except Exception:
+        except AttributeError:
             return id(self)
 
     def __lt__(self, other):
@@ -283,9 +341,10 @@ class Beam:
                 heapq.heappushpop(self.beam, state)
                 return True
             return False
-        else:
-            heapq.heappush(self.beam, state)
-            return True
+
+        # Beam was not yet full
+        heapq.heappush(self.beam, state)
+        return True
 
     def get_top_state(self) -> State:
         """
@@ -408,11 +467,10 @@ class HashedBeam(Beam):
                 return True
             return False
 
-        else:
-            # Beam is not yet full
-            heapq.heappush(self.beam, state)
-            self.state_dict[state_hash] = state
-            return True
+        # Beam is not yet full
+        heapq.heappush(self.beam, state)
+        self.state_dict[state_hash] = state
+        return True
 
     def empty(self):
         """
@@ -820,7 +878,7 @@ class HarmonicInferenceModel:
             total=len(all_states) - 1,
         ):
             # Run CSM here to avoid running it for invalid states
-            self.run_csm_batched([state for state in current_states])
+            self.run_csm_batched(list(current_states))
 
             to_check_for_key_change = []
 
@@ -981,7 +1039,7 @@ class HarmonicInferenceModel:
             priors = self.chord_sequence_model.run_one_step(batch)
             key_priors.extend(priors)
 
-        priors_argsort = np.argsort(-key_priors)  # Negative to sort descending
+        priors_argsort = np.argsort(-np.array(key_priors))  # Negative to sort descending
         max_indexes = np.clip(
             np.argmax(
                 np.cumsum(
@@ -1048,6 +1106,6 @@ class HarmonicInferenceModel:
             hidden_states.extend(batch_hidden)
 
         # Update states with new priors and hidden states
-        for state, prior, hidden in zip(states, priors, hidden_states):
-            state.csm_prior = prior
+        for state, log_prior, hidden in zip(states, np.log(priors), hidden_states):
+            state.csm_log_prior = log_prior
             state.csm_hidden_state = hidden
