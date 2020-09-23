@@ -981,10 +981,35 @@ class HarmonicInferenceModel:
             priors = self.chord_sequence_model.run_one_step(batch)
             key_priors.extend(priors)
 
+        priors_argsort = np.argsort(-key_priors)  # Negative to sort descending
+        max_indexes = np.clip(
+            np.argmax(
+                np.cumsum(
+                    np.take_along_axis(key_priors, priors_argsort, -1),
+                    axis=-1,
+                ) >= self.target_key_branch_prob,
+                axis=-1,
+            ) + 1,
+            1,
+            self.max_key_branching_factor,
+        )
+
         new_states = []
-        for state, key_prior, key_log_prior in zip(states, key_priors, np.log(key_priors)):
-            # TODO: Beam search through key priors
-            pass
+        for state, log_prior, max_index in zip(states, np.log(key_priors), max_indexes):
+            # Ensure each state branches at least once
+            if max_index == 1 and priors_argsort[0] == state.key:
+                max_index = 2
+
+            # Branch
+            for key_id in priors_argsort[:max_index]:
+                if key_id == state.key:
+                    # Disallow self-transitions
+                    continue
+
+                # Calculate the new state on this absolute chord
+                new_state = state.key_transition(key_id, log_prior)
+
+                new_states.append(new_state)
 
         return new_states
 
