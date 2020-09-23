@@ -441,8 +441,10 @@ class HarmonicInferenceModel:
         min_key_change_prob: float = 0.25,
         max_no_key_change_prob: float = 0.75,
         beam_size: int = 500,
-        max_branching_factor: int = 20,
-        target_branch_prob: float = 0.95,
+        max_chord_branching_factor: int = 20,
+        target_chord_branch_prob: float = 0.95,
+        max_key_branching_factor: int = 5,
+        target_key_branch_prob: float = 0.95,
         hash_length: int = 5,
     ):
         """
@@ -469,13 +471,19 @@ class HarmonicInferenceModel:
             The maximum probability (from the KTM) on which a key is allowed not to change.
         beam_size : int
             The beam size to use for decoding with this model.
-        max_branching_factor : int
+        max_chord_branching_factor : int
             For each state during the beam search, the maximum number of different chord
-            classifications to try during branching. Each of these will be potentially checked
-            for key change as well.
-        target_branch_prob : float
-            Once the branches transitioned into account for at least this much probability mass,
-            no more branches are searched, even if the max_branching_factor has not yet been
+            classifications to try during branching.
+        target_chord_branch_prob : float
+            Once the chords transitioned into account for at least this much probability mass,
+            no more chords are searched, even if the max_chord_branching_factor has not yet been
+            reached.
+        max_Key_branching_factor : int
+            For each state during the beam search, the maximum number of different key
+            classifications to try during branching.
+        target_key_branch_prob : float
+            Once the keys transitioned into account for at least this much probability mass,
+            no more keys are searched, even if the max_key_branching_factor has not yet been
             reached.
         hash_length : int
             If not None, a hashed beam is used, where only 1 State is kept in the Beam
@@ -528,10 +536,16 @@ class HarmonicInferenceModel:
         self.min_key_change_prob = min_key_change_prob
         self.max_no_key_change_prob = max_no_key_change_prob
 
+        # Chord branching params (CCM)
+        self.max_chord_branching_factor = max_chord_branching_factor
+        self.target_chord_branch_prob = target_chord_branch_prob
+
+        # Key branching params (KSM)
+        self.max_key_branching_factor = max_key_branching_factor
+        self.target_key_branch_prob = target_key_branch_prob
+
         # Beam search params
         self.beam_size = beam_size
-        self.max_branching_factor = max_branching_factor
-        self.target_branch_prob = target_branch_prob
         self.hash_length = hash_length
 
     def get_harmony(self, piece: Piece) -> State:
@@ -773,11 +787,11 @@ class HarmonicInferenceModel:
                 np.cumsum(
                     np.take_along_axis(priors, priors_argsort, -1),
                     axis=-1,
-                ) >= self.target_branch_prob,
+                ) >= self.target_chord_branch_prob,
                 axis=-1,
             ) + 1,
             1,
-            self.max_branching_factor,
+            self.max_chord_branching_factor,
         )
         for (start, end), range_log_prob, log_prior, prior_argsort, max_index in zip(
             chord_ranges,
@@ -805,6 +819,9 @@ class HarmonicInferenceModel:
             desc="Beam searching through inputs",
             total=len(all_states) - 1,
         ):
+            # Run CSM here to avoid running it for invalid states
+            self.run_csm_batched([state for state in current_states])
+
             to_check_for_key_change = []
 
             # Initial branch on absolute chord symbol
@@ -864,20 +881,16 @@ class HarmonicInferenceModel:
                     state.log_prob += no_change_log_prob
                     to_csm_prior_states.append(state)
 
-            # TODO: Change keys and put states into CSM
+            # Change keys and put resulting states into the appropriate beam
+            for state in self.get_key_change_states(to_ksm_states):
+                all_states[state.change_index].add(state)
 
-            # Get CSM prior from previous state
-            to_csm_states = []
+            # Add CSM prior and add to beam (CSM is run at the start of each iteration)
             for state in to_csm_prior_states:
                 state.add_csm_prior()
 
                 # Add state to its beam, if it fits
-                if all_states[state.change_index].add(state):
-                    to_csm_states.append(state)
-
-            # TODO: Maybe this can be done at the beginning of each following iteration instead?
-            # Run CSM on only those states which are still valid after all beaming
-            self.run_csm_batched([state for state in to_csm_states if state.valid])
+                all_states[state.change_index].add(state)
 
             current_states.empty()
 
@@ -936,6 +949,44 @@ class HarmonicInferenceModel:
         key_change_probs[valid] = outputs
 
         return outputs
+
+    def get_key_change_states(self, states: List[State]) -> List[State]:
+        """
+        Get all states resulting from key changes on the given states using the KSM.
+
+        Parameters
+        ----------
+        states : List[State]
+            The states which will change key.
+
+        Returns
+        -------
+        new_states : List[State]
+            A List of all states resulting from key changes of the given states.
+        """
+        # Get inputs and hidden states for all states
+        ksm_inputs = [state.get_ksm_input() for state in states] * len(states)
+
+        # Generate KSM loader
+        ksm_dataset = ds.KeySequenceDataset(ksm_inputs, dummy_targets=True)
+        ksm_loader = DataLoader(
+            ksm_dataset,
+            batch_size=ds.KeySequenceDataset.valid_batch_size,
+            shuffle=False,
+        )
+
+        # Run KSM
+        key_priors = []
+        for batch in ksm_loader:
+            priors = self.chord_sequence_model.run_one_step(batch)
+            key_priors.extend(priors)
+
+        new_states = []
+        for state, key_prior, key_log_prior in zip(states, key_priors, np.log(key_priors)):
+            # TODO: Beam search through key priors
+            pass
+
+        return new_states
 
     def run_csm_batched(self, states: List[State]):
         """
