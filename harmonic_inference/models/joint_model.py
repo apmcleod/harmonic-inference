@@ -90,7 +90,6 @@ class State:
             else:
                 self.hash_tuple = tuple(list(prev_state.hash_tuple[1:]) + [(key, chord)])
 
-        # TODO: Initial hidden states
         self.csm_hidden_state = None if csm_hidden_state is None else csm_hidden_state.copy()
         self.ktm_hidden_state = None if ktm_hidden_state is None else ktm_hidden_state.copy()
         self.csm_log_prior = None if csm_log_prior is None else csm_log_prior
@@ -189,6 +188,7 @@ class State:
             The input for the next step of this state's CSM.
         """
         # TODO
+        raise NotImplementedError()
 
     def get_ktm_input(self) -> np.array:
         """
@@ -200,6 +200,7 @@ class State:
             The input for the next step of this state's KTM.
         """
         # TODO
+        raise NotImplementedError()
 
     def get_ksm_input(self) -> np.array:
         """
@@ -213,6 +214,7 @@ class State:
             The input for the KSM form the last key change until now.
         """
         # TODO
+        raise NotImplementedError()
 
     def get_relative_chord(self) -> int:
         """
@@ -224,6 +226,7 @@ class State:
             The current chord, relative to the current key.
         """
         # TODO
+        raise NotImplementedError()
 
     def get_chords(self) -> Tuple[List[int], List[int]]:
         """

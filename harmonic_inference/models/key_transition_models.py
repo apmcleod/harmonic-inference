@@ -73,9 +73,11 @@ class KeyTransitionModel(pl.LightningModule):
         return result
 
     def init_hidden(self, batch_size: int):
+        # TODO
         raise NotImplementedError()
 
     def run_one_step(self, batch):
+        # TODO
         raise NotImplementedError()
 
     def configure_optimizers(self):
