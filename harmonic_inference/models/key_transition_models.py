@@ -47,7 +47,7 @@ class KeyTransitionModel(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         inputs, input_lengths, targets, mask = self.get_data_from_batch(batch)
 
-        outputs = self.forward(inputs, input_lengths)
+        outputs = self(inputs, input_lengths)
 
         loss = F.binary_cross_entropy(outputs * mask, targets)
 
@@ -58,7 +58,7 @@ class KeyTransitionModel(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         inputs, input_lengths, targets, mask = self.get_data_from_batch(batch)
 
-        outputs = self.forward(inputs, input_lengths)
+        outputs = self(inputs, input_lengths)
 
         loss = F.binary_cross_entropy(outputs * mask, targets)
 
@@ -167,7 +167,6 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
         )
 
     def forward(self, inputs, lengths):
-        # pylint: disable=arguments-differ
         batch_size = inputs.shape[0]
         lengths = torch.clamp(lengths, min=1)
         h_0, c_0 = self.init_hidden(batch_size)
@@ -176,7 +175,7 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
 
         packed = pack_padded_sequence(embedded, lengths, enforce_sorted=False, batch_first=True)
         lstm_out_packed, (_, _) = self.lstm(packed, (h_0, c_0))
-        lstm_out, lstm_out_lengths = pad_packed_sequence(lstm_out_packed, batch_first=True)
+        lstm_out, _ = pad_packed_sequence(lstm_out_packed, batch_first=True)
 
         relu1 = F.relu(lstm_out)
         drop1 = self.dropout1(relu1)

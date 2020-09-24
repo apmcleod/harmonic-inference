@@ -40,7 +40,7 @@ class ChordClassifierModel(pl.LightningModule):
         notes = batch['inputs'].float()
         notes_lengths = batch['input_lengths']
 
-        outputs = self.forward(notes, notes_lengths)
+        outputs = self(notes, notes_lengths)
 
         return F.softmax(outputs, dim=-1)
 
@@ -49,7 +49,7 @@ class ChordClassifierModel(pl.LightningModule):
         notes_lengths = batch['input_lengths']
         targets = batch['targets'].long()
 
-        outputs = self.forward(notes, notes_lengths)
+        outputs = self(notes, notes_lengths)
         loss = F.cross_entropy(outputs, targets)
 
         result = pl.TrainResult(loss)
@@ -61,7 +61,7 @@ class ChordClassifierModel(pl.LightningModule):
         notes_lengths = batch['input_lengths']
         targets = batch['targets'].long()
 
-        outputs = self.forward(notes, notes_lengths)
+        outputs = self(notes, notes_lengths)
         loss = F.cross_entropy(outputs, targets)
         acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
 

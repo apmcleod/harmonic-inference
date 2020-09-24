@@ -1,4 +1,5 @@
-from typing import List, Iterable, Union, Tuple, Callable
+"""Module containing datasets for the various models."""
+from typing import List, Iterable, Union, Tuple, Callable, Dict
 from pathlib import Path
 import logging
 import shutil
@@ -15,29 +16,70 @@ import harmonic_inference.utils.harmonic_constants as hc
 
 
 class HarmonicDataset(Dataset):
-    def __init__(self, transform=None):
+    """
+    The base dataset that all model-specific dataset objects will inherit from.
+    """
+    def __init__(self, transform: Callable = None):
+        """
+        Create a new base dataset.
+
+        Parameters
+        ----------
+        transform : Callable
+            A function to call on each returned data point.
+        """
         self.h5_path = None
         self.padded = False
         self.in_ram = True
         self.transform = transform
 
-    def __len__(self):
+    def __len__(self) -> int:
+        """
+        Return how many input data points this dataset contains.
+
+        Returns
+        -------
+        length : int
+            The number of data points in this dataset.
+        """
         if not self.in_ram:
             with h5py.File(self.h5_path, 'r') as h5_file:
                 return len(h5_file['inputs'])
         return len(self.inputs)
 
-    def __getitem__(self, item):
-        keys = ["inputs", "targets", "input_lengths", "target_lengths"]
+    def __getitem__(self, item) -> Dict:
+        """
+        Get a specific item (or range of items) from this dataset.
+
+        Parameters
+        ----------
+        item : Indexer
+            Some type of indexer which can index into lists and numpy arrays.
+            This specifies the input data to be returned.
+
+        Returns
+        -------
+        data : Dict
+            The data points specified by the item Indexer. This will contain the fields:
+            inputs, input_lengths, targets, target_legnths, and hidden_states, if these
+            are attributes of the dataset object.
+        """
         if not self.in_ram:
             assert self.h5_path is not None, "Data must be either in ram or in an h5_file."
             with h5py.File(self.h5_path, 'r') as h5_file:
-                data = {key: h5_file[key][item] for key in keys if key in h5_file}
+                data = {
+                    key: h5_file[key][item]
+                    for key in ["inputs", "targets", "input_lengths", "target_lengths"]
+                    if key in h5_file
+                }
         else:
-            data = {
-                "inputs": self.inputs[item],
-                "targets": self.targets[item],
-            }
+            data = {"inputs": self.inputs[item]}
+            if hasattr(self, "targets"):
+                data["targets"] = self.targets[item]
+
+            if hasattr(self, "hidden_states"):
+                data["hidden_states"] = getattr(self, "hidden_states")[item]
+
             if hasattr(self, "input_lengths"):
                 if not hasattr(self, "max_input_length"):
                     self.max_input_length = max(self.input_lengths)

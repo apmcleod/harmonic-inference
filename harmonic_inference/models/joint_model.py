@@ -121,6 +121,9 @@ class State:
             log_prob=self.log_prob + log_prob,
             prev_state=self,
             hash_length=len(self.hash_tuple) if hasattr(self, 'hash_tuple') else None,
+            csm_hidden_state=self.csm_hidden_state,
+            ktm_hidden_state=self.ktm_hidden_state,
+            csm_log_prior=self.csm_log_prior,
         )
 
     def can_key_transition(self) -> bool:
@@ -161,7 +164,10 @@ class State:
             change_index=self.change_index,
             log_prob=self.prev_state.log_prob + log_prob,
             prev_state=self.prev_state,
-            hash_length=len(self.hash_tuple)
+            hash_length=len(self.hash_tuple) if hasattr(self, 'hash_tuple') else None,
+            csm_hidden_state=self.csm_hidden_state,
+            ktm_hidden_state=self.ktm_hidden_state,
+            csm_log_prior=self.csm_log_prior,
         )
 
     def add_csm_prior(self) -> None:
@@ -171,7 +177,7 @@ class State:
         This has its own method essentially to notify the State that its prior, chord, and key
         are all now valid.
         """
-        # TODO
+        self.log_prob += self.csm_log_prior[self.get_relative_chord()]
 
     def get_csm_input(self) -> np.array:
         """
@@ -205,6 +211,17 @@ class State:
         -------
         ktm_input : np.array
             The input for the KSM form the last key change until now.
+        """
+        # TODO
+
+    def get_relative_chord(self) -> int:
+        """
+        Get the one-hot index of the chord symbol, relative to the current key.
+
+        Returns
+        -------
+        relative_chord : int
+            The current chord, relative to the current key.
         """
         # TODO
 
@@ -984,7 +1001,9 @@ class HarmonicInferenceModel:
             ktm_inputs[i] = state.get_ktm_input()
 
         # Generate KTM loader
-        ktm_dataset = ds.KeyTransitionDataset(ktm_hidden_states, ktm_inputs, dummy_targets=True)
+        ktm_dataset = ds.HarmonicDataset()
+        ktm_dataset.inputs = ktm_inputs
+        ktm_dataset.hidden_states = ktm_hidden_states
         ktm_loader = DataLoader(
             ktm_dataset,
             batch_size=ds.KeyTransitionDataset.valid_batch_size,
@@ -1026,7 +1045,9 @@ class HarmonicInferenceModel:
         ksm_inputs = [state.get_ksm_input() for state in states] * len(states)
 
         # Generate KSM loader
-        ksm_dataset = ds.KeySequenceDataset(ksm_inputs, dummy_targets=True)
+        ksm_dataset = ds.HarmonicDataset()
+        ksm_dataset.inputs = ksm_inputs
+        ksm_dataset.input_lengths = [len(ksm_input) for ksm_input in ksm_inputs]
         ksm_loader = DataLoader(
             ksm_dataset,
             batch_size=ds.KeySequenceDataset.valid_batch_size,
@@ -1036,7 +1057,7 @@ class HarmonicInferenceModel:
         # Run KSM
         key_priors = []
         for batch in ksm_loader:
-            priors = self.chord_sequence_model.run_one_step(batch)
+            priors = self.key_sequence_model.get_output(batch)
             key_priors.extend(priors)
 
         priors_argsort = np.argsort(-np.array(key_priors))  # Negative to sort descending
@@ -1090,7 +1111,9 @@ class HarmonicInferenceModel:
             csm_inputs[i] = state.get_csm_input()
 
         # Generate CSM loader
-        csm_dataset = ds.ChordSequenceDataset(csm_hidden_states, csm_inputs, dummy_targets=True)
+        csm_dataset = ds.HarmonicDataset()
+        csm_dataset.inputs = csm_inputs
+        csm_dataset.hidden_states = csm_hidden_states
         csm_loader = DataLoader(
             csm_dataset,
             batch_size=ds.ChordSequenceDataset.valid_batch_size,

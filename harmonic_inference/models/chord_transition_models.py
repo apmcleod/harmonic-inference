@@ -48,13 +48,13 @@ class ChordTransitionModel(pl.LightningModule):
 
     def get_output(self, batch):
         inputs, input_lengths, _, _ = self.get_data_from_batch(batch)
-        outputs = self.forward(inputs, input_lengths)
+        outputs = self(inputs, input_lengths)
         return outputs, input_lengths
 
     def training_step(self, batch, batch_idx):
         inputs, input_lengths, targets, mask = self.get_data_from_batch(batch)
 
-        outputs = self.forward(inputs, input_lengths)
+        outputs = self(inputs, input_lengths)
 
         loss = F.binary_cross_entropy(outputs * mask, targets)
 
@@ -65,7 +65,7 @@ class ChordTransitionModel(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         inputs, input_lengths, targets, mask = self.get_data_from_batch(batch)
 
-        outputs = self.forward(inputs, input_lengths)
+        outputs = self(inputs, input_lengths)
 
         loss = F.binary_cross_entropy(outputs * mask, targets)
 
@@ -190,7 +190,7 @@ class SimpleChordTransitionModel(ChordTransitionModel):
 
         packed = pack_padded_sequence(embedded, lengths, enforce_sorted=False, batch_first=True)
         lstm_out_packed, (_, _) = self.lstm(packed, (h_0, c_0))
-        lstm_out, lstm_out_lengths = pad_packed_sequence(lstm_out_packed, batch_first=True)
+        lstm_out, _ = pad_packed_sequence(lstm_out_packed, batch_first=True)
 
         relu1 = F.relu(lstm_out)
         drop1 = self.dropout1(relu1)
