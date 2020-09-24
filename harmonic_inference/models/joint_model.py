@@ -994,10 +994,11 @@ class HarmonicInferenceModel:
             return key_change_probs
 
         # Get inputs and hidden states for valid states
-        ktm_hidden_states = [None] * valid_count
+        ktm_hidden_states = self.key_transition_model.init_hidden(valid_count)
         ktm_inputs = [None] * valid_count
         for i, state in enumerate(states[valid]):
-            ktm_hidden_states[i] = state.ktm_hidden_state
+            if state.ktm_hidden_state is not None:
+                ktm_hidden_states[0][i], ktm_hidden_states[1][i] = state.ktm_hidden_state
             ktm_inputs[i] = state.get_ktm_input()
 
         # Generate KTM loader
@@ -1104,10 +1105,11 @@ class HarmonicInferenceModel:
             csm_hidden_state fields changed.
         """
         # Get inputs and hidden states for all states
-        csm_hidden_states = [None] * len(states)
+        csm_hidden_states = self.chord_sequence_model.init_hidden(len(states))
         csm_inputs = [None] * len(states)
         for i, state in enumerate(states):
-            csm_hidden_states[i] = state.csm_hidden_state
+            if state.csm_hidden_state is not None:
+                csm_hidden_states[0][i], csm_hidden_states[1][i] = state.csm_hidden_state
             csm_inputs[i] = state.get_csm_input()
 
         # Generate CSM loader

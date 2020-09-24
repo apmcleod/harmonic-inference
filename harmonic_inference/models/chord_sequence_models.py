@@ -76,6 +76,12 @@ class ChordSequenceModel(pl.LightningModule):
         result.log('val_acc', acc)
         return result
 
+    def init_hidden(self, batch_size: int):
+        raise NotImplementedError()
+
+    def run_one_step(self, batch):
+        raise NotImplementedError()
+
     def configure_optimizers(self):
         return torch.optim.Adam(
             self.parameters(),
