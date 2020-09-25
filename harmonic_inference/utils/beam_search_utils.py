@@ -1,12 +1,14 @@
 """Utils (beams and state) for running beam search."""
+import re
 from typing import Union, List, Tuple
 import heapq
 
 import numpy as np
 
-from harmonic_inference.data.data_types import PitchType
+from harmonic_inference.data.data_types import PitchType, KeyMode
+from harmonic_inference.data.piece import Chord, Key
 import harmonic_inference.utils.harmonic_utils as hu
-from harmonic_inference.utils.harmonic_constants import TPC_C
+from harmonic_inference.utils.harmonic_constants import TPC_C, NUM_PITCHES
 from harmonic_inference.models.joint_model import LABELS
 
 
@@ -28,6 +30,7 @@ class State:
         csm_hidden_state: np.array = None,
         ktm_hidden_state: np.array = None,
         csm_log_prior: np.array = None,
+        key_obj: Key = None,
     ):
         """
         Create a new State.
@@ -56,6 +59,8 @@ class State:
             The hidden state for the KTM's next step.
         csm_log_prior : np.array
             The log prior for each (relative) chord symbol, as output by the CSM.
+        key_obj : Key
+            The key object of this state, in case it can be copied from the previous state.
         """
         self.valid = True
 
@@ -75,6 +80,10 @@ class State:
         self.csm_hidden_state = None if csm_hidden_state is None else csm_hidden_state.copy()
         self.ktm_hidden_state = None if ktm_hidden_state is None else ktm_hidden_state.copy()
         self.csm_log_prior = None if csm_log_prior is None else csm_log_prior
+
+        # Key/chord objects
+        self.chord_obj = None
+        self.key_obj = key_obj
 
     def chord_transition(self, chord: int, change_index: int, log_prob: float):
         """
@@ -105,6 +114,7 @@ class State:
             csm_hidden_state=self.csm_hidden_state,
             ktm_hidden_state=self.ktm_hidden_state,
             csm_log_prior=self.csm_log_prior,
+            key_obj=self.key_obj,
         )
 
     def can_key_transition(self) -> bool:
@@ -149,6 +159,7 @@ class State:
             csm_hidden_state=self.csm_hidden_state,
             ktm_hidden_state=self.ktm_hidden_state,
             csm_log_prior=self.csm_log_prior,
+            key_obj=None,
         )
 
     def add_csm_prior(self, pitch_type: PitchType) -> None:
@@ -165,29 +176,54 @@ class State:
         """
         self.log_prob += self.csm_log_prior[self.get_relative_chord(pitch_type)]
 
-    def get_csm_input(self) -> np.array:
+    def get_csm_input(self, pitch_type: PitchType) -> np.array:
         """
         Get the input for the next step of this state's CSM.
+
+        Parameters
+        ----------
+        pitch_type : PitchType
+            The pitch type used to store the chord root and key tonic.
 
         Returns
         -------
         csm_input : np.array
             The input for the next step of this state's CSM.
         """
-        # TODO
-        raise NotImplementedError()
+        key_change_vector = np.zeros(NUM_PITCHES[pitch_type] * len(KeyMode))
+        is_key_change = 0
+        if self.prev_state is not None and self.prev_state.key != self.key:
+            # Key change
+            is_key_change = 1
+            key_change_vector[
+                self.prev_state.get_key(pitch_type).get_key_change_one_hot_index(
+                    self.get_key(pitch_type)
+                )
+            ] = 1
 
-    def get_ktm_input(self) -> np.array:
+        return np.concatenate(
+            [
+                self.get_chord(pitch_type).to_vec(),
+                key_change_vector,
+                [is_key_change],
+            ]
+        )
+
+    def get_ktm_input(self, pitch_type: PitchType) -> np.array:
         """
         Get the input for the next step of this state's KTM.
+
+        Parameters
+        ----------
+        pitch_type : PitchType
+            The pitch type used to store the chord root and key tonic.
 
         Returns
         -------
         ktm_input : np.array
             The input for the next step of this state's KTM.
         """
-        # TODO
-        raise NotImplementedError()
+        return self.get_chord(pitch_type).to_vec()
 
     def get_ksm_input(self) -> np.array:
         """
@@ -202,6 +238,61 @@ class State:
         """
         # TODO
         raise NotImplementedError()
+
+    def get_chord(self, pitch_type: PitchType) -> Chord:
+        """
+        Get the Chord object of this state.
+
+        Parameters
+        ----------
+        pitch_type : PitchType
+            The pitch type used to store the chord root.
+
+        Returns
+        -------
+        chord : Chord
+            The chord object of this state, relative to its key.
+        """
+        if self.chord_obj is None:
+            key = self.get_key(pitch_type)
+            root, chord_type, inversion = LABELS['chords'][self.chord]
+
+            self.chord_obj = Chord(
+                root,
+                bass,
+                key.relative_tonic,
+                key.relative_mode,
+                chord_type,
+                inversion,
+                onset,
+                onset_level,
+                offset,
+                offset_level,
+                duration,
+                pitch_type,
+            )
+
+        return self.chord_obj
+
+    def get_key(self, pitch_type: PitchType) -> Key:
+        """
+        Get the Key object of this state.
+
+        Parameters
+        ----------
+        pitch_type : PitchType
+            The pitch type used to store the key tonic.
+
+        Returns
+        -------
+        key : Key
+            The key object of this state.
+        """
+        if self.key_obj is None:
+            tonic, mode = LABELS['keys'][self.key]
+            self.key_obj = Key(tonic, tonic, mode, mode, pitch_type)
+
+        return self.key_obj
 
     def get_relative_chord(self, pitch_type: PitchType) -> int:
         """

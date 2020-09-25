@@ -556,7 +556,7 @@ class HarmonicInferenceModel:
         for i, state in enumerate(states[valid]):
             if state.ktm_hidden_state is not None:
                 ktm_hidden_states[0][i], ktm_hidden_states[1][i] = state.ktm_hidden_state
-            ktm_inputs[i] = state.get_ktm_input()
+            ktm_inputs[i] = state.get_ktm_input(self.CHORD_OUTPUT_TYPE)
 
         # Generate KTM loader
         ktm_dataset = ds.HarmonicDataset()
@@ -600,7 +600,8 @@ class HarmonicInferenceModel:
             A List of all states resulting from key changes of the given states.
         """
         # Get inputs and hidden states for all states
-        ksm_inputs = [state.get_ksm_input() for state in states] * len(states)
+        # TODO: Why multiply here???
+        ksm_inputs = [state.get_ksm_input(self.CHORD_OUTPUT_TYPE) for state in states] * len(states)
 
         # Generate KSM loader
         ksm_dataset = ds.HarmonicDataset()
@@ -667,7 +668,7 @@ class HarmonicInferenceModel:
         for i, state in enumerate(states):
             if state.csm_hidden_state is not None:
                 csm_hidden_states[0][i], csm_hidden_states[1][i] = state.csm_hidden_state
-            csm_inputs[i] = state.get_csm_input()
+            csm_inputs[i] = state.get_csm_input(self.CHORD_OUTPUT_TYPE)
 
         # Generate CSM loader
         csm_dataset = ds.HarmonicDataset()
