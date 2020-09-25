@@ -17,6 +17,8 @@ import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
 from harmonic_inference.data.piece import Piece
 import harmonic_inference.data.datasets as ds
+from harmonic_inference.data.data_types import KeyMode
+import harmonic_inference.utils.harmonic_utils as hu
 
 
 MODEL_CLASSES = {
@@ -25,6 +27,12 @@ MODEL_CLASSES = {
     'csm': csm.SimpleChordSequenceModel,
     'ktm': ktm.SimpleKeyTransitionModel,
     'ksm': ksm.SimpleKeySequenceModel,
+}
+
+
+LABELS = {
+    'chords': None,
+    'keys': None,
 }
 
 
@@ -596,6 +604,29 @@ class HarmonicInferenceModel:
         self.INPUT_TYPE = self.chord_classifier.INPUT_TYPE
         self.CHORD_OUTPUT_TYPE = self.chord_sequence_model.CHORD_TYPE
         self.KEY_OUTPUT_TYPE = self.key_sequence_model.KEY_TYPE
+
+        # Load labels
+        LABELS['chord'] = [
+            (
+                hu.get_pitch_from_string(root, self.CHORD_OUTPUT_TYPE),
+                hu.get_chord_type_from_string(description.split(',')[0]),
+                int(inv)
+            )
+            for root, description, inv in [
+                chord.split(':')
+                for chord in hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE, use_inversions=True)
+            ]
+        ]
+        LABELS['key'] = [
+            (
+                hu.get_pitch_from_string(tonic, self.KEY_OUTPUT_TYPE),
+                KeyMode[mode.split('.')[1]]
+            )
+            for tonic, mode in [
+                key.split(':')
+                for key in hu.get_key_label_list(self.KEY_OUTPUT_TYPE)
+            ]
+        ]
 
         # CTM params
         assert min_chord_change_prob <= max_no_chord_change_prob, (
