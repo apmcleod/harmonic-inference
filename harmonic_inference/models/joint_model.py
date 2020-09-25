@@ -17,8 +17,9 @@ import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
 from harmonic_inference.data.piece import Piece
 import harmonic_inference.data.datasets as ds
-from harmonic_inference.data.data_types import KeyMode
+from harmonic_inference.data.data_types import KeyMode, PitchType
 import harmonic_inference.utils.harmonic_utils as hu
+from harmonic_inference.utils.harmonic_constants import TPC_C
 
 
 MODEL_CLASSES = {
@@ -177,14 +178,19 @@ class State:
             csm_log_prior=self.csm_log_prior,
         )
 
-    def add_csm_prior(self) -> None:
+    def add_csm_prior(self, pitch_type: PitchType) -> None:
         """
         Add the log_prior for this state's current relative chord to this state's log_prob.
 
         This has its own method essentially to notify the State that its prior, chord, and key
         are all now valid.
+
+        Parameters
+        ----------
+        pitch_type : PitchType
+            The pitch type used to store the chord root and key tonic.
         """
-        self.log_prob += self.csm_log_prior[self.get_relative_chord()]
+        self.log_prob += self.csm_log_prior[self.get_relative_chord(pitch_type)]
 
     def get_csm_input(self) -> np.array:
         """
@@ -224,17 +230,30 @@ class State:
         # TODO
         raise NotImplementedError()
 
-    def get_relative_chord(self) -> int:
+    def get_relative_chord(self, pitch_type: PitchType) -> int:
         """
         Get the one-hot index of the chord symbol, relative to the current key.
+
+        Parameters
+        ----------
+        pitch_type : PitchType
+            The pitch type used to store the chord root and key tonic.
 
         Returns
         -------
         relative_chord : int
             The current chord, relative to the current key.
         """
-        # TODO
-        raise NotImplementedError()
+        root, chord_type, inversion = LABELS['chord'][self.chord]
+        root = hu.transpose_pitch(root, self.key - TPC_C, pitch_type)
+
+        return hu.get_chord_one_hot_index(
+            chord_type,
+            root,
+            pitch_type,
+            inversion=inversion,
+            use_inversion=True,
+        )
 
     def get_chords(self) -> Tuple[List[int], List[int]]:
         """
@@ -996,7 +1015,7 @@ class HarmonicInferenceModel:
 
             # Add CSM prior and add to beam (CSM is run at the start of each iteration)
             for state in to_csm_prior_states:
-                state.add_csm_prior()
+                state.add_csm_prior(self.CHORD_OUTPUT_TYPE)
 
                 # Add state to its beam, if it fits
                 all_states[state.change_index].add(state)
