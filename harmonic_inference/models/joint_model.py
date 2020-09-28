@@ -129,27 +129,31 @@ class HarmonicInferenceModel:
         self.KEY_OUTPUT_TYPE = self.key_sequence_model.KEY_TYPE
 
         # Load labels
-        LABELS['chord'] = [
-            (
-                hu.get_pitch_from_string(root, self.CHORD_OUTPUT_TYPE),
-                hu.get_chord_type_from_string(description.split(',')[0]),
-                int(inv)
-            )
-            for root, description, inv in [
-                chord.split(':')
-                for chord in hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE, use_inversions=True)
-            ]
-        ]
-        LABELS['key'] = [
-            (
-                hu.get_pitch_from_string(tonic, self.KEY_OUTPUT_TYPE),
-                KeyMode[mode.split('.')[1]]
-            )
-            for tonic, mode in [
-                key.split(':')
-                for key in hu.get_key_label_list(self.KEY_OUTPUT_TYPE)
-            ]
-        ]
+        self.LABELS = {
+            'chord': [
+                (
+                    hu.get_pitch_from_string(root, self.CHORD_OUTPUT_TYPE),
+                    hu.get_chord_type_from_string(description.split(',')[0]),
+                    int(inv)
+                )
+                for root, description, inv in [
+                    chord.split(':')
+                    for chord in hu.get_chord_label_list(
+                        self.CHORD_OUTPUT_TYPE, use_inversions=True
+                    )
+                ]
+            ],
+            'key': [
+                (
+                    hu.get_pitch_from_string(tonic, self.KEY_OUTPUT_TYPE),
+                    KeyMode[mode.split('.')[1]]
+                )
+                for tonic, mode in [
+                    key.split(':')
+                    for key in hu.get_key_label_list(self.KEY_OUTPUT_TYPE)
+                ]
+            ],
+        }
 
         # CTM params
         assert min_chord_change_prob <= max_no_chord_change_prob, (
@@ -462,7 +466,8 @@ class HarmonicInferenceModel:
             total=len(all_states) - 1,
         ):
             # Run CSM here to avoid running it for invalid states
-            self.run_csm_batched(list(current_states))
+            if current_start != 0:
+                self.run_csm_batched(list(current_states))
 
             to_check_for_key_change = []
 
@@ -529,7 +534,8 @@ class HarmonicInferenceModel:
 
             # Add CSM prior and add to beam (CSM is run at the start of each iteration)
             for state in to_csm_prior_states:
-                state.add_csm_prior(self.CHORD_OUTPUT_TYPE)
+                if current_start != 0:
+                    state.add_csm_prior(self.CHORD_OUTPUT_TYPE, self.LABELS)
 
                 # Add state to its beam, if it fits
                 all_states[state.change_index].add(state)
@@ -571,6 +577,7 @@ class HarmonicInferenceModel:
                 self.duration_cache,
                 self.onset_cache,
                 self.onset_level_cache,
+                self.LABELS,
             )
 
         # Generate KTM loader
@@ -614,6 +621,9 @@ class HarmonicInferenceModel:
         new_states : List[State]
             A List of all states resulting from key changes of the given states.
         """
+        if len(states) == 0:
+            return []
+
         # Get inputs and hidden states for all states
         ksm_inputs = [
             state.get_ksm_input(
@@ -621,6 +631,7 @@ class HarmonicInferenceModel:
                 self.duration_cache,
                 self.onset_cache,
                 self.onset_level_cache,
+                self.LABELS,
             ) for state in states
         ]
 
@@ -694,6 +705,7 @@ class HarmonicInferenceModel:
                 self.duration_cache,
                 self.onset_cache,
                 self.onset_level_cache,
+                self.LABELS,
             )
 
         # Generate CSM loader

@@ -1,6 +1,6 @@
 """Utils (beams and state) for running beam search."""
 from fractions import Fraction
-from typing import Union, List, Tuple, Iterator
+from typing import Union, List, Tuple, Iterator, Dict
 import heapq
 
 import numpy as np
@@ -9,7 +9,6 @@ from harmonic_inference.data.data_types import PitchType, KeyMode
 from harmonic_inference.data.piece import Chord, Key
 import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.utils.harmonic_constants import TPC_C, NUM_PITCHES
-from harmonic_inference.models.joint_model import LABELS
 
 
 class State:
@@ -79,7 +78,7 @@ class State:
 
         self.csm_hidden_state = None if csm_hidden_state is None else csm_hidden_state.copy()
         self.ktm_hidden_state = None if ktm_hidden_state is None else ktm_hidden_state.copy()
-        self.csm_log_prior = None if csm_log_prior is None else csm_log_prior
+        self.csm_log_prior = csm_log_prior
 
         # Key/chord objects
         self.chord_obj = None
@@ -162,7 +161,7 @@ class State:
             key_obj=None,
         )
 
-    def add_csm_prior(self, pitch_type: PitchType):
+    def add_csm_prior(self, pitch_type: PitchType, LABELS: Dict):
         """
         Add the log_prior for this state's current relative chord to this state's log_prob.
 
@@ -173,8 +172,10 @@ class State:
         ----------
         pitch_type : PitchType
             The pitch type used to store the chord root and key tonic.
+        LABELS : Dict
+            A Dictionary of key and chord labels for the current piece.
         """
-        self.log_prob += self.csm_log_prior[self.get_relative_chord(pitch_type)]
+        self.log_prob += self.csm_log_prior[self.get_relative_chord(pitch_type, LABELS)]
 
     def get_csm_input(
         self,
@@ -182,6 +183,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
+        LABELS: Dict,
     ) -> np.array:
         """
         Get the input for the next step of this state's CSM.
@@ -196,6 +198,8 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
+        LABELS : Dict
+            A Dictionary of key and chord labels for the current piece.
 
         Returns
         -------
@@ -209,7 +213,7 @@ class State:
             is_key_change = 1
             key_change_vector[
                 self.prev_state.get_key(pitch_type).get_key_change_one_hot_index(
-                    self.get_key(pitch_type)
+                    self.get_key(pitch_type, LABELS)
                 )
             ] = 1
 
@@ -220,6 +224,7 @@ class State:
                     duration_cache,
                     onset_cache,
                     onset_level_cache,
+                    LABELS,
                 ).to_vec(),
                 key_change_vector,
                 [is_key_change],
@@ -232,6 +237,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
+        LABELS: Dict,
     ) -> np.array:
         """
         Get the input for the next step of this state's KTM.
@@ -246,6 +252,8 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
+        LABELS : Dict
+            A Dictionary of key and chord labels for the current piece.
 
         Returns
         -------
@@ -256,7 +264,8 @@ class State:
             pitch_type,
             duration_cache,
             onset_cache,
-            onset_level_cache
+            onset_level_cache,
+            LABELS,
         ).to_vec()
 
     def get_ksm_input(
@@ -265,6 +274,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
+        LABELS: Dict,
         length: int = 0,
     ) -> np.array:
         """
@@ -282,6 +292,8 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
+        LABELS : Dict
+            A Dictionary of key and chord labels for the current piece.
         length : int
             The number of input vectors that will be appended to the returned input nd-array.
             The default value (0) should be used for the initial (non-recursive) call.
@@ -296,7 +308,8 @@ class State:
             pitch_type,
             duration_cache,
             onset_cache,
-            onset_level_cache
+            onset_level_cache,
+            LABELS,
         ).to_vec()
 
         if self.prev_state is None or self.prev_state.key != self.key:
@@ -321,6 +334,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
+        LABELS: Dict,
     ) -> Chord:
         """
         Get the Chord object of this state.
@@ -335,6 +349,8 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
+        LABELS : Dict
+            A Dictionary of key and chord labels for the current piece.
 
         Returns
         -------
@@ -342,8 +358,8 @@ class State:
             The chord object of this state, relative to its key.
         """
         if self.chord_obj is None:
-            key = self.get_key(pitch_type)
-            root, chord_type, inversion = LABELS['chords'][self.chord]
+            key = self.get_key(pitch_type, LABELS)
+            root, chord_type, inversion = LABELS['chord'][self.chord]
 
             prev_index = self.prev_state.change_index
             index = self.change_index
@@ -365,7 +381,7 @@ class State:
 
         return self.chord_obj
 
-    def get_key(self, pitch_type: PitchType) -> Key:
+    def get_key(self, pitch_type: PitchType, LABELS: Dict) -> Key:
         """
         Get the Key object of this state.
 
@@ -380,12 +396,12 @@ class State:
             The key object of this state.
         """
         if self.key_obj is None:
-            tonic, mode = LABELS['keys'][self.key]
+            tonic, mode = LABELS['key'][self.key]
             self.key_obj = Key(tonic, tonic, mode, mode, pitch_type)
 
         return self.key_obj
 
-    def get_relative_chord(self, pitch_type: PitchType) -> int:
+    def get_relative_chord(self, pitch_type: PitchType, LABELS: Dict) -> int:
         """
         Get the one-hot index of the chord symbol, relative to the current key.
 

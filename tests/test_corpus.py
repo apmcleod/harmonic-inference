@@ -147,7 +147,9 @@ def test_chords():
 
         bass = hu.get_bass_note(chord.chord_type, chord.root, chord.inversion, PitchType.TPC)
         if bass != chord.bass:
-            logging.error(f"Incorrect bass note ({bass}) for chord_row {chord_id}")
+            logging.error(
+                f"Incorrect bass note ({bass}) for chord_row {chord_id}: {chord_row.label}"
+            )
 
 
 def test_notes():
