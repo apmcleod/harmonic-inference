@@ -2,9 +2,13 @@
 from pathlib import Path
 import logging
 
+from tqdm import tqdm
 import pandas as pd
 
 import harmonic_inference.utils.corpus_utils as cu
+import harmonic_inference.utils.harmonic_utils as hu
+from harmonic_inference.data.piece import Chord
+from harmonic_inference.data.data_types import PitchType
 from harmonic_inference.data.corpus_reading import read_dump, load_clean_corpus_dfs
 
 TSV_BASE = Path('corpus_data')
@@ -51,7 +55,10 @@ def test_measures():
         assert all(df.index.get_level_values(0).isin(files_dfs['default'].index))
 
     # Well-formedness
-    for file_id, piece_df in measures_dfs['removed'].groupby('file_id'):
+    for file_id, piece_df in tqdm(
+        measures_dfs['removed'].groupby('file_id'),
+        desc="Checking measures well-formedness",
+    ):
         piece_df = piece_df.copy()
 
         assert len(piece_df.loc[piece_df['next'].isnull()]) == 1, "Not exactly 1 mc ends."
@@ -124,7 +131,23 @@ def test_chords():
     assert all(chords_dfs['offsets'].mc.isin(measures_dfs['removed'].mc))
     assert all(chords_dfs['offsets'].mc_next.isin(measures_dfs['removed'].mc))
 
-    # TODO: Test hu.get_bass_note() is accurate for all chords
+    # Check all bass notes
+    for chord_id, chord_row in tqdm(
+        chords_dfs['offsets'].iterrows(),
+        desc="Checking chord bass notes",
+        total=len(chords_dfs['offsets']),
+    ):
+        chord = Chord.from_series(
+            chord_row,
+            measures_dfs['removed'].loc[chord_id[0]],
+            PitchType.TPC,
+        )
+        if chord is None:
+            continue
+
+        bass = hu.get_bass_note(chord.chord_type, chord.root, chord.inversion, PitchType.TPC)
+        if bass != chord.bass:
+            logging.error(f"Incorrect bass note ({bass}) for chord_row {chord_id}")
 
 
 def test_notes():

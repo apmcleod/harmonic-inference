@@ -414,4 +414,11 @@ def test_get_key_one_hot_index():
 
 
 def test_get_bass_note():
-    assert False
+    for pitch_type in PitchType:
+        for chord_type in ChordType:
+            for inversion in range(hu.get_chord_inversion_count(chord_type)):
+                target_bass = hc.CHORD_PITCHES[pitch_type][chord_type][inversion]
+                for transposition in range(12):
+                    root = transposition + hc.C[pitch_type]
+                    bass = hu.get_bass_note(chord_type, root, inversion, pitch_type)
+                    assert bass == hu.transpose_pitch(target_bass, transposition, pitch_type)
