@@ -124,6 +124,8 @@ def test_chords():
     assert all(chords_dfs['offsets'].mc.isin(measures_dfs['removed'].mc))
     assert all(chords_dfs['offsets'].mc_next.isin(measures_dfs['removed'].mc))
 
+    # TODO: Test hu.get_bass_note() is accurate for all chords
+
 
 def test_notes():
     global files_dfs, measures_dfs, chords_dfs, notes_dfs

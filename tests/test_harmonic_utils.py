@@ -411,3 +411,7 @@ def test_get_key_one_hot_index():
         hu.get_key_one_hot_index(KeyMode.MAJOR, -1, PitchType.TPC)
     with pytest.raises(ValueError):
         hu.get_key_one_hot_index(KeyMode.MAJOR, hc.NUM_PITCHES[PitchType.TPC], PitchType.TPC)
+
+
+def test_get_bass_note():
+    assert False

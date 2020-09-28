@@ -1,5 +1,6 @@
 """Utils (beams and state) for running beam search."""
-from typing import Union, List, Tuple
+from fractions import Fraction
+from typing import Union, List, Tuple, Iterator
 import heapq
 
 import numpy as np
@@ -24,7 +25,7 @@ class State:
         key: int = None,
         change_index: int = 0,
         log_prob: float = 0.0,
-        prev_state=None,
+        prev_state: 'State' = None,
         hash_length: int = None,
         csm_hidden_state: np.array = None,
         ktm_hidden_state: np.array = None,
@@ -175,7 +176,13 @@ class State:
         """
         self.log_prob += self.csm_log_prior[self.get_relative_chord(pitch_type)]
 
-    def get_csm_input(self, pitch_type: PitchType) -> np.array:
+    def get_csm_input(
+        self,
+        pitch_type: PitchType,
+        duration_cache: np.array,
+        onset_cache: List[Tuple[int, Fraction]],
+        onset_level_cache: List[int],
+    ) -> np.array:
         """
         Get the input for the next step of this state's CSM.
 
@@ -183,6 +190,12 @@ class State:
         ----------
         pitch_type : PitchType
             The pitch type used to store the chord root and key tonic.
+        duration_cache : np.array
+            The duration of each input in the current piece.
+        onset_cache : List[Tuple[int, Fraction]]
+            The onset of each input in the current piece.
+        onset_level_cache : List[int]
+            The onset level of each input in the current piece.
 
         Returns
         -------
@@ -202,13 +215,24 @@ class State:
 
         return np.concatenate(
             [
-                self.get_chord(pitch_type).to_vec(),
+                self.get_chord(
+                    pitch_type,
+                    duration_cache,
+                    onset_cache,
+                    onset_level_cache,
+                ).to_vec(),
                 key_change_vector,
                 [is_key_change],
             ]
         )
 
-    def get_ktm_input(self, pitch_type: PitchType) -> np.array:
+    def get_ktm_input(
+        self,
+        pitch_type: PitchType,
+        duration_cache: np.array,
+        onset_cache: List[Tuple[int, Fraction]],
+        onset_level_cache: List[int],
+    ) -> np.array:
         """
         Get the input for the next step of this state's KTM.
 
@@ -216,29 +240,88 @@ class State:
         ----------
         pitch_type : PitchType
             The pitch type used to store the chord root and key tonic.
+        duration_cache : np.array
+            The duration of each input in the current piece.
+        onset_cache : List[Tuple[int, Fraction]]
+            The onset of each input in the current piece.
+        onset_level_cache : List[int]
+            The onset level of each input in the current piece.
 
         Returns
         -------
         ktm_input : np.array
             The input for the next step of this state's KTM.
         """
-        return self.get_chord(pitch_type).to_vec()
+        return self.get_chord(
+            pitch_type,
+            duration_cache,
+            onset_cache,
+            onset_level_cache
+        ).to_vec()
 
-    def get_ksm_input(self) -> np.array:
+    def get_ksm_input(
+        self,
+        pitch_type: PitchType,
+        duration_cache: np.array,
+        onset_cache: List[Tuple[int, Fraction]],
+        onset_level_cache: List[int],
+        length: int = 0,
+    ) -> np.array:
         """
         Get the input for this state's KSM. This should be run only when the KTM has decided
         that there should be a key change, and the generated input will be from the last key
         change to the current state.
 
+        Parameters
+        ----------
+        pitch_type : PitchType
+            The pitch type used to store the chord root and key tonic.
+        duration_cache : np.array
+            The duration of each input in the current piece.
+        onset_cache : List[Tuple[int, Fraction]]
+            The onset of each input in the current piece.
+        onset_level_cache : List[int]
+            The onset level of each input in the current piece.
+        length : int
+            The number of input vectors that will be appended to the returned input nd-array.
+            The default value (0) should be used for the initial (non-recursive) call.
+
         Returns
         -------
-        ktm_input : np.array
-            The input for the KSM form the last key change until now.
+        ksm_input : np.array
+            The input for the KSM form the last key change until now, with `length` additional
+            input vectors filled with 0 appended to the end.
         """
-        # TODO
-        raise NotImplementedError()
+        this_ksm_input = self.get_chord(
+            pitch_type,
+            duration_cache,
+            onset_cache,
+            onset_level_cache
+        ).to_vec()
 
-    def get_chord(self, pitch_type: PitchType) -> Chord:
+        if self.prev_state is None or self.prev_state.key != self.key:
+            # Base case - this is the first state
+            ksm_input = np.zeros((1 + length, len(this_ksm_input)))
+            ksm_input[0] = this_ksm_input
+            return ksm_input
+
+        ksm_input = self.prev_state.get_ksm_input(
+            pitch_type,
+            duration_cache,
+            onset_cache,
+            onset_level_cache,
+            length=length + 1,
+        )
+        ksm_input[len(ksm_input) - length - 1] = this_ksm_input
+        return ksm_input
+
+    def get_chord(
+        self,
+        pitch_type: PitchType,
+        duration_cache: np.array,
+        onset_cache: List[Tuple[int, Fraction]],
+        onset_level_cache: List[int],
+    ) -> Chord:
         """
         Get the Chord object of this state.
 
@@ -246,6 +329,12 @@ class State:
         ----------
         pitch_type : PitchType
             The pitch type used to store the chord root.
+        duration_cache : np.array
+            The duration of each input in the current piece.
+        onset_cache : List[Tuple[int, Fraction]]
+            The onset of each input in the current piece.
+        onset_level_cache : List[int]
+            The onset level of each input in the current piece.
 
         Returns
         -------
@@ -256,18 +345,21 @@ class State:
             key = self.get_key(pitch_type)
             root, chord_type, inversion = LABELS['chords'][self.chord]
 
+            prev_index = self.prev_state.change_index
+            index = self.change_index
+
             self.chord_obj = Chord(
                 root,
-                bass,
+                hu.get_bass_note(chord_type, root, inversion, pitch_type),
                 key.relative_tonic,
                 key.relative_mode,
                 chord_type,
                 inversion,
-                onset,
-                onset_level,
-                offset,
-                offset_level,
-                duration,
+                onset_cache[prev_index],
+                onset_level_cache[prev_index],
+                onset_cache[index],
+                onset_level_cache[index],
+                np.sum(duration_cache[prev_index:self.change_index]),
                 pitch_type,
             )
 
@@ -474,10 +566,10 @@ class Beam:
         """
         self.beam = []
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[State]:
         return self.beam.__iter__()
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.beam)
 
 
@@ -589,8 +681,8 @@ class HashedBeam(Beam):
         self.beam = []
         self.state_dict = []
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[State]:
         return self.state_dict.values().__iter__()
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.state_dict)

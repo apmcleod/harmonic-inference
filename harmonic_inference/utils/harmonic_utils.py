@@ -137,6 +137,30 @@ def get_key_one_hot_index(key_mode: KeyMode, tonic: int, pitch_type: PitchType) 
     return hc.NUM_PITCHES[pitch_type] * key_mode.value + tonic
 
 
+def get_bass_note(chord_type: ChordType, root: int, inversion: int, pitch_type: PitchType) -> int:
+    """
+    Get the bass note of a chord given a chord type and inversion.
+
+    Parameters
+    ----------
+    chord_type : ChordType
+        The chord type.
+    root : int
+        The root note of the given chord.
+    inversion : int
+        The inversion of the chord.
+    pitch_type : PitchType
+        The desired pitch type to return.
+
+    Returns
+    -------
+    bass : int
+        The bass note of a chord of the given type, root, and inversion.
+    """
+    bass = hc.CHORD_PITCHES[pitch_type][chord_type][inversion]
+    return transpose_pitch(bass, root - hc.C[pitch_type], pitch_type)
+
+
 def get_chord_inversion_count(chord_type: ChordType) -> int:
     """
     Get the number of possible inversions of the given chord.

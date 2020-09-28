@@ -32,8 +32,8 @@ MODEL_CLASSES = {
 
 
 LABELS = {
-    'chords': None,
-    'keys': None,
+    'chords': [],
+    'keys': [],
 }
 
 
@@ -194,6 +194,17 @@ class HarmonicInferenceModel:
         state : State
             The top estimated state.
         """
+        # Save caches from piece
+        self.duration_cache = piece.get_duration_cache()
+        self.onset_cache = (
+            [vec.onset for vec in piece.get_inputs()] +
+            [piece.get_inputs()[-1].offset]
+        )
+        self.onset_level_cache = (
+            [vec.onset_level for vec in piece.get_inputs()] +
+            [piece.get_inputs()[-1].offset_level]
+        )
+
         # Get chord change probabilities (with CTM)
         logging.info("Getting chord change probabilities")
         change_probs = self.get_chord_change_probs(piece)
@@ -270,7 +281,6 @@ class HarmonicInferenceModel:
         """
         chord_ranges = []
         chord_log_probs = []
-        duration_cache = piece.get_duration_cache()
 
         # Invalid masks all but first note at each onset position
         first = 0
@@ -311,7 +321,7 @@ class HarmonicInferenceModel:
                     change_probs[start + 1:],
                     change_log_probs[start + 1:],
                     no_change_log_probs[start + 1:],
-                    duration_cache[start:]  # Off-by-one because cache is dur to next note
+                    self.duration_cache[start:]  # Off-by-one because cache is dur to next note
                 ),
                 start=start + 1,
             ):
@@ -556,7 +566,12 @@ class HarmonicInferenceModel:
         for i, state in enumerate(states[valid]):
             if state.ktm_hidden_state is not None:
                 ktm_hidden_states[0][i], ktm_hidden_states[1][i] = state.ktm_hidden_state
-            ktm_inputs[i] = state.get_ktm_input(self.CHORD_OUTPUT_TYPE)
+            ktm_inputs[i] = state.get_ktm_input(
+                self.CHORD_OUTPUT_TYPE,
+                self.duration_cache,
+                self.onset_cache,
+                self.onset_level_cache,
+            )
 
         # Generate KTM loader
         ktm_dataset = ds.HarmonicDataset()
@@ -600,7 +615,14 @@ class HarmonicInferenceModel:
             A List of all states resulting from key changes of the given states.
         """
         # Get inputs and hidden states for all states
-        ksm_inputs = [state.get_ksm_input(self.CHORD_OUTPUT_TYPE) for state in states]
+        ksm_inputs = [
+            state.get_ksm_input(
+                self.CHORD_OUTPUT_TYPE,
+                self.duration_cache,
+                self.onset_cache,
+                self.onset_level_cache,
+            ) for state in states
+        ]
 
         # Generate KSM loader
         ksm_dataset = ds.HarmonicDataset()
@@ -667,7 +689,12 @@ class HarmonicInferenceModel:
         for i, state in enumerate(states):
             if state.csm_hidden_state is not None:
                 csm_hidden_states[0][i], csm_hidden_states[1][i] = state.csm_hidden_state
-            csm_inputs[i] = state.get_csm_input(self.CHORD_OUTPUT_TYPE)
+            csm_inputs[i] = state.get_csm_input(
+                self.CHORD_OUTPUT_TYPE,
+                self.duration_cache,
+                self.onset_cache,
+                self.onset_level_cache,
+            )
 
         # Generate CSM loader
         csm_dataset = ds.HarmonicDataset()

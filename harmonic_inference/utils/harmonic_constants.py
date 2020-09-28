@@ -8,6 +8,12 @@ TPC_C_WITHIN_PITCHES = 1
 TPC_C = int(TPC_ACCIDENTALS / 2) * TPC_NATURAL_PITCHES + TPC_C_WITHIN_PITCHES
 
 
+C = {
+    PitchType.MIDI: 0,
+    PitchType.TPC: TPC_C,
+}
+
+
 STRING_TO_PITCH = {
     PitchType.TPC: {
         'A': TPC_C + 3,
