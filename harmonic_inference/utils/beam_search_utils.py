@@ -1,5 +1,4 @@
 """Utils (beams and state) for running beam search."""
-import re
 from typing import Union, List, Tuple
 import heapq
 
@@ -85,7 +84,7 @@ class State:
         self.chord_obj = None
         self.key_obj = key_obj
 
-    def chord_transition(self, chord: int, change_index: int, log_prob: float):
+    def chord_transition(self, chord: int, change_index: int, log_prob: float) -> 'State':
         """
         Perform a chord transition form this State, and return the new State.
 
@@ -131,7 +130,7 @@ class State:
         """
         return self.prev_state is not None and self.prev_state.prev_state is not None
 
-    def key_transition(self, key: int, log_prob: float):
+    def key_transition(self, key: int, log_prob: float) -> 'State':
         """
         Transition to a new key on the most recent chord.
 
@@ -162,7 +161,7 @@ class State:
             key_obj=None,
         )
 
-    def add_csm_prior(self, pitch_type: PitchType) -> None:
+    def add_csm_prior(self, pitch_type: PitchType):
         """
         Add the log_prior for this state's current relative chord to this state's log_prob.
 

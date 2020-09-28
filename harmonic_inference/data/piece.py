@@ -171,7 +171,7 @@ class Note():
 
         return np.concatenate(vectors)
 
-    def __eq__(self, other):
+    def __eq__(self, other: 'Note') -> bool:
         if not isinstance(other, Note):
             return False
         for field in self.params:
@@ -179,21 +179,25 @@ class Note():
                 return False
         return True
 
-    def to_dict(self):
+    def to_dict(self) -> Dict:
         return {field: getattr(self, field) for field in self.params}
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         params = ", ".join([f"{field}={getattr(self, field)}" for field in self.params])
         return f"Note({params})"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return (
             f'{hu.get_pitch_string(self.pitch_class, self.pitch_type)}{self.octave}: '
             f'{self.onset}--{self.offset}'
         )
 
     @staticmethod
-    def from_series(note_row: pd.Series, measures_df: pd.DataFrame, pitch_type: PitchType):
+    def from_series(
+        note_row: pd.Series,
+        measures_df: pd.DataFrame,
+        pitch_type: PitchType
+    ) -> 'Note':
         """
         Create a new Note object from a pd.Series, and return it.
 
@@ -345,7 +349,7 @@ class Chord():
             use_inversion=use_inversion
         )
 
-    def to_vec(self, relative_to=None) -> np.ndarray:
+    def to_vec(self, relative_to: 'Key' = None) -> np.ndarray:
         """
         Get the vectorized representation of this note given a chord.
 
@@ -409,7 +413,7 @@ class Chord():
 
         return np.concatenate(vectors)
 
-    def is_repeated(self, other, use_inversion=True) -> bool:
+    def is_repeated(self, other: 'Chord', use_inversion: bool = True) -> bool:
         """
         Detect if a given chord can be regarded as a repeat of this one in terms of root and
         chord_type, plus optionally inversion.
@@ -438,7 +442,7 @@ class Chord():
                 return False
         return True
 
-    def merge_with(self, next_chord):
+    def merge_with(self, next_chord: 'Chord'):
         """
         Merge this chord with the next one, in terms of metrical information. Specifically,
         move this chord's offset and offset_level to the next_chord's, and set this chord's
@@ -453,7 +457,7 @@ class Chord():
         self.offset_level = next_chord.offset_level
         self.duration += next_chord.duration
 
-    def __eq__(self, other):
+    def __eq__(self, other: 'Chord') -> bool:
         if not isinstance(other, Chord):
             return False
         for field in self.params:
@@ -461,14 +465,14 @@ class Chord():
                 return False
         return True
 
-    def to_dict(self):
+    def to_dict(self) -> Dict:
         return {field: getattr(self, field) for field in self.params}
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         params = ", ".join([f"{field}={getattr(self, field)}" for field in self.params])
         return f"Chord({params})"
 
-    def __str__(self):
+    def __str__(self) -> str:
         if self.inversion == 0:
             inversion_str = 'root position'
         elif self.inversion == 1:
@@ -491,7 +495,7 @@ class Chord():
         measures_df: pd.DataFrame,
         pitch_type: PitchType,
         key=None,
-    ):
+    ) -> 'Chord':
         """
         Create a Chord object of the given pitch_type from the given pd.Series.
 
@@ -625,7 +629,7 @@ class Key():
 
         self.params = inspect.getfullargspec(Key.__init__).args[1:]
 
-    def get_key_change_one_hot_index(self, next_key) -> int:
+    def get_key_change_one_hot_index(self, next_key: 'Key') -> int:
         """
         Get the key change as a one-hot index. The one-hot index is based on the mode of the next
         key and the interval from this key to the next one.
@@ -651,7 +655,7 @@ class Key():
 
         return hu.get_key_one_hot_index(next_key.relative_mode, transposition, self.tonic_type)
 
-    def is_repeated(self, other, use_relative=True) -> bool:
+    def is_repeated(self, other: 'Key', use_relative: bool = True) -> bool:
         """
         Detect if a given key can be regarded as a repeat of this one in terms of tonic and
         mode.
@@ -683,7 +687,7 @@ class Key():
                 return False
         return True
 
-    def __eq__(self, other):
+    def __eq__(self, other: 'Key') -> bool:
         if not isinstance(other, Key):
             return False
         for field in self.params:
@@ -691,18 +695,18 @@ class Key():
                 return False
         return True
 
-    def to_dict(self):
+    def to_dict(self) -> Dict:
         return {field: getattr(self, field) for field in self.params}
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         params = ", ".join([f"{field}={getattr(self, field)}" for field in self.params])
         return f"Key({params})"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f'{hu.get_pitch_string(self.relative_tonic, self.tonic_type)} {self.relative_mode}'
 
     @staticmethod
-    def from_series(chord_row: pd.Series, tonic_type: PitchType):
+    def from_series(chord_row: pd.Series, tonic_type: PitchType) -> 'Key':
         """
         Create a Key object of the given pitch_type from the given pd.Series.
 

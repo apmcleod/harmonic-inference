@@ -600,8 +600,7 @@ class HarmonicInferenceModel:
             A List of all states resulting from key changes of the given states.
         """
         # Get inputs and hidden states for all states
-        # TODO: Why multiply here???
-        ksm_inputs = [state.get_ksm_input(self.CHORD_OUTPUT_TYPE) for state in states] * len(states)
+        ksm_inputs = [state.get_ksm_input(self.CHORD_OUTPUT_TYPE) for state in states]
 
         # Generate KSM loader
         ksm_dataset = ds.HarmonicDataset()
