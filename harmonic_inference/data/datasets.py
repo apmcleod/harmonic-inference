@@ -78,7 +78,10 @@ class HarmonicDataset(Dataset):
                 data["targets"] = self.targets[item]
 
             if hasattr(self, "hidden_states"):
-                data["hidden_states"] = getattr(self, "hidden_states")[item]
+                data["hidden_states"] = (
+                    getattr(self, "hidden_states")[0][item],
+                    getattr(self, "hidden_states")[1][item],
+                )
 
             if hasattr(self, "input_lengths"):
                 if not hasattr(self, "max_input_length"):

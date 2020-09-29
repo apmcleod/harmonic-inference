@@ -2,6 +2,7 @@
 from fractions import Fraction
 from typing import Union, List, Tuple, Iterator, Dict
 import heapq
+import copy
 
 import numpy as np
 
@@ -76,8 +77,8 @@ class State:
             else:
                 self.hash_tuple = tuple(list(prev_state.hash_tuple[1:]) + [(key, chord)])
 
-        self.csm_hidden_state = None if csm_hidden_state is None else csm_hidden_state.copy()
-        self.ktm_hidden_state = None if ktm_hidden_state is None else ktm_hidden_state.copy()
+        self.csm_hidden_state = copy.deepcopy(csm_hidden_state)
+        self.ktm_hidden_state = copy.deepcopy(ktm_hidden_state)
         self.csm_log_prior = csm_log_prior
 
         # Key/chord objects
@@ -217,18 +218,21 @@ class State:
                 )
             ] = 1
 
-        return np.concatenate(
-            [
-                self.get_chord(
-                    pitch_type,
-                    duration_cache,
-                    onset_cache,
-                    onset_level_cache,
-                    LABELS,
-                ).to_vec(),
-                key_change_vector,
-                [is_key_change],
-            ]
+        return np.expand_dims(
+            np.concatenate(
+                [
+                    self.get_chord(
+                        pitch_type,
+                        duration_cache,
+                        onset_cache,
+                        onset_level_cache,
+                        LABELS,
+                    ).to_vec(),
+                    key_change_vector,
+                    [is_key_change],
+                ]
+            ),
+            axis=0,
         )
 
     def get_ktm_input(
@@ -260,13 +264,16 @@ class State:
         ktm_input : np.array
             The input for the next step of this state's KTM.
         """
-        return self.get_chord(
-            pitch_type,
-            duration_cache,
-            onset_cache,
-            onset_level_cache,
-            LABELS,
-        ).to_vec()
+        return np.expand_dims(
+            self.get_chord(
+                pitch_type,
+                duration_cache,
+                onset_cache,
+                onset_level_cache,
+                LABELS,
+            ).to_vec(),
+            axis=0,
+        )
 
     def get_ksm_input(
         self,

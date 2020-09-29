@@ -47,7 +47,7 @@ class KeyTransitionModel(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         inputs, input_lengths, targets, mask = self.get_data_from_batch(batch)
 
-        outputs = self(inputs, input_lengths)
+        outputs, _ = self(inputs, input_lengths)
 
         loss = F.binary_cross_entropy(outputs * mask, targets)
 
@@ -58,7 +58,7 @@ class KeyTransitionModel(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         inputs, input_lengths, targets, mask = self.get_data_from_batch(batch)
 
-        outputs = self(inputs, input_lengths)
+        outputs, _ = self(inputs, input_lengths)
 
         loss = F.binary_cross_entropy(outputs * mask, targets)
 
@@ -73,12 +73,14 @@ class KeyTransitionModel(pl.LightningModule):
         return result
 
     def init_hidden(self, batch_size: int):
-        # TODO
+        # Subclasses should implement this
         raise NotImplementedError()
 
     def run_one_step(self, batch):
-        # TODO
-        raise NotImplementedError()
+        inputs = batch['inputs'].float()
+        hidden = batch['hidden_states']
+
+        return self(inputs, torch.ones(len(inputs)), hidden=hidden)
 
     def configure_optimizers(self):
         return torch.optim.Adam(
@@ -174,15 +176,15 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
             Variable(torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim))
         )
 
-    def forward(self, inputs, lengths):
+    def forward(self, inputs, lengths, hidden=None):
         batch_size = inputs.shape[0]
         lengths = torch.clamp(lengths, min=1)
-        h_0, c_0 = self.init_hidden(batch_size)
+        h_0, c_0 = self.init_hidden(batch_size) if hidden is None else hidden
 
         embedded = F.relu(self.embed(inputs))
 
         packed = pack_padded_sequence(embedded, lengths, enforce_sorted=False, batch_first=True)
-        lstm_out_packed, (_, _) = self.lstm(packed, (h_0, c_0))
+        lstm_out_packed, hidden_out = self.lstm(packed, (h_0, c_0))
         lstm_out, _ = pad_packed_sequence(lstm_out_packed, batch_first=True)
 
         relu1 = F.relu(lstm_out)
@@ -191,4 +193,4 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
         relu2 = F.relu(fc1)
         output = torch.squeeze(self.fc2(relu2), -1)
 
-        return torch.sigmoid(output)
+        return torch.sigmoid(output), hidden_out

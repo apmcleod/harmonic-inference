@@ -458,6 +458,8 @@ class HarmonicInferenceModel:
 
         beam_class = Beam if self.hash_length is None else HashedBeam
         all_states = [beam_class(self.beam_size) for _ in range(len(piece.get_inputs()) + 1)]
+
+        # Add initial states
         all_states[0].add(State(key=0, hash_length=self.hash_length))
 
         for current_start, current_states in tqdm(
@@ -465,6 +467,9 @@ class HarmonicInferenceModel:
             desc="Beam searching through inputs",
             total=len(all_states) - 1,
         ):
+            if len(current_states) == 0:
+                continue
+
             # Run CSM here to avoid running it for invalid states
             if current_start != 0:
                 self.run_csm_batched(list(current_states))
@@ -569,7 +574,7 @@ class HarmonicInferenceModel:
         # Get inputs and hidden states for valid states
         ktm_hidden_states = self.key_transition_model.init_hidden(valid_count)
         ktm_inputs = [None] * valid_count
-        for i, state in enumerate(states[valid]):
+        for i, state, valid in enumerate(np.array(states)[valid]):
             if state.ktm_hidden_state is not None:
                 ktm_hidden_states[0][i], ktm_hidden_states[1][i] = state.ktm_hidden_state
             ktm_inputs[i] = state.get_ktm_input(
@@ -593,14 +598,16 @@ class HarmonicInferenceModel:
         # Run KTM
         outputs = []
         hidden_states = []
+        cell_states = []
         for batch in ktm_loader:
             batch_output, batch_hidden = self.key_transition_model.run_one_step(batch)
             outputs.extend(batch_output)
-            hidden_states.extend(batch_hidden)
+            hidden_states.extend(batch_hidden[0])
+            cell_states.extend(batch_hidden[1])
 
         # Copy hidden states to valid states
-        for state, hidden_state in zip(states[valid], hidden_states):
-            state.ktm_hidden_state = hidden_state
+        for state, hidden, cell in zip(states[valid], hidden_states, cell_states):
+            state.ktm_hidden_state = (hidden, cell)
 
         # Copy KTM output probabilities to probs return array
         key_change_probs[valid] = outputs
@@ -721,12 +728,14 @@ class HarmonicInferenceModel:
         # Run CSM
         priors = []
         hidden_states = []
+        cell_states = []
         for batch in csm_loader:
             batch_output, batch_hidden = self.chord_sequence_model.run_one_step(batch)
             priors.extend(batch_output)
-            hidden_states.extend(batch_hidden)
+            hidden_states.extend(batch_hidden[0])
+            cell_states.extend(batch_hidden[1])
 
         # Update states with new priors and hidden states
-        for state, log_prior, hidden in zip(states, np.log(priors), hidden_states):
+        for state, log_prior, hidden, cell in zip(states, priors, hidden_states, cell_states):
             state.csm_log_prior = log_prior
-            state.csm_hidden_state = hidden
+            state.csm_hidden_state = (hidden, cell)
