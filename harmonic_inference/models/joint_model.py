@@ -566,11 +566,11 @@ class HarmonicInferenceModel:
         """
         key_change_probs = np.zeros(len(states), dtype=float)
 
-        # Check for states that can key transition
-        valid_states = [state.can_key_transition() for state in states]
-        states = [state for state, valid in zip(states, valid_states) if valid]
         if len(states) == 0:
             return key_change_probs
+
+        # Check for states that can key transition. Only these will update output_prob
+        valid_states = [state.can_key_transition() for state in states]
 
         # Get inputs and hidden states for valid states
         ktm_hidden_states = self.key_transition_model.init_hidden(len(states))
@@ -602,7 +602,7 @@ class HarmonicInferenceModel:
         cell_states = []
         for batch in ktm_loader:
             batch_output, batch_hidden = self.key_transition_model.run_one_step(batch)
-            outputs.extend(batch_output)
+            outputs.extend(batch_output.numpy().squeeze())
             hidden_states.extend(torch.transpose(batch_hidden[0], 0, 1))
             cell_states.extend(torch.transpose(batch_hidden[1], 0, 1))
 
@@ -611,7 +611,7 @@ class HarmonicInferenceModel:
             state.ktm_hidden_state = (hidden, cell)
 
         # Copy KTM output probabilities to probs return array
-        key_change_probs[valid_states] = outputs
+        key_change_probs[valid_states] = np.array(outputs)[valid_states]
 
         return key_change_probs
 
@@ -647,6 +647,7 @@ class HarmonicInferenceModel:
         ksm_dataset = ds.HarmonicDataset()
         ksm_dataset.inputs = ksm_inputs
         ksm_dataset.input_lengths = [len(ksm_input) for ksm_input in ksm_inputs]
+        ksm_dataset.targets = np.zeros(len(ksm_inputs))
         ksm_loader = DataLoader(
             ksm_dataset,
             batch_size=ds.KeySequenceDataset.valid_batch_size,
@@ -657,13 +658,14 @@ class HarmonicInferenceModel:
         key_priors = []
         for batch in ksm_loader:
             priors = self.key_sequence_model.get_output(batch)
-            key_priors.extend(priors)
+            key_priors.extend(priors.numpy())
 
-        priors_argsort = np.argsort(-np.array(key_priors))  # Negative to sort descending
+        key_priors = np.array(key_priors)
+        priors_argsort = np.argsort(-key_priors)  # Negative to sort descending
         max_indexes = np.clip(
             np.argmax(
                 np.cumsum(
-                    np.take_along_axis(key_priors, priors_argsort, -1),
+                    np.take_along_axis(np.exp(key_priors), priors_argsort, -1),
                     axis=-1,
                 ) >= self.target_key_branch_prob,
                 axis=-1,
@@ -673,21 +675,24 @@ class HarmonicInferenceModel:
         )
 
         new_states = []
-        for state, log_prior, max_index in zip(states, np.log(key_priors), max_indexes):
+        for state, log_priors, prior_argsort, max_index in zip(
+            states,
+            key_priors,
+            priors_argsort,
+            max_indexes,
+        ):
             # Ensure each state branches at least once
-            if max_index == 1 and priors_argsort[0] == state.key:
+            if max_index == 1 and prior_argsort[0] == state.key:
                 max_index = 2
 
             # Branch
-            for key_id in priors_argsort[:max_index]:
+            for key_id in prior_argsort[:max_index]:
                 if key_id == state.key:
                     # Disallow self-transitions
                     continue
 
                 # Calculate the new state on this absolute chord
-                new_state = state.key_transition(key_id, log_prior)
-
-                new_states.append(new_state)
+                new_states.append(state.key_transition(key_id, log_priors[key_id]))
 
         return new_states
 

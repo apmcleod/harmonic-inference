@@ -85,6 +85,28 @@ class State:
         self.chord_obj = None
         self.key_obj = key_obj
 
+    def copy(self) -> 'State':
+        """
+        Return a deep copy of this State.
+
+        Returns
+        -------
+        new_state : State
+            A deep copy of this state.
+        """
+        return State(
+            chord=self.chord,
+            key=self.key,
+            change_index=self.change_index,
+            log_prob=self.log_prob,
+            prev_state=self.prev_state,
+            hash_length=len(self.hash_tuple) if hasattr(self, 'hash_tuple') else None,
+            csm_hidden_state=self.csm_hidden_state,
+            ktm_hidden_state=self.ktm_hidden_state,
+            csm_log_prior=self.csm_log_prior,
+            key_obj=self.key_obj,
+        )
+
     def chord_transition(self, chord: int, change_index: int, log_prob: float) -> 'State':
         """
         Perform a chord transition form this State, and return the new State.
@@ -213,7 +235,7 @@ class State:
             # Key change
             is_key_change = 1
             key_change_vector[
-                self.prev_state.get_key(pitch_type).get_key_change_one_hot_index(
+                self.prev_state.get_key(pitch_type, LABELS).get_key_change_one_hot_index(
                     self.get_key(pitch_type, LABELS)
                 )
             ] = 1
@@ -319,7 +341,11 @@ class State:
             LABELS,
         ).to_vec()
 
-        if self.prev_state is None or self.prev_state.key != self.key:
+        if (
+            self.prev_state is None or
+            self.prev_state.key != self.key or
+            self.prev_state.chord is None
+        ):
             # Base case - this is the first state
             ksm_input = np.zeros((1 + length, len(this_ksm_input)))
             ksm_input[0] = this_ksm_input
@@ -330,6 +356,7 @@ class State:
             duration_cache,
             onset_cache,
             onset_level_cache,
+            LABELS,
             length=length + 1,
         )
         ksm_input[len(ksm_input) - length - 1] = this_ksm_input

@@ -45,8 +45,9 @@ class KeySequenceModel(pl.LightningModule):
         return inputs, input_lengths, targets
 
     def get_output(self, batch):
-        # TODO
-        raise NotImplementedError()
+        inputs, input_lengths, _ = self.get_data_from_batch(batch)
+
+        return self(inputs, input_lengths)
 
     def training_step(self, batch, batch_idx):
         inputs, input_lengths, targets = self.get_data_from_batch(batch)

@@ -351,7 +351,7 @@ class Chord():
 
     def to_vec(self, relative_to: 'Key' = None) -> np.ndarray:
         """
-        Get the vectorized representation of this note given a chord.
+        Get the vectorized representation of this chord.
 
         Parameters
         ----------
@@ -378,6 +378,11 @@ class Chord():
             raise ValueError(f"Invalid pitch type: {self.pitch_type}")
         pitch[root] = 1
         vectors.append(pitch)
+
+        # Chord type
+        chord_type = np.zeros(len(ChordType))
+        chord_type[self.chord_type.value] = 1
+        # TODO: vectors.append(chord_type)
 
         # Relative bass as one-hot
         bass_note = np.zeros(hc.NUM_PITCHES[self.pitch_type])
