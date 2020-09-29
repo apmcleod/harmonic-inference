@@ -229,16 +229,13 @@ class State:
         csm_input : np.array
             The input for the next step of this state's CSM.
         """
-        key_change_vector = np.zeros(NUM_PITCHES[pitch_type] * len(KeyMode))
+        key_change_vector = np.zeros(Key.get_key_change_vector_length(one_hot=False))
         is_key_change = 0
         if self.prev_state is not None and self.prev_state.key != self.key:
             # Key change
             is_key_change = 1
-            key_change_vector[
-                self.prev_state.get_key(pitch_type, LABELS).get_key_change_one_hot_index(
-                    self.get_key(pitch_type, LABELS)
-                )
-            ] = 1
+            prev_key = self.prev_state.get_key(pitch_type, LABELS)
+            key_change_vector = prev_key.get_key_change_vector(self.get_key())
 
         return np.expand_dims(
             np.concatenate(

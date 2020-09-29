@@ -382,7 +382,7 @@ class Chord():
         # Chord type
         chord_type = np.zeros(len(ChordType))
         chord_type[self.chord_type.value] = 1
-        # TODO: vectors.append(chord_type)
+        vectors.append(chord_type)
 
         # Relative bass as one-hot
         bass_note = np.zeros(hc.NUM_PITCHES[self.pitch_type])
@@ -634,6 +634,51 @@ class Key():
 
         self.params = inspect.getfullargspec(Key.__init__).args[1:]
 
+    @staticmethod
+    def get_key_change_vector_length(pitch_type: PitchType, one_hot: bool = True) -> int:
+        """
+        Get the length of a key change vector.
+
+        Parameters
+        ----------
+        pitch_type : PitchType
+            The pitch type for the given vector.
+        one_hot : bool
+            True to return a one-hot key change vector
+
+        Returns
+        -------
+        length : int
+            The length of a single key-change vector.
+        """
+        if one_hot:
+            return hc.NUM_PITCHES[pitch_type] * 2 * len(KeyMode)
+        return hc.NUM_PITCHES[pitch_type] * 2 + len(KeyMode)
+
+    def get_key_change_vector(self, next_key: 'Key') -> np.array:
+        """
+        Get a non-one-hot key change vector.
+
+        Parameters
+        ----------
+        next_key : Key
+            The next key that this one is changing to.
+
+        Returns
+        -------
+        change_vector : np.array
+            The non-one hot key change vector representing this key change.
+        """
+        change_vector = np.zeros(Key.get_key_change_vector_length(one_hot=False))
+
+        interval = next_key.relative_tonic - self.relative_tonic
+        interval += hc.NUM_PITCHES[self.tonic_type]
+        change_vector[interval] = 1
+
+        change_vector[-2 + next_key.relative_mode.value] = 1
+
+        return change_vector
+
     def get_key_change_one_hot_index(self, next_key: 'Key') -> int:
         """
         Get the key change as a one-hot index. The one-hot index is based on the mode of the next
@@ -649,16 +694,10 @@ class Key():
         index : int
             The one hot index of this key change.
         """
-        if self.tonic_type == PitchType.TPC:
-            transposition = next_key.relative_tonic - self.relative_tonic + hc.TPC_C
-        elif self.tonic_type == PitchType.MIDI:
-            transposition = hu.transpose_pitch(
-                next_key.relative_tonic, -self.relative_tonic, PitchType.MIDI
-            )
-        else:
-            raise ValueError(f"Invalid tonic_type: {self.tonic_type}")
+        interval = next_key.relative_tonic - self.relative_tonic
+        interval += hc.NUM_PITCHES[self.tonic_type]
 
-        return hu.get_key_one_hot_index(next_key.relative_mode, transposition, self.tonic_type)
+        return next_key.relative_mode.value * hc.NUM_PITCHES[self.tonic_type] + interval
 
     def is_repeated(self, other: 'Key', use_relative: bool = True) -> bool:
         """

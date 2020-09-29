@@ -8,7 +8,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-from harmonic_inference.data.data_types import PitchType
+from harmonic_inference.data.data_types import PitchType, ChordType
 from harmonic_inference.utils.harmonic_constants import NUM_PITCHES
 
 
@@ -140,6 +140,7 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
         # Input derived from input type
         self.input_dim = (
             NUM_PITCHES[input_type] +  # Root
+            len(ChordType) +  # Chord type
             NUM_PITCHES[input_type] +  # Bass
             13  # 4 inversion, 4 onset level, 4 offset level, is_major
         )

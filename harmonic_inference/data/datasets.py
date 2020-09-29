@@ -10,9 +10,7 @@ import pandas as pd
 import h5py
 from torch.utils.data import Dataset
 
-from harmonic_inference.data.piece import Piece, ScorePiece
-from harmonic_inference.data.data_types import KeyMode
-import harmonic_inference.utils.harmonic_constants as hc
+from harmonic_inference.data.piece import Piece, ScorePiece, Key
 
 
 class HarmonicDataset(Dataset):
@@ -269,7 +267,10 @@ class ChordSequenceDataset(HarmonicDataset):
             chords = piece.get_chords()
             key_changes = piece.get_key_change_indices()
             keys = piece.get_keys()
-            key_vector_length = hc.NUM_PITCHES[keys[0].tonic_type] * len(KeyMode) + 1
+            key_vector_length = 1 + Key.get_key_change_vector_length(
+                keys[0].tonic_type,
+                one_hot=False,
+            )
 
             for prev_key, key, start, end in zip(
                 [None] + list(keys[:-1]),
@@ -280,7 +281,7 @@ class ChordSequenceDataset(HarmonicDataset):
                 chord_vectors = np.vstack([chord.to_vec() for chord in chords[start:end]])
                 key_vectors = np.zeros((len(chord_vectors), key_vector_length))
                 if prev_key is not None:
-                    key_vectors[0, prev_key.get_key_change_one_hot_index(key)] = 1
+                    key_vectors[0, :-1] = prev_key.get_key_change_vector(key)
                     key_vectors[0, -1] = 1
 
                 piece_input.append(np.hstack([chord_vectors, key_vectors]))

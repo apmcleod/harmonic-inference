@@ -8,7 +8,8 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-from harmonic_inference.data.data_types import PitchType, KeyMode
+from harmonic_inference.data.data_types import PitchType, ChordType
+from harmonic_inference.data.piece import Key
 import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.utils.harmonic_constants import NUM_PITCHES
 
@@ -124,7 +125,7 @@ class SimpleChordSequenceModel(ChordSequenceModel):
 
         Parameters
         ----------
-        chord_type : PieceType
+        chord_type : PitchType
             The type of pitch representation used for the chords, input and output.
         use_inversions : bool
             True to take inversions into account. False to ignore them.
@@ -147,9 +148,10 @@ class SimpleChordSequenceModel(ChordSequenceModel):
         # Input and output derived from input type and use_inversions
         self.input_dim = (
             NUM_PITCHES[chord_type] +  # Root
+            len(ChordType) +  # Chord type
             NUM_PITCHES[chord_type] +  # Bass
             13 +  # 4 inversion, 4 onset level, 4 offset level, is_major
-            NUM_PITCHES[chord_type] * len(KeyMode) +  # Key change vector
+            Key.get_key_change_vector_length(chord_type, one_hot=False) +  # Key change vector
             1  # is_key_change
         )
         self.output_dim = len(hu.get_chord_label_list(chord_type, use_inversions=use_inversions))
