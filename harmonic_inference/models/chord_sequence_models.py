@@ -82,7 +82,10 @@ class ChordSequenceModel(pl.LightningModule):
 
     def run_one_step(self, batch):
         inputs = batch['inputs'].float()
-        hidden = batch['hidden_states']
+        hidden = (
+            torch.transpose(batch['hidden_states'][0], 0, 1),
+            torch.transpose(batch['hidden_states'][1], 0, 1),
+        )
 
         return self(inputs, torch.ones(len(inputs)), hidden=hidden)
 

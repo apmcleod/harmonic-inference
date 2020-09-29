@@ -9,6 +9,7 @@ import itertools
 from torch.utils.data.dataloader import DataLoader
 from tqdm import tqdm
 import numpy as np
+import torch
 
 import harmonic_inference.models.chord_classifier_models as ccm
 import harmonic_inference.models.chord_sequence_models as csm
@@ -566,17 +567,17 @@ class HarmonicInferenceModel:
         key_change_probs = np.zeros(len(states), dtype=float)
 
         # Check for states that can key transition
-        valid = np.array([state.can_key_transition() for state in states])
-        valid_count = np.sum(valid)
-        if valid_count == 0:
+        valid_states = [state.can_key_transition() for state in states]
+        states = [state for state, valid in zip(states, valid_states) if valid]
+        if len(states) == 0:
             return key_change_probs
 
         # Get inputs and hidden states for valid states
-        ktm_hidden_states = self.key_transition_model.init_hidden(valid_count)
-        ktm_inputs = [None] * valid_count
-        for i, state, valid in enumerate(np.array(states)[valid]):
+        ktm_hidden_states = self.key_transition_model.init_hidden(len(states))
+        ktm_inputs = [None] * len(states)
+        for i, state in enumerate(states):
             if state.ktm_hidden_state is not None:
-                ktm_hidden_states[0][i], ktm_hidden_states[1][i] = state.ktm_hidden_state
+                ktm_hidden_states[0][:, i], ktm_hidden_states[1][:, i] = state.ktm_hidden_state
             ktm_inputs[i] = state.get_ktm_input(
                 self.CHORD_OUTPUT_TYPE,
                 self.duration_cache,
@@ -602,17 +603,17 @@ class HarmonicInferenceModel:
         for batch in ktm_loader:
             batch_output, batch_hidden = self.key_transition_model.run_one_step(batch)
             outputs.extend(batch_output)
-            hidden_states.extend(batch_hidden[0])
-            cell_states.extend(batch_hidden[1])
+            hidden_states.extend(torch.transpose(batch_hidden[0], 0, 1))
+            cell_states.extend(torch.transpose(batch_hidden[1], 0, 1))
 
         # Copy hidden states to valid states
-        for state, hidden, cell in zip(states[valid], hidden_states, cell_states):
+        for state, hidden, cell in zip(states, hidden_states, cell_states):
             state.ktm_hidden_state = (hidden, cell)
 
         # Copy KTM output probabilities to probs return array
-        key_change_probs[valid] = outputs
+        key_change_probs[valid_states] = outputs
 
-        return outputs
+        return key_change_probs
 
     def get_key_change_states(self, states: List[State]) -> List[State]:
         """
@@ -706,7 +707,7 @@ class HarmonicInferenceModel:
         csm_inputs = [None] * len(states)
         for i, state in enumerate(states):
             if state.csm_hidden_state is not None:
-                csm_hidden_states[0][i], csm_hidden_states[1][i] = state.csm_hidden_state
+                csm_hidden_states[0][:, i], csm_hidden_states[1][:, i] = state.csm_hidden_state
             csm_inputs[i] = state.get_csm_input(
                 self.CHORD_OUTPUT_TYPE,
                 self.duration_cache,
@@ -732,10 +733,10 @@ class HarmonicInferenceModel:
         for batch in csm_loader:
             batch_output, batch_hidden = self.chord_sequence_model.run_one_step(batch)
             priors.extend(batch_output)
-            hidden_states.extend(batch_hidden[0])
-            cell_states.extend(batch_hidden[1])
+            hidden_states.extend(torch.transpose(batch_hidden[0], 0, 1))
+            cell_states.extend(torch.transpose(batch_hidden[1], 0, 1))
 
         # Update states with new priors and hidden states
         for state, log_prior, hidden, cell in zip(states, priors, hidden_states, cell_states):
-            state.csm_log_prior = log_prior
+            state.csm_log_prior = log_prior.numpy()[0]
             state.csm_hidden_state = (hidden, cell)

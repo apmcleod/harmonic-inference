@@ -79,8 +79,8 @@ class HarmonicDataset(Dataset):
 
             if hasattr(self, "hidden_states"):
                 data["hidden_states"] = (
-                    getattr(self, "hidden_states")[0][item],
-                    getattr(self, "hidden_states")[1][item],
+                    getattr(self, "hidden_states")[0][:, item],
+                    getattr(self, "hidden_states")[1][:, item],
                 )
 
             if hasattr(self, "input_lengths"):
