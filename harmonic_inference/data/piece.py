@@ -669,7 +669,7 @@ class Key():
         change_vector : np.array
             The non-one hot key change vector representing this key change.
         """
-        change_vector = np.zeros(Key.get_key_change_vector_length(one_hot=False))
+        change_vector = np.zeros(Key.get_key_change_vector_length(self.tonic_type, one_hot=False))
 
         interval = next_key.relative_tonic - self.relative_tonic
         interval += hc.NUM_PITCHES[self.tonic_type]
