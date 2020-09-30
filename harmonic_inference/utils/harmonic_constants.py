@@ -205,6 +205,8 @@ CHORD_INVERSION_COUNT = {
 # Chord relative pitches
 MIN_RELATIVE_TPC = -14  # Inclusive
 MAX_RELATIVE_TPC = 15  # Exclusive
+# Extra space to add because chord is sometimes relative to different key
+RELATIVE_TPC_EXTRA = 5
 
 # Key change relative pitches
 MIN_KEY_CHANGE_INTERVAL_TPC = -14  # Inclusive

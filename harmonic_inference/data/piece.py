@@ -412,7 +412,7 @@ class Chord():
             The length of a single chord vector.
         """
         if relative and pitch_type == PitchType.TPC:
-            num_pitches = hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
+            num_pitches = hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC + hc.RELATIVE_TPC_EXTRA
         else:
             num_pitches = hc.NUM_PITCHES[pitch_type]
 
@@ -455,14 +455,22 @@ class Chord():
         num_pitches = (
             hc.NUM_PITCHES[self.pitch_type]
             if self.pitch_type == PitchType.MIDI else
-            hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
+            hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC + 2 * hc.RELATIVE_TPC_EXTRA
         )
 
         vectors = []
 
         # Relative root as one-hot
         pitch = np.zeros(num_pitches)
-        pitch[hu.absolute_to_relative(self.root, key_tonic, self.pitch_type, False)] = 1
+        pitch[
+            hu.absolute_to_relative(
+                self.root,
+                key_tonic,
+                self.pitch_type,
+                False,
+                check=False,
+            ) + hc.RELATIVE_TPC_EXTRA
+        ] = 1
         vectors.append(pitch)
 
         # Chord type
@@ -472,7 +480,15 @@ class Chord():
 
         # Relative bass as one-hot
         bass_note = np.zeros(num_pitches)
-        bass_note[hu.absolute_to_relative(self.bass, key_tonic, self.pitch_type, False)] = 1
+        bass_note[
+            hu.absolute_to_relative(
+                self.bass,
+                key_tonic,
+                self.pitch_type,
+                False,
+                check=False,
+            ) + hc.RELATIVE_TPC_EXTRA
+        ] = 1
         vectors.append(bass_note)
 
         # Inversion as one-hot

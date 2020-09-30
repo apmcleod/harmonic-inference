@@ -1,5 +1,7 @@
 """Utility functions for getting harmonic and pitch information from the corpus DataFrames."""
 from typing import List, Tuple
+import logging
+
 import pandas as pd
 import numpy as np
 
@@ -192,6 +194,7 @@ def absolute_to_relative(
     key_tonic: int,
     pitch_type: PitchType,
     is_key_change: bool,
+    check: bool = True,
 ) -> int:
     """
     Convert an absolute pitch to one relative to the given tonic.
@@ -209,6 +212,9 @@ def absolute_to_relative(
         a relative chord pitch. For key changes with PitchType.TPC, we adjust so that
         hc.MIN_KEY_CHANGE_INTERVAL_TPC is set to 0. For chord pitches, hc.MIN_RELATIVE_TPC
         is used instead.
+    check : bool
+        If True, ensure that the resulting relative pitch is within the correct bounds and
+        raise a ValueError if not. If False, only log a warning in such cases.
 
     Returns
     -------
@@ -220,7 +226,14 @@ def absolute_to_relative(
 
     relative = pitch - key_tonic
     minimum = hc.MIN_KEY_CHANGE_INTERVAL_TPC if is_key_change else hc.MIN_RELATIVE_TPC
-    assert 0 <= relative - minimum < hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
+    maximum = hc.MAX_KEY_CHANGE_INTERVAL_TPC if is_key_change else hc.MAX_RELATIVE_TPC
+
+    if relative < minimum or relative >= maximum:
+        if check:
+            raise ValueError(f"Resulting relative pitch {relative} is outside of valid range.")
+        else:
+            logging.warning(f"Resulting relative pitch {relative} is outside of valid range.")
+
     return relative - minimum
 
 
