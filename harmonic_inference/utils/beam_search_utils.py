@@ -6,10 +6,9 @@ import copy
 
 import numpy as np
 
-from harmonic_inference.data.data_types import PitchType, KeyMode
+from harmonic_inference.data.data_types import PitchType
 from harmonic_inference.data.piece import Chord, Key
 import harmonic_inference.utils.harmonic_utils as hu
-from harmonic_inference.utils.harmonic_constants import TPC_C, NUM_PITCHES
 
 
 class State:
@@ -184,7 +183,14 @@ class State:
             key_obj=None,
         )
 
-    def add_csm_prior(self, pitch_type: PitchType, LABELS: Dict):
+    def add_csm_prior(
+        self,
+        pitch_type: PitchType,
+        duration_cache: np.array,
+        onset_cache: List[Tuple[int, Fraction]],
+        onset_level_cache: List[Fraction],
+        LABELS: Dict,
+    ):
         """
         Add the log_prior for this state's current relative chord to this state's log_prob.
 
@@ -194,11 +200,25 @@ class State:
         Parameters
         ----------
         pitch_type : PitchType
-            The pitch type used to store the chord root and key tonic.
+            The pitch type used to store the chord root.
+        duration_cache : np.array
+            The duration of each input in the current piece.
+        onset_cache : List[Tuple[int, Fraction]]
+            The onset of each input in the current piece.
+        onset_level_cache : List[int]
+            The onset level of each input in the current piece.
         LABELS : Dict
             A Dictionary of key and chord labels for the current piece.
         """
-        self.log_prob += self.csm_log_prior[self.get_relative_chord(pitch_type, LABELS)]
+        self.log_prob += self.csm_log_prior[
+            self.get_relative_chord(
+                pitch_type,
+                duration_cache,
+                onset_cache,
+                onset_level_cache,
+                LABELS,
+            )
+        ]
 
     def get_csm_input(
         self,
@@ -229,13 +249,13 @@ class State:
         csm_input : np.array
             The input for the next step of this state's CSM.
         """
-        key_change_vector = np.zeros(Key.get_key_change_vector_length(one_hot=False))
+        key_change_vector = np.zeros(Key.get_key_change_vector_length(pitch_type, one_hot=False))
         is_key_change = 0
         if self.prev_state is not None and self.prev_state.key != self.key:
             # Key change
             is_key_change = 1
             prev_key = self.prev_state.get_key(pitch_type, LABELS)
-            key_change_vector = prev_key.get_key_change_vector(self.get_key())
+            key_change_vector = prev_key.get_key_change_vector(self.get_key(pitch_type, LABELS))
 
         return np.expand_dims(
             np.concatenate(
@@ -432,30 +452,42 @@ class State:
 
         return self.key_obj
 
-    def get_relative_chord(self, pitch_type: PitchType, LABELS: Dict) -> int:
+    def get_relative_chord(
+        self,
+        pitch_type: PitchType,
+        duration_cache: np.array,
+        onset_cache: List[Tuple[int, Fraction]],
+        onset_level_cache: List[int],
+        LABELS: Dict,
+    ) -> int:
         """
         Get the one-hot index of the chord symbol, relative to the current key.
 
         Parameters
         ----------
         pitch_type : PitchType
-            The pitch type used to store the chord root and key tonic.
+            The pitch type used to store the chord root.
+        duration_cache : np.array
+            The duration of each input in the current piece.
+        onset_cache : List[Tuple[int, Fraction]]
+            The onset of each input in the current piece.
+        onset_level_cache : List[int]
+            The onset level of each input in the current piece.
+        LABELS : Dict
+            A Dictionary of key and chord labels for the current piece.
 
         Returns
         -------
         relative_chord : int
             The current chord, relative to the current key.
         """
-        root, chord_type, inversion = LABELS['chord'][self.chord]
-        root = hu.transpose_pitch(root, self.key - TPC_C, pitch_type)
-
-        return hu.get_chord_one_hot_index(
-            chord_type,
-            root,
+        return self.get_chord(
             pitch_type,
-            inversion=inversion,
-            use_inversion=True,
-        )
+            duration_cache,
+            onset_cache,
+            onset_level_cache,
+            LABELS,
+        ).get_one_hot_index(relative=True, use_inversion=True)
 
     def get_chords(self) -> Tuple[List[int], List[int]]:
         """

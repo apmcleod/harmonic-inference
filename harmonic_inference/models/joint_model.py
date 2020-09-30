@@ -541,7 +541,13 @@ class HarmonicInferenceModel:
             # Add CSM prior and add to beam (CSM is run at the start of each iteration)
             for state in to_csm_prior_states:
                 if current_start != 0:
-                    state.add_csm_prior(self.CHORD_OUTPUT_TYPE, self.LABELS)
+                    state.add_csm_prior(
+                        self.CHORD_OUTPUT_TYPE,
+                        self.duration_cache,
+                        self.onset_cache,
+                        self.onset_level_cache,
+                        self.LABELS,
+                    )
 
                 # Add state to its beam, if it fits
                 all_states[state.change_index].add(state)
