@@ -140,4 +140,6 @@ if __name__ == '__main__':
                 ScorePiece(notes_df.loc[file_id], chords_df.loc[file_id], measures_df.loc[file_id])
             )
 
+    print(min([key.relative_tonic for piece in pieces for key in piece.get_keys()]))
+
     evaluate(models, pieces)

@@ -331,13 +331,23 @@ class Chord():
         self.params = inspect.getfullargspec(Chord.__init__).args[1:]
 
     def get_one_hot_index(self, relative: bool = False, use_inversion: bool = True) -> int:
+        """
+        Get the one-hot index of this chord.
+
+        Parameters
+        ----------
+        relative : bool
+            True to get the relative one-hot index. False for the absolute one-hot index.
+        use_inversion : bool
+            True to use inversions. False otherwise.
+
+        Returns
+        -------
+        index : int
+            This Chord's one-hot index.
+        """
         if relative:
-            if self.pitch_type == PitchType.TPC:
-                root = hu.transpose_pitch(self.root, -(self.key_tonic - hc.TPC_C), PitchType.TPC)
-            elif self.pitch_type == PitchType.MIDI:
-                root = hu.transpose_pitch(self.root, -self.key_tonic, PitchType.MIDI)
-            else:
-                raise ValueError(f"Invalid pitch_type: {self.pitch_type}")
+            root = hu.absolute_to_relative(self.root, self.key_tonic, self.pitch_type)
         else:
             root = self.root
 
@@ -346,7 +356,59 @@ class Chord():
             root,
             self.pitch_type,
             inversion=self.inversion,
-            use_inversion=use_inversion
+            use_inversion=use_inversion,
+            relative=relative,
+        )
+
+    @staticmethod
+    def get_chord_vector_length(
+        pitch_type: PitchType,
+        one_hot: bool = True,
+        relative: bool = True,
+        use_inversions: bool = True,
+    ) -> int:
+        """
+        Get the length of a chord vector.
+
+        Parameters
+        ----------
+        pitch_type : PitchType
+            The pitch type for the given vector.
+        one_hot : bool
+            True to return the one-hot chord change vector length.
+        relative : bool
+            True to return the length of a relative chord vector. False for absolute.
+        use_inversions : bool
+            True to return the length of the chord vector including inversions. False otherwise.
+            Only relevant if one_hot == True.
+
+        Returns
+        -------
+        length : int
+            The length of a single chord vector.
+        """
+        if relative and pitch_type == PitchType.TPC:
+            num_pitches = hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
+        else:
+            num_pitches = hc.NUM_PITCHES[pitch_type]
+
+        if one_hot:
+            if use_inversions:
+                return np.sum(
+                    num_pitches * np.array(
+                        [
+                            hu.get_chord_inversion_count(chord_type)
+                            for chord_type in ChordType
+                        ]
+                    )
+                )
+            return num_pitches * len(ChordType)
+
+        return (
+            num_pitches +  # Root
+            num_pitches +  # Bass
+            len(ChordType) +  # chord type
+            13  # 4 each for inversion, onset level, offset level; 1 for is_major
         )
 
     def to_vec(self, relative_to: 'Key' = None) -> np.ndarray:
@@ -366,17 +428,17 @@ class Chord():
         key_tonic = self.key_tonic if relative_to is None else relative_to.relative_tonic
         key_mode = self.key_mode if relative_to is None else relative_to.relative_mode
 
+        num_pitches = (
+            hc.NUM_PITCHES[self.pitch_type]
+            if self.pitch_type == PitchType.MIDI else
+            hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
+        )
+
         vectors = []
 
         # Relative root as one-hot
-        pitch = np.zeros(hc.NUM_PITCHES[self.pitch_type])
-        if self.pitch_type == PitchType.TPC:
-            root = hu.transpose_pitch(self.root, -(key_tonic - hc.TPC_C), PitchType.TPC)
-        elif self.pitch_type == PitchType.MIDI:
-            root = hu.transpose_pitch(self.root, -key_tonic, PitchType.MIDI)
-        else:
-            raise ValueError(f"Invalid pitch type: {self.pitch_type}")
-        pitch[root] = 1
+        pitch = np.zeros(num_pitches)
+        pitch[hu.absolute_to_relative(self.root, key_tonic, self.pitch_type)] = 1
         vectors.append(pitch)
 
         # Chord type
@@ -385,14 +447,8 @@ class Chord():
         vectors.append(chord_type)
 
         # Relative bass as one-hot
-        bass_note = np.zeros(hc.NUM_PITCHES[self.pitch_type])
-        if self.pitch_type == PitchType.TPC:
-            bass = hu.transpose_pitch(self.bass, -(key_tonic - hc.TPC_C), PitchType.TPC)
-        elif self.pitch_type == PitchType.MIDI:
-            bass = hu.transpose_pitch(self.bass, -key_tonic, PitchType.MIDI)
-        else:
-            raise ValueError(f"Invalid pitch type: {self.pitch_type}")
-        bass_note[bass] = 1
+        bass_note = np.zeros(num_pitches)
+        bass_note[hu.absolute_to_relative(self.bass, key_tonic, self.pitch_type)] = 1
         vectors.append(bass_note)
 
         # Inversion as one-hot
@@ -556,18 +612,20 @@ class Chord():
 
             # Root and bass note of chord, as intervals above the local key tonic
             root_interval = chord_row["root"]
-            bass_interval = chord_row["bass_note"]
+            # bass_interval = chord_row["bass_note"]
             if pitch_type == PitchType.MIDI:
                 root_interval = hu.tpc_interval_to_midi_interval(root_interval)
-                bass_interval = hu.tpc_interval_to_midi_interval(bass_interval)
+                # bass_interval = hu.tpc_interval_to_midi_interval(bass_interval)
 
             # Absolute root and bass
             root = hu.transpose_pitch(key.local_tonic, root_interval, pitch_type=pitch_type)
-            bass = hu.transpose_pitch(key.local_tonic, bass_interval, pitch_type=pitch_type)
+            # bass = hu.transpose_pitch(key.local_tonic, bass_interval, pitch_type=pitch_type)
 
             # Additional chord info
             chord_type = hu.get_chord_type_from_string(chord_row['chord_type'])
             inversion = hu.get_chord_inversion(chord_row['figbass'])
+            bass = hu.get_bass_note(chord_type, root, inversion, pitch_type)
+            assert 0 <= bass < hc.NUM_PITCHES[pitch_type]
 
             # Rhythmic info
             onset = (chord_row.mc, chord_row.onset)
@@ -644,16 +702,23 @@ class Key():
         pitch_type : PitchType
             The pitch type for the given vector.
         one_hot : bool
-            True to return a one-hot key change vector
+            True to return the length of a one-hot key change vector.
 
         Returns
         -------
         length : int
             The length of a single key-change vector.
         """
+        if pitch_type == PitchType.TPC:
+            num_pitches = hc.MAX_KEY_CHANGE_INTERVAL_TPC - hc.MIN_KEY_CHANGE_INTERVAL_TPC
+        elif pitch_type == PitchType.MIDI:
+            num_pitches = 12
+        else:
+            raise ValueError(f"Invalid pitch_type: {pitch_type}")
+
         if one_hot:
-            return hc.NUM_PITCHES[pitch_type] * 2 * len(KeyMode)
-        return hc.NUM_PITCHES[pitch_type] * 2 + len(KeyMode)
+            return num_pitches * len(KeyMode)
+        return num_pitches + len(KeyMode)
 
     def get_key_change_vector(self, next_key: 'Key') -> np.array:
         """
@@ -671,10 +736,16 @@ class Key():
         """
         change_vector = np.zeros(Key.get_key_change_vector_length(self.tonic_type, one_hot=False))
 
-        interval = next_key.relative_tonic - self.relative_tonic
-        interval += hc.NUM_PITCHES[self.tonic_type]
-        change_vector[interval] = 1
+        # Relative tonic
+        change_vector[
+            hu.absolute_to_relative(
+                next_key.relative_tonic,
+                self.relative_tonic,
+                self.tonic_type,
+            )
+        ] = 1
 
+        # Absolute mode of next key
         change_vector[-2 + next_key.relative_mode.value] = 1
 
         return change_vector
@@ -694,8 +765,11 @@ class Key():
         index : int
             The one hot index of this key change.
         """
-        interval = next_key.relative_tonic - self.relative_tonic
-        interval += hc.NUM_PITCHES[self.tonic_type]
+        interval = hu.absolute_to_relative(
+            next_key.relative_tonic,
+            self.relative_tonic,
+            self.tonic_type,
+        )
 
         return next_key.relative_mode.value * hc.NUM_PITCHES[self.tonic_type] + interval
 

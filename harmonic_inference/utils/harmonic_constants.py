@@ -201,3 +201,11 @@ CHORD_INVERSION_COUNT = {
     ChordType.AUG_MIN7: 4,
     ChordType.AUG_MAJ7: 4,
 }
+
+# Chord relative pitches
+MIN_RELATIVE_TPC = -14  # Inclusive
+MAX_RELATIVE_TPC = 15  # Exclusive
+
+# Key change relative pitches
+MIN_KEY_CHANGE_INTERVAL_TPC = -14  # Inclusive
+MAX_KEY_CHANGE_INTERVAL_TPC = 15  # Exclusive

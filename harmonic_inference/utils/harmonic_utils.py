@@ -42,7 +42,8 @@ def get_chord_one_hot_index(
     root_pitch: int,
     pitch_type: PitchType,
     inversion: int = 0,
-    use_inversion: bool = True
+    use_inversion: bool = True,
+    relative: bool = False,
 ) -> int:
     """
     Get the one hot index of a given chord.
@@ -59,13 +60,21 @@ def get_chord_one_hot_index(
         The inversion of this chord. Used only if use_inversion is True.
     use_inversion : inv
         True to take the chord's inversion into acccount.
+    relative : bool
+        True to get the chord's relative one-hot index. False for absolute.
 
     Returns
     -------
     index : int
         The index of the given chord's label in the list of all possible chord labels.
     """
-    if root_pitch < 0 or root_pitch >= hc.NUM_PITCHES[pitch_type]:
+    num_pitches = (
+        hc.NUM_PITCHES[pitch_type]
+        if pitch_type == PitchType.MIDI or not relative else
+        hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
+    )
+
+    if root_pitch < 0 or root_pitch >= num_pitches:
         raise ValueError("Given root is outside of valid range")
     if use_inversion:
         if inversion < 0 or inversion >= get_chord_inversion_count(chord_type):
@@ -78,7 +87,7 @@ def get_chord_one_hot_index(
     else:
         chord_inversions = np.ones(len(ChordType), dtype=int)
 
-    index = np.sum(hc.NUM_PITCHES[pitch_type] * chord_inversions[:chord_type.value])
+    index = np.sum(num_pitches * chord_inversions[:chord_type.value])
     index += chord_inversions[chord_type.value] * root_pitch
 
     if use_inversion:
@@ -176,6 +185,27 @@ def get_chord_inversion_count(chord_type: ChordType) -> int:
         The number of possible inversions of the given chord.
     """
     return hc.CHORD_INVERSION_COUNT[chord_type]
+
+
+def absolute_to_relative(pitch: int, key_tonic: int, pitch_type: PitchType) -> int:
+    """
+    Convert an absolute pitch to one relative to the given tonic.
+
+    Parameters
+    ----------
+    pitch : int
+        The absolute pitch.
+    key_tonic : int
+        The pitch be relative to.
+    pitch_type : PitchType
+        The pitch type for the given pitch and key tonic.
+
+    Returns
+    -------
+    relative : int
+        The given pitch, expressed relative to the given key_tonic.
+    """
+    return transpose_pitch(pitch, hc.C[pitch_type] - key_tonic, pitch_type)
 
 
 def get_accidental_adjustment(string: str, in_front: bool = True) -> Tuple[int, str]:
