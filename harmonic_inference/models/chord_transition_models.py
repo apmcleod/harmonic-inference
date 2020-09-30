@@ -8,8 +8,8 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-from harmonic_inference.data.piece import PieceType, PitchType
-from harmonic_inference.utils.harmonic_constants import NUM_PITCHES
+from harmonic_inference.data.data_types import PieceType, PitchType
+from harmonic_inference.data.piece import Note
 
 
 class ChordTransitionModel(pl.LightningModule):
@@ -132,18 +132,9 @@ class SimpleChordTransitionModel(ChordTransitionModel):
         self.save_hyperparameters()
 
         # Input and output derived from input type and use_inversions
-        if input_type == PieceType.SCORE:
-            self.input_dim = (
-                NUM_PITCHES[PitchType.TPC] +  # Pitch class
-                127 // NUM_PITCHES[PitchType.MIDI] +  # octave
-                9  # 4 onset level, 4 offset level,  is_lowest
-            )
-        elif input_type == PieceType.MIDI:
-            self.input_dim = (
-                NUM_PITCHES[PitchType.MIDI] +  # Pitch class
-                127 // NUM_PITCHES[PitchType.MIDI] +  # octave
-                9  # 4 onset level, 4 offset level, is_lowest
-            )
+        self.input_dim = Note.get_note_vector_length(
+            PitchType.TPC if input_type == PieceType.SCORE else PitchType.MIDI
+        )
 
         self.embed_dim = embed_dim
         self.embed = nn.Linear(self.input_dim, self.embed_dim)

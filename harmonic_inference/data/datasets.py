@@ -287,7 +287,14 @@ class ChordSequenceDataset(HarmonicDataset):
                 piece_input.append(np.hstack([chord_vectors, key_vectors]))
 
             self.inputs.append(np.vstack(piece_input))
-            self.targets.append(np.array([chord.get_one_hot_index() for chord in chords]))
+            self.targets.append(
+                np.array(
+                    [
+                        chord.get_one_hot_index(relative=True, use_inversion=True)
+                        for chord in chords
+                    ]
+                )
+            )
 
         self.target_lengths = np.array([len(target) for target in self.targets])
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])

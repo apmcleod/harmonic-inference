@@ -8,8 +8,8 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-from harmonic_inference.data.data_types import PitchType, ChordType
-from harmonic_inference.data.piece import Key
+from harmonic_inference.data.data_types import PitchType
+from harmonic_inference.data.piece import Key, Chord
 from harmonic_inference.utils.harmonic_constants import NUM_PITCHES
 
 
@@ -130,11 +130,11 @@ class SimpleKeySequenceModel(KeySequenceModel):
         self.save_hyperparameters()
 
         # Input and output derived from input type and use_inversions
-        self.input_dim = (
-            NUM_PITCHES[input_type] +  # Root
-            len(ChordType) +  # Chord type
-            NUM_PITCHES[input_type] +  # Bass
-            13  # 4 inversion, 4 onset level, 4 offset level, is_major
+        self.input_dim = Chord.get_chord_vector_length(
+            input_type,
+            one_hot=False,
+            relative=True,
+            use_inversions=True,
         )
         self.output_dim = Key.get_key_change_vector_length(key_type, one_hot=True)
 

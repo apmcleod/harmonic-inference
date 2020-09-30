@@ -68,6 +68,27 @@ class Note():
 
         self.params = inspect.getfullargspec(Note.__init__).args[1:]
 
+    @staticmethod
+    def get_note_vector_length(pitch_type: PitchType) -> int:
+        """
+        Get the length of a note vector.
+
+        Parameters
+        ----------
+        pitch_type : PitchType
+            The pitch type of the note.
+
+        Returns
+        -------
+        length : int
+            The length of a single note vector of the given pitch type.
+        """
+        return (
+            hc.NUM_PITCHES[PitchType.TPC] +  # Pitch class
+            127 // hc.NUM_PITCHES[PitchType.MIDI] +  # octave
+            12  # 4 onset level, 4 offset level, onset, offset, duration, is_lowest
+        )
+
     def to_vec(
         self,
         chord_onset: Union[float, Tuple[int, Fraction]] = None,
@@ -162,6 +183,8 @@ class Note():
                 offset = onset + duration
             metrical = np.array([onset, offset, duration], dtype=float)
             vectors.append(metrical)
+        else:
+            vectors.append(np.zeros(3, dtype=float))
 
         # Binary -- is this the lowest note in this set of notes
         min_pitch = np.array(
@@ -1018,7 +1041,7 @@ class Piece():
         """
         self.DATA_TYPE = data_type
 
-    def get_inputs(self) -> np.array:
+    def get_inputs(self) -> List[Note]:
         """
         Get a list of the inputs for this Piece.
 
@@ -1029,7 +1052,7 @@ class Piece():
         """
         raise NotImplementedError
 
-    def get_chord_change_indices(self) -> np.array:
+    def get_chord_change_indices(self) -> List[int]:
         """
         Get a List of the indexes (into the input list) at which there are chord changes.
 
@@ -1040,7 +1063,7 @@ class Piece():
         """
         raise NotImplementedError
 
-    def get_chords(self) -> np.array:
+    def get_chords(self) -> List[Chord]:
         """
         Get a List of the chords in this piece.
 
@@ -1078,7 +1101,7 @@ class Piece():
         """
         raise NotImplementedError
 
-    def get_duration_cache(self) -> np.array:
+    def get_duration_cache(self) -> List[Fraction]:
         """
         Get a List of the distance from the onset of each input of this Piece to the
         following input. The last value will be the distance from the onset of the last
@@ -1092,7 +1115,7 @@ class Piece():
         """
         raise NotImplementedError
 
-    def get_key_change_indices(self) -> np.array:
+    def get_key_change_indices(self) -> List[int]:
         """
         Get a List of the indexes (into the chord list) at which there are key changes.
 
@@ -1103,7 +1126,7 @@ class Piece():
         """
         raise NotImplementedError
 
-    def get_keys(self) -> np.array:
+    def get_keys(self) -> List[Key]:
         """
         Get a List of the keys in this piece.
 
@@ -1243,13 +1266,13 @@ class ScorePiece(Piece):
 
         return self.duration_cache
 
-    def get_inputs(self) -> np.array:
+    def get_inputs(self) -> List[Note]:
         return self.notes
 
-    def get_chord_change_indices(self) -> np.array:
+    def get_chord_change_indices(self) -> List[int]:
         return self.chord_changes
 
-    def get_chords(self) -> np.array:
+    def get_chords(self) -> List[Chord]:
         return self.chords
 
     def get_chord_note_inputs(self, window: int = 2, ranges: List[Tuple[int, int]] = None):
@@ -1303,13 +1326,13 @@ class ScorePiece(Piece):
 
         return chord_note_inputs
 
-    def get_key_change_indices(self) -> np.array:
+    def get_key_change_indices(self) -> List[int]:
         return self.key_changes
 
-    def get_keys(self) -> np.array:
+    def get_keys(self) -> List[Key]:
         return self.keys
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, List]:
         return {
             'notes': [note.to_dict() for note in self.get_inputs()],
             'chords': [chord.to_dict() for chord in self.get_chords()],

@@ -8,10 +8,8 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-from harmonic_inference.data.data_types import PitchType, ChordType
-from harmonic_inference.data.piece import Key
-import harmonic_inference.utils.harmonic_utils as hu
-from harmonic_inference.utils.harmonic_constants import NUM_PITCHES
+from harmonic_inference.data.data_types import PitchType
+from harmonic_inference.data.piece import Key, Chord
 
 
 class ChordSequenceModel(pl.LightningModule):
@@ -147,14 +145,21 @@ class SimpleChordSequenceModel(ChordSequenceModel):
 
         # Input and output derived from input type and use_inversions
         self.input_dim = (
-            NUM_PITCHES[chord_type] +  # Root
-            len(ChordType) +  # Chord type
-            NUM_PITCHES[chord_type] +  # Bass
-            13 +  # 4 inversion, 4 onset level, 4 offset level, is_major
+            Chord.get_chord_vector_length(
+                chord_type,
+                one_hot=False,
+                relative=True,
+                use_inversions=use_inversions
+            ) +
             Key.get_key_change_vector_length(chord_type, one_hot=False) +  # Key change vector
             1  # is_key_change
         )
-        self.output_dim = len(hu.get_chord_label_list(chord_type, use_inversions=use_inversions))
+        self.output_dim = Chord.get_chord_vector_length(
+            chord_type,
+            one_hot=True,
+            relative=True,
+            use_inversions=use_inversions,
+        )
 
         self.embed_dim = embed_dim
         self.embed = nn.Linear(self.input_dim, self.embed_dim)

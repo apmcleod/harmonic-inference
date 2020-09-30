@@ -9,8 +9,7 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 
 from harmonic_inference.data.data_types import PieceType, PitchType
-import harmonic_inference.utils.harmonic_constants as hc
-import harmonic_inference.utils.harmonic_utils as hu
+from harmonic_inference.data.piece import Note, Chord
 
 
 class ChordClassifierModel(pl.LightningModule):
@@ -126,12 +125,13 @@ class SimpleChordClassifier(ChordClassifierModel):
         self.save_hyperparameters()
 
         # Input and output derived from pitch_type and use_inversions
-        self.input_dim = (
-            hc.NUM_PITCHES[PitchType.TPC] +  # Pitch class
-            127 // hc.NUM_PITCHES[PitchType.MIDI] +  # octave
-            12  # 4 onset level, 4 offset level, (onset, offset, dur) proportions, is_lowest
+        self.input_dim = Note.get_note_vector_length(input_type)
+        self.num_classes = Chord.get_chord_vector_length(
+            output_type,
+            one_hot=True,
+            relative=False,
+            use_inversions=use_inversions,
         )
-        self.num_classes = len(hu.get_chord_label_list(output_type, use_inversions=use_inversions))
 
         # LSTM hidden layer and depth
         self.lstm_hidden_dim = lstm_hidden_dim
