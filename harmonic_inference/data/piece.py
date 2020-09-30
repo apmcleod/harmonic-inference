@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 
 from harmonic_inference.data.data_types import KeyMode, PitchType, ChordType, PieceType
+from harmonic_inference.utils.harmonic_constants import NUM_PITCHES
 import harmonic_inference.utils.harmonic_utils as hu
 import harmonic_inference.utils.rhythmic_utils as ru
 import harmonic_inference.utils.harmonic_constants as hc
@@ -370,7 +371,7 @@ class Chord():
             This Chord's one-hot index.
         """
         if relative:
-            root = hu.absolute_to_relative(self.root, self.key_tonic, self.pitch_type)
+            root = hu.absolute_to_relative(self.root, self.key_tonic, self.pitch_type, False)
         else:
             root = self.root
 
@@ -461,7 +462,7 @@ class Chord():
 
         # Relative root as one-hot
         pitch = np.zeros(num_pitches)
-        pitch[hu.absolute_to_relative(self.root, key_tonic, self.pitch_type)] = 1
+        pitch[hu.absolute_to_relative(self.root, key_tonic, self.pitch_type, False)] = 1
         vectors.append(pitch)
 
         # Chord type
@@ -471,7 +472,7 @@ class Chord():
 
         # Relative bass as one-hot
         bass_note = np.zeros(num_pitches)
-        bass_note[hu.absolute_to_relative(self.bass, key_tonic, self.pitch_type)] = 1
+        bass_note[hu.absolute_to_relative(self.bass, key_tonic, self.pitch_type, False)] = 1
         vectors.append(bass_note)
 
         # Inversion as one-hot
@@ -765,6 +766,7 @@ class Key():
                 next_key.relative_tonic,
                 self.relative_tonic,
                 self.tonic_type,
+                True,
             )
         ] = 1
 
@@ -792,9 +794,14 @@ class Key():
             next_key.relative_tonic,
             self.relative_tonic,
             self.tonic_type,
+            True,
         )
 
-        return next_key.relative_mode.value * hc.NUM_PITCHES[self.tonic_type] + interval
+        if self.tonic_type == PitchType.MIDI:
+            num_pitches = NUM_PITCHES[PitchType.MIDI]
+        else:
+            num_pitches = hc.MIN_KEY_CHANGE_INTERVAL_TPC - hc.MIN_KEY_CHANGE_INTERVAL_TPC
+        return next_key.relative_mode.value * num_pitches + interval
 
     def is_repeated(self, other: 'Key', use_relative: bool = True) -> bool:
         """

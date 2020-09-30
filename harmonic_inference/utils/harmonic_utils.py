@@ -187,7 +187,12 @@ def get_chord_inversion_count(chord_type: ChordType) -> int:
     return hc.CHORD_INVERSION_COUNT[chord_type]
 
 
-def absolute_to_relative(pitch: int, key_tonic: int, pitch_type: PitchType) -> int:
+def absolute_to_relative(
+    pitch: int,
+    key_tonic: int,
+    pitch_type: PitchType,
+    is_key_change: bool,
+) -> int:
     """
     Convert an absolute pitch to one relative to the given tonic.
 
@@ -199,13 +204,24 @@ def absolute_to_relative(pitch: int, key_tonic: int, pitch_type: PitchType) -> i
         The pitch be relative to.
     pitch_type : PitchType
         The pitch type for the given pitch and key tonic.
+    is_key_change : bool
+        True if the given absolute interval refers to a key change. False if it refers to
+        a relative chord pitch. For key changes with PitchType.TPC, we adjust so that
+        hc.MIN_KEY_CHANGE_INTERVAL_TPC is set to 0. For chord pitches, hc.MIN_RELATIVE_TPC
+        is used instead.
 
     Returns
     -------
     relative : int
         The given pitch, expressed relative to the given key_tonic.
     """
-    return transpose_pitch(pitch, hc.C[pitch_type] - key_tonic, pitch_type)
+    if pitch_type == PitchType.MIDI:
+        return transpose_pitch(pitch, -key_tonic, PitchType.MIDI)
+
+    relative = pitch - key_tonic
+    minimum = hc.MIN_KEY_CHANGE_INTERVAL_TPC if is_key_change else hc.MIN_RELATIVE_TPC
+    assert 0 <= relative - minimum < hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
+    return relative - minimum
 
 
 def get_accidental_adjustment(string: str, in_front: bool = True) -> Tuple[int, str]:
