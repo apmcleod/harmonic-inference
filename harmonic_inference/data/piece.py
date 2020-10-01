@@ -462,15 +462,15 @@ class Chord():
 
         # Relative root as one-hot
         pitch = np.zeros(num_pitches)
-        pitch[
-            hu.absolute_to_relative(
-                self.root,
-                key_tonic,
-                self.pitch_type,
-                False,
-                check=False,
-            ) + hc.RELATIVE_TPC_EXTRA
-        ] = 1
+        index = hc.RELATIVE_TPC_EXTRA + hu.absolute_to_relative(
+            self.root,
+            key_tonic,
+            self.pitch_type,
+            False,
+            check=False,
+        )
+        assert 0 <= index < num_pitches
+        pitch[index] = 1
         vectors.append(pitch)
 
         # Chord type
@@ -480,15 +480,15 @@ class Chord():
 
         # Relative bass as one-hot
         bass_note = np.zeros(num_pitches)
-        bass_note[
-            hu.absolute_to_relative(
-                self.bass,
-                key_tonic,
-                self.pitch_type,
-                False,
-                check=False,
-            ) + hc.RELATIVE_TPC_EXTRA
-        ] = 1
+        index = hc.RELATIVE_TPC_EXTRA + hu.absolute_to_relative(
+            self.bass,
+            key_tonic,
+            self.pitch_type,
+            False,
+            check=False,
+        )
+        assert 0 <= index < num_pitches
+        bass_note[index] = 1
         vectors.append(bass_note)
 
         # Inversion as one-hot
