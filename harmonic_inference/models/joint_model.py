@@ -710,18 +710,22 @@ class HarmonicInferenceModel:
 
             # Branch
             for relative_key_id in prior_argsort[:max_index]:
-                mode, interval = self.LABELS[relative_key_id]
-                key_id = hu.get_key_one_hot_index(
-                    mode,
-                    state.get_key(self.KEY_OUTPUT_TYPE, self.LABELS).relative_tonic + interval,
-                    self.KEY_OUTPUT_TYPE,
-                )
+                mode, interval = self.LABELS['relative_key'][relative_key_id]
+                tonic = state.get_key(self.KEY_OUTPUT_TYPE, self.LABELS).relative_tonic + interval
 
-                if key_id == state.key or key_id < 0 or key_id > len(self.LABELS['key']):
+                if self.KEY_OUTPUT_TYPE == PitchType.MIDI:
+                    tonic %= 12
+                elif tonic < 0 or tonic >= hc.NUM_PITCHES[PitchType.TPC]:
+                    # Invalid key tonic
+                    continue
+
+                key_id = hu.get_key_one_hot_index(mode, tonic, self.KEY_OUTPUT_TYPE)
+
+                if key_id == state.key:
                     # Disallow self-transitions and illegal keys
                     continue
 
-                # Calculate the new state on this absolute chord
+                # Calculate the new state on this key change
                 new_state = state.key_transition(
                     key_id,
                     log_priors[key_id],
