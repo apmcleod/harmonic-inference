@@ -728,7 +728,7 @@ class HarmonicInferenceModel:
                 # Calculate the new state on this key change
                 new_state = state.key_transition(
                     key_id,
-                    log_priors[key_id],
+                    log_priors[relative_key_id],
                     self.KEY_OUTPUT_TYPE,
                     self.LABELS,
                 )
