@@ -211,7 +211,7 @@ class State:
             A Dictionary of key and chord labels for the current piece.
         """
         self.log_prob += self.csm_log_prior[
-            self.get_relative_chord(
+            self.get_relative_chord_index(
                 pitch_type,
                 duration_cache,
                 onset_cache,
@@ -452,7 +452,7 @@ class State:
 
         return self.key_obj
 
-    def get_relative_chord(
+    def get_relative_chord_index(
         self,
         pitch_type: PitchType,
         duration_cache: np.array,
