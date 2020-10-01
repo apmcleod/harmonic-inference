@@ -472,7 +472,8 @@ class HarmonicInferenceModel:
         all_states = [beam_class(self.beam_size) for _ in range(len(piece.get_inputs()) + 1)]
 
         # Add initial states
-        all_states[0].add(State(key=0, hash_length=self.hash_length))
+        for key in range(hc.NUM_PITCHES[self.KEY_OUTPUT_TYPE]):
+            all_states[0].add(State(key=key, hash_length=self.hash_length))
 
         for current_start, current_states in tqdm(
             enumerate(all_states[:-1]),

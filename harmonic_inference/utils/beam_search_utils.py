@@ -720,7 +720,7 @@ class Beam:
             The top state in this beam. This runs in O(beam_size) time, since it requires
             a full search of the beam.
         """
-        return max(self)
+        return max(self) if len(self) > 0 else None
 
     def empty(self):
         """
