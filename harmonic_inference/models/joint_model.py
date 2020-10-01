@@ -716,8 +716,8 @@ class HarmonicInferenceModel:
                     self.KEY_OUTPUT_TYPE,
                 )
 
-                if key_id == state.key:
-                    # Disallow self-transitions
+                if key_id == state.key or key_id < 0 or key_id > len(self.LABELS['key']):
+                    # Disallow self-transitions and illegal keys
                     continue
 
                 # Calculate the new state on this absolute chord

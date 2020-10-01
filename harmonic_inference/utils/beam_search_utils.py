@@ -101,7 +101,7 @@ class State:
         is_valid : bool
             True if this state is currently valid. False otherwise.
         """
-        return self._valid and self._must_key_transition
+        return self._valid and not self._must_key_transition
 
     def invalidate(self):
         """
