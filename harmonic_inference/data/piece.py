@@ -412,7 +412,7 @@ class Chord():
             The length of a single chord vector.
         """
         if relative and pitch_type == PitchType.TPC:
-            num_pitches = hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC + hc.RELATIVE_TPC_EXTRA
+            num_pitches = hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC + hc.RELATIVE_TPC_EXTRA * 2
         else:
             num_pitches = hc.NUM_PITCHES[pitch_type]
 
