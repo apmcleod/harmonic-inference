@@ -817,6 +817,7 @@ class Key():
             num_pitches = NUM_PITCHES[PitchType.MIDI]
         else:
             num_pitches = hc.MAX_KEY_CHANGE_INTERVAL_TPC - hc.MIN_KEY_CHANGE_INTERVAL_TPC
+
         return next_key.relative_mode.value * num_pitches + interval
 
     def is_repeated(self, other: 'Key', use_relative: bool = True) -> bool:

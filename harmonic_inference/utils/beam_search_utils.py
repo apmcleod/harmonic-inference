@@ -9,6 +9,7 @@ import numpy as np
 from harmonic_inference.data.data_types import PitchType
 from harmonic_inference.data.piece import Chord, Key
 import harmonic_inference.utils.harmonic_utils as hu
+import harmonic_inference.utils.harmonic_constants as hc
 
 
 class State:
@@ -30,6 +31,7 @@ class State:
         ktm_hidden_state: np.array = None,
         csm_log_prior: np.array = None,
         key_obj: Key = None,
+        must_key_transition: bool = False,
     ):
         """
         Create a new State.
@@ -60,8 +62,12 @@ class State:
             The log prior for each (relative) chord symbol, as output by the CSM.
         key_obj : Key
             The key object of this state, in case it can be copied from the previous state.
+        must_key_transition : bool
+            True if this State must key transition to be valid. This happens in the case that
+            the chord's root or bass note are outside of the valid range of relative pitches
+            from the key's tonic.
         """
-        self.valid = True
+        self._valid = True
 
         self.chord = chord
         self.key = key
@@ -84,6 +90,25 @@ class State:
         self.chord_obj = None
         self.key_obj = key_obj
 
+        self._must_key_transition = must_key_transition
+
+    def is_valid(self) -> bool:
+        """
+        Return if this State is valid currently or not.
+
+        Returns
+        -------
+        is_valid : bool
+            True if this state is currently valid. False otherwise.
+        """
+        return self._valid and self._must_key_transition
+
+    def invalidate(self):
+        """
+        Mark this State as invalid.
+        """
+        self._valid = False
+
     def copy(self) -> 'State':
         """
         Return a deep copy of this State.
@@ -104,9 +129,17 @@ class State:
             ktm_hidden_state=self.ktm_hidden_state,
             csm_log_prior=self.csm_log_prior,
             key_obj=self.key_obj,
+            must_key_transition=self._must_key_transition,
         )
 
-    def chord_transition(self, chord: int, change_index: int, log_prob: float) -> 'State':
+    def chord_transition(
+        self,
+        chord: int,
+        change_index: int,
+        log_prob: float,
+        pitch_type: PitchType,
+        LABELS: Dict,
+    ) -> 'State':
         """
         Perform a chord transition form this State, and return the new State.
 
@@ -119,12 +152,37 @@ class State:
         log_prob : float
             The log-probability of the given chord transition occurring, in terms of
             absolute chord (CCM) and the chord's index bounds (CTM).
+        pitch_type : PitchType
+            The pitch type used to store the chord root.
+        LABELS : Dict
+            A Dictionary of key and chord labels for the current piece.
 
         Returns
         -------
         new_state : State
             The state resulting from the given transition.
         """
+        root, chord_type, inversion = LABELS['chord'][chord]
+        bass = hu.get_bass_note(chord_type, root, inversion, pitch_type)
+
+        tonic = self.get_key(pitch_type, LABELS).relative_tonic
+        relative_root = root - tonic
+        relative_bass = bass - tonic
+
+        minimum = hc.MIN_RELATIVE_TPC - hc.RELATIVE_TPC_EXTRA
+        maximum = hc.MAX_RELATIVE_TPC + hc.RELATIVE_TPC_EXTRA
+
+        if (
+            relative_root < minimum or relative_bass < minimum or
+            relative_root >= maximum or relative_bass >= maximum
+        ):
+            return None
+
+        must_key_transition = (
+            relative_root < hc.MIN_RELATIVE_TPC or relative_bass < hc.MIN_RELATIVE_TPC or
+            relative_root >= hc.MAX_RELATIVE_TPC or relative_bass >= hc.MAX_RELATIVE_TPC
+        )
+
         return State(
             chord=chord,
             key=self.key,
@@ -136,6 +194,7 @@ class State:
             ktm_hidden_state=self.ktm_hidden_state,
             csm_log_prior=self.csm_log_prior,
             key_obj=self.key_obj,
+            must_key_transition=must_key_transition,
         )
 
     def can_key_transition(self) -> bool:
@@ -152,7 +211,13 @@ class State:
         """
         return self.prev_state is not None and self.prev_state.prev_state is not None
 
-    def key_transition(self, key: int, log_prob: float) -> 'State':
+    def key_transition(
+        self,
+        key: int,
+        log_prob: float,
+        pitch_type: PitchType,
+        LABELS: Dict,
+    ) -> 'State':
         """
         Transition to a new key on the most recent chord.
 
@@ -163,6 +228,10 @@ class State:
         log_prob : float
             The log-probability of the given key transition, in terms of the input index (KTM)
             and the new key (KSM).
+        pitch_type : PitchType
+            The pitch type used to store the chord root.
+        LABELS : Dict
+            A Dictionary of key and chord labels for the current piece.
 
         Returns
         -------
@@ -170,6 +239,19 @@ class State:
             Essentially, a replacement of this state (the new state's prev_state is the same),
             but with a new key.
         """
+        root, chord_type, inversion = LABELS['chord'][self.chord]
+        bass = hu.get_bass_note(chord_type, root, inversion, pitch_type)
+
+        tonic, _ = LABELS['key'][key]
+        relative_root = root - tonic
+        relative_bass = bass - tonic
+
+        if (
+            relative_root < hc.MIN_RELATIVE_TPC or relative_bass < hc.MIN_RELATIVE_TPC or
+            relative_root >= hc.MAX_RELATIVE_TPC or relative_bass >= hc.MAX_RELATIVE_TPC
+        ):
+            return None
+
         return State(
             chord=self.chord,
             key=key,
@@ -181,6 +263,7 @@ class State:
             ktm_hidden_state=self.ktm_hidden_state,
             csm_log_prior=self.csm_log_prior,
             key_obj=None,
+            must_key_transition=False,
         )
 
     def add_csm_prior(
@@ -709,7 +792,7 @@ class HashedBeam(Beam):
         Remove all states with valid == False from the top of the min-heap until the min
         state is valid.
         """
-        while not self.beam[0].valid:
+        while not self.beam[0].is_valid():
             heapq.heappop(self.beam)
 
     def add(self, state: State) -> bool:
@@ -731,7 +814,7 @@ class HashedBeam(Beam):
 
         if state_hash in self.state_dict:
             if self.state_dict[state_hash] < state:
-                self.state_dict[state_hash].valid = False
+                self.state_dict[state_hash].invalidate()
                 self.state_dict[state_hash] = state
                 heapq.heappush(self.beam, state)
                 self._fix_beam_min()

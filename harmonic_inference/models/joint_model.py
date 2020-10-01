@@ -18,8 +18,9 @@ import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
 from harmonic_inference.data.piece import Piece
 import harmonic_inference.data.datasets as ds
-from harmonic_inference.data.data_types import KeyMode
+from harmonic_inference.data.data_types import KeyMode, PitchType
 import harmonic_inference.utils.harmonic_utils as hu
+import harmonic_inference.utils.harmonic_constants as hc
 from harmonic_inference.utils.beam_search_utils import Beam, HashedBeam, State
 
 
@@ -154,6 +155,16 @@ class HarmonicInferenceModel:
                     for key in hu.get_key_label_list(self.KEY_OUTPUT_TYPE)
                 ]
             ],
+            'relative_key': list(
+                itertools.product(
+                    KeyMode,
+                    (
+                        range(hc.MIN_KEY_CHANGE_INTERVAL_TPC, hc.MAX_KEY_CHANGE_INTERVAL_TPC)
+                        if self.KEY_OUTPUT_TYPE == PitchType.TPC else
+                        range(hc.NUM_PITCHES[PitchType.MIDI])
+                    ),
+                )
+            )
         }
 
         # CTM params
@@ -501,10 +512,15 @@ class HarmonicInferenceModel:
 
                     # Calculate the new state on this absolute chord
                     new_state = state.chord_transition(
-                        chord_id, range_end, range_log_prob + chord_log_priors[chord_id]
+                        chord_id,
+                        range_end,
+                        range_log_prob + chord_log_priors[chord_id],
+                        self.CHORD_OUTPUT_TYPE,
+                        self.LABELS,
                     )
 
-                    to_check_for_key_change.append(new_state)
+                    if new_state is not None:
+                        to_check_for_key_change.append(new_state)
 
             # Check for key changes
             change_probs = self.get_key_change_probs(to_check_for_key_change)
@@ -520,7 +536,7 @@ class HarmonicInferenceModel:
                 no_change_log_probs,
                 to_check_for_key_change
             ):
-                can_not_change = change_prob <= self.max_no_key_change_prob
+                can_not_change = change_prob <= self.max_no_key_change_prob and state.is_valid()
                 can_change = change_prob >= self.min_key_change_prob
 
                 # Make a copy only if necessary
@@ -692,13 +708,28 @@ class HarmonicInferenceModel:
                 max_index = 2
 
             # Branch
-            for key_id in prior_argsort[:max_index]:
+            for relative_key_id in prior_argsort[:max_index]:
+                mode, interval = self.LABELS[relative_key_id]
+                key_id = hu.get_key_one_hot_index(
+                    mode,
+                    state.get_key(self.KEY_OUTPUT_TYPE, self.LABELS).relative_tonic + interval,
+                    self.KEY_OUTPUT_TYPE,
+                )
+
                 if key_id == state.key:
                     # Disallow self-transitions
                     continue
 
                 # Calculate the new state on this absolute chord
-                new_states.append(state.key_transition(key_id, log_priors[key_id]))
+                new_state = state.key_transition(
+                    key_id,
+                    log_priors[key_id],
+                    self.KEY_OUTPUT_TYPE,
+                    self.LABELS,
+                )
+
+                if new_state is not None:
+                    new_states.append(new_state)
 
         return new_states
 
