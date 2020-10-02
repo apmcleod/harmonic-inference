@@ -78,7 +78,7 @@ class State:
         self.prev_state = prev_state
         if hash_length is not None:
             if self.prev_state is None:
-                self.hash_tuple = tuple([None] * hash_length)
+                self.hash_tuple = tuple([None] * (hash_length - 1) + [(key, chord)])
             else:
                 self.hash_tuple = tuple(list(prev_state.hash_tuple[1:]) + [(key, chord)])
 

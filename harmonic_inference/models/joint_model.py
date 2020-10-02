@@ -472,7 +472,7 @@ class HarmonicInferenceModel:
         all_states = [beam_class(self.beam_size) for _ in range(len(piece.get_inputs()) + 1)]
 
         # Add initial states
-        for key in range(hc.NUM_PITCHES[self.KEY_OUTPUT_TYPE]):
+        for key in range(len(hu.get_key_label_list(self.KEY_OUTPUT_TYPE))):
             all_states[0].add(State(key=key, hash_length=self.hash_length))
 
         for current_start, current_states in tqdm(
@@ -520,7 +520,7 @@ class HarmonicInferenceModel:
                         self.LABELS,
                     )
 
-                    if new_state is not None:
+                    if new_state is not None and all_states[range_end].fits_in_beam(new_state):
                         to_check_for_key_change.append(new_state)
 
             # Check for key changes
@@ -545,11 +545,13 @@ class HarmonicInferenceModel:
 
                 if can_change:
                     change_state.log_prob += change_log_prob
-                    to_ksm_states.append(change_state)
+                    if all_states[change_state.change_index].fits_in_beam(change_state):
+                        to_ksm_states.append(change_state)
 
                 if can_not_change:
                     state.log_prob += no_change_log_prob
-                    to_csm_prior_states.append(state)
+                    if all_states[state.change_index].fits_in_beam(state):
+                        to_csm_prior_states.append(state)
 
             # Change keys and put resulting states into the appropriate beam
             for state in self.get_key_change_states(to_ksm_states):
