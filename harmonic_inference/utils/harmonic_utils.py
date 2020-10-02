@@ -194,7 +194,7 @@ def absolute_to_relative(
     key_tonic: int,
     pitch_type: PitchType,
     is_key_change: bool,
-    check: bool = True,
+    use_extra: bool = False,
 ) -> int:
     """
     Convert an absolute pitch to one relative to the given tonic.
@@ -212,14 +212,19 @@ def absolute_to_relative(
         a relative chord pitch. For key changes with PitchType.TPC, we adjust so that
         hc.MIN_KEY_CHANGE_INTERVAL_TPC is set to 0. For chord pitches, hc.MIN_RELATIVE_TPC
         is used instead.
-    check : bool
-        If True, ensure that the resulting relative pitch is within the correct bounds and
-        raise a ValueError if not. If False, only log a warning in such cases.
+    use_extra : bool
+        If True or is_key_change is True, use the exact bounds. If False, and is_key_change
+        is False, add hc.RELATIVE_TPC_EXTRA to the upper and lower bounds.
 
     Returns
     -------
     relative : int
         The given pitch, expressed relative to the given key_tonic.
+
+    Raises
+    ------
+    ValueError
+        If the resulting relative is outside of the allowed bounds.
     """
     if pitch_type == PitchType.MIDI:
         return transpose_pitch(pitch, -key_tonic, PitchType.MIDI)
@@ -228,11 +233,12 @@ def absolute_to_relative(
     minimum = hc.MIN_KEY_CHANGE_INTERVAL_TPC if is_key_change else hc.MIN_RELATIVE_TPC
     maximum = hc.MAX_KEY_CHANGE_INTERVAL_TPC if is_key_change else hc.MAX_RELATIVE_TPC
 
+    if use_extra and not is_key_change:
+        minimum -= hc.RELATIVE_TPC_EXTRA
+        maximum += hc.RELATIVE_TPC_EXTRA
+
     if relative < minimum or relative >= maximum:
-        if check:
-            raise ValueError(f"Resulting relative pitch {relative} is outside of valid range.")
-        else:
-            logging.warning(f"Resulting relative pitch {relative} is outside of valid range.")
+        raise ValueError(f"Resulting relative pitch {relative} is outside of valid range.")
 
     return relative - minimum
 
