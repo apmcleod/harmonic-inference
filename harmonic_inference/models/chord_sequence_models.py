@@ -42,8 +42,11 @@ class ChordSequenceModel(pl.LightningModule):
         inputs = inputs[:, :longest]
 
         targets = targets[:, :longest]
+        targets[inputs[:, :, -1] == 1] = -100
+        targets[:, 0] = -100
         for i, length in enumerate(target_lengths):
             targets[i, length:] = -100
+        targets = torch.roll(targets, -1, dims=1)
 
         return inputs, input_lengths, targets
 

@@ -250,8 +250,9 @@ class ChordSequenceDataset(HarmonicDataset):
     special case of the first chord after a key change, the key change vector is also populated and
     the additional slot is set to 1.
 
-    The targets are the one-hot index of the following chord, relative to its key. Back-propagation
-    should not be performed on the target of the last chord in each key section.
+    The targets are the one-hot index of each chord, relative to its key. Back-propagation
+    should not be performed on targets that lie on a key change, and targets should
+    be shifted backwards by 1 (such that the target of each chord is the following chord).
     """
     train_batch_size = 32
     valid_batch_size = 64
