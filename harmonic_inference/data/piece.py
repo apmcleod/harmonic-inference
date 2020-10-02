@@ -9,7 +9,6 @@ import pandas as pd
 import numpy as np
 
 from harmonic_inference.data.data_types import KeyMode, PitchType, ChordType, PieceType
-from harmonic_inference.utils.harmonic_constants import NUM_PITCHES
 import harmonic_inference.utils.harmonic_utils as hu
 import harmonic_inference.utils.rhythmic_utils as ru
 import harmonic_inference.utils.harmonic_constants as hc
@@ -812,7 +811,7 @@ class Key():
         )
 
         if self.tonic_type == PitchType.MIDI:
-            num_pitches = NUM_PITCHES[PitchType.MIDI]
+            num_pitches = hc.NUM_PITCHES[PitchType.MIDI]
         else:
             num_pitches = hc.MAX_KEY_CHANGE_INTERVAL_TPC - hc.MIN_KEY_CHANGE_INTERVAL_TPC
 
