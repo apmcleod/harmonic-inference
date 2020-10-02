@@ -1,6 +1,5 @@
 """Utility functions for getting harmonic and pitch information from the corpus DataFrames."""
 from typing import List, Tuple
-import logging
 
 import pandas as pd
 import numpy as np
