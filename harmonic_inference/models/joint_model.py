@@ -611,7 +611,10 @@ class HarmonicInferenceModel:
                         self.LABELS,
                     )
 
-                    if new_state is not None and all_states[range_end].fits_in_beam(new_state):
+                    if new_state is not None and all_states[range_end].fits_in_beam(
+                        new_state,
+                        check_hash=False,
+                    ):
                         to_check_for_key_change.append(new_state)
 
             # Check for key changes
@@ -636,12 +639,15 @@ class HarmonicInferenceModel:
 
                 if can_change:
                     change_state.log_prob += change_log_prob
-                    if all_states[change_state.change_index].fits_in_beam(change_state):
+                    if all_states[change_state.change_index].fits_in_beam(
+                        change_state,
+                        check_hash=False,
+                    ):
                         to_ksm_states.append(change_state)
 
                 if can_not_change:
                     state.log_prob += no_change_log_prob
-                    if all_states[state.change_index].fits_in_beam(state):
+                    if all_states[state.change_index].fits_in_beam(state, check_hash=True):
                         to_csm_prior_states.append(state)
 
             # Change keys and put resulting states into the appropriate beam

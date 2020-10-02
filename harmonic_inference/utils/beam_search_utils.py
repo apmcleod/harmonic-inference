@@ -668,7 +668,7 @@ class Beam:
         self.beam_size = beam_size
         self.beam = []
 
-    def fits_in_beam(self, state: State) -> bool:
+    def fits_in_beam(self, state: State, check_hash: bool = True) -> bool:
         """
         Check if the given state will fit in the beam, but do not add it.
 
@@ -680,6 +680,9 @@ class Beam:
         ----------
         state : State
             The state to check.
+        check_hash : bool
+            If True and this is a HashedBeam, check the State's hash slot. Otherwise, only
+            check the global beam.
 
         Returns
         -------
@@ -766,7 +769,7 @@ class HashedBeam(Beam):
         super().__init__(beam_size)
         self.state_dict = {}
 
-    def fits_in_beam(self, state: State) -> bool:
+    def fits_in_beam(self, state: State, check_hash: bool = True) -> bool:
         """
         Check if the given state will fit in the beam, but do not add it.
 
@@ -778,17 +781,21 @@ class HashedBeam(Beam):
         ----------
         state : State
             The state to check.
+        check_hash : bool
+            If True, check the State's hash slot. Otherwise, only check the global beam.
 
         Returns
         -------
         fits : bool
             True if the state will fit in the beam both by size and by log_prob.
         """
-        state_hash = state.get_hash()
-        return (
-            (len(self) < self.beam_size or self.beam[0] < state) and
-            (state_hash not in self.state_dict or self.state_dict[state_hash] < state)
-        )
+        global_check = len(self) < self.beam_size or self.beam[0] < state
+
+        if global_check and check_hash:
+            state_hash = state.get_hash()
+            return state_hash not in self.state_dict or self.state_dict[state_hash] < state
+
+        return global_check
 
     def _fix_beam_min(self):
         """
