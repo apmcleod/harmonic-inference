@@ -1,4 +1,5 @@
 """Combined models that output a key/chord sequence given an input score, midi, or audio."""
+from argparse import ArgumentParser, Namespace
 from fractions import Fraction
 from typing import List, Tuple, Dict
 import logging
@@ -39,6 +40,96 @@ LABELS = {
 }
 
 
+def add_joint_model_args(parser: ArgumentParser):
+    """
+    Add parameters for the HarmonicInferenceModel to the given ArgumentParser.
+
+    Parameters
+    ----------
+    parser : ArgumentParser
+        The ArgumentParser to add the HarmonicInferenceModel arguments to.
+    """
+    parser.add_argument(
+        "--min-chord-change-prob",
+        default=0.25,
+        type=float,
+        help="The minimum CTM probability that can be a chord change.",
+    )
+
+    parser.add_argument(
+        "--max-no-chord-change-prob",
+        default=0.75,
+        type=float,
+        help="The maximum CTM probability that can be a non-chord change.",
+    )
+
+    parser.add_argument(
+        "--max-chord-length",
+        default=Fraction(8),
+        type=Fraction,
+        help="The maximum duration (in whole notes) of a chord.",
+    )
+
+    parser.add_argument(
+        "--min-key-change-prob",
+        default=0.25,
+        type=float,
+        help="The minimum KTM probability that can be a key change.",
+    )
+
+    parser.add_argument(
+        "--max-no-key-change-prob",
+        default=0.75,
+        type=float,
+        help="The maximum KTM probability that can be a non-key change.",
+    )
+
+    parser.add_argument(
+        "--beam-size",
+        default=50,
+        type=int,
+        help="The beam size to use during decoding.",
+    )
+
+    parser.add_argument(
+        "--max-chord-branching-factor",
+        default=20,
+        type=int,
+        help="The maximum number of different chords to branch into.",
+    )
+
+    parser.add_argument(
+        "--target-chord-branch-prob",
+        default=0.95,
+        type=float,
+        help=("Once the chords branched into account for at least this much probability mass "
+              "stop branching, disregarding --max-chord-branching-factor.")
+    )
+
+    parser.add_argument(
+        "--max-key-branching-factor",
+        default=5,
+        type=int,
+        help="The maximum number of different keys to branch into.",
+    )
+
+    parser.add_argument(
+        "--target-key-branch-prob",
+        default=0.95,
+        type=float,
+        help=("Once the keys branched into account for at least this much probability mass "
+              "stop branching, disregarding --max-key-branching-factor."),
+    )
+
+    parser.add_argument(
+        "--hash-length",
+        default=5,
+        type=int,
+        help=("If 2 states are identical in chord and key for this many chord changes "
+              "(disregarding change index), only the most likely state is kept in the beam."),
+    )
+
+
 class HarmonicInferenceModel:
     """
     A model to perform harmonic inference on an input score, midi, or audio piece.
@@ -51,7 +142,7 @@ class HarmonicInferenceModel:
         max_chord_length: Fraction = Fraction(8),
         min_key_change_prob: float = 0.25,
         max_no_key_change_prob: float = 0.75,
-        beam_size: int = 500,
+        beam_size: int = 50,
         max_chord_branching_factor: int = 20,
         target_chord_branch_prob: float = 0.95,
         max_key_branching_factor: int = 5,
@@ -627,7 +718,7 @@ class HarmonicInferenceModel:
         cell_states = []
         for batch in ktm_loader:
             batch_output, batch_hidden = self.key_transition_model.run_one_step(batch)
-            outputs.extend(batch_output.numpy().squeeze())
+            outputs.extend(batch_output.numpy().squeeze(axis=1))
             hidden_states.extend(torch.transpose(batch_hidden[0], 0, 1))
             cell_states.extend(torch.transpose(batch_hidden[1], 0, 1))
 
@@ -789,3 +880,40 @@ class HarmonicInferenceModel:
         for state, log_prior, hidden, cell in zip(states, priors, hidden_states, cell_states):
             state.csm_log_prior = log_prior.numpy()[0]
             state.csm_hidden_state = (hidden, cell)
+
+
+def from_args(models: Dict, ARGS: Namespace) -> HarmonicInferenceModel:
+    """
+    Load a HarmonicInferenceModel from this given models and argparse parsed arguments.
+
+    Parameters
+    ----------
+    models : Dict
+        A dictionary mapping of model components:
+            'ccm': A ChordClassifier
+            'ctm': A ChordTransitionModel
+            'csm': A ChordSequenceModel
+            'ktm': A KeyTransitionModel
+            'ksm': A KeySequenceModel
+    ARGS : Namespace
+        Parsed command-line arguments for the HarmonicInferenceModel's parameters.
+
+    Returns
+    -------
+    model : HarmonicInferenceModel
+        A HarmonicInferenceModel, with parameters taken from the parsed args.
+    """
+    return HarmonicInferenceModel(
+        models,
+        min_chord_change_prob=ARGS.min_chord_change_prob,
+        max_no_chord_change_prob=ARGS.max_no_chord_change_prob,
+        max_chord_length=ARGS.max_chord_length,
+        min_key_change_prob=ARGS.min_key_change_prob,
+        max_no_key_change_prob=ARGS.max_no_key_change_prob,
+        beam_size=ARGS.beam_size,
+        max_chord_branching_factor=ARGS.max_chord_branching_factor,
+        target_chord_branch_prob=ARGS.target_chord_branch_prob,
+        max_key_branching_factor=ARGS.max_key_branching_factor,
+        target_key_branch_prob=ARGS.target_key_branch_prob,
+        hash_length=ARGS.hash_length,
+    )

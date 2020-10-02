@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import List
 from pathlib import Path
 import logging
 import argparse
@@ -10,7 +10,9 @@ from glob import glob
 from tqdm import tqdm
 import h5py
 
-from harmonic_inference.models.joint_model import MODEL_CLASSES, HarmonicInferenceModel
+from harmonic_inference.models.joint_model import (
+    MODEL_CLASSES, HarmonicInferenceModel, add_joint_model_args, from_args
+)
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 from harmonic_inference.data.piece import Piece, ScorePiece
 import harmonic_inference.utils.eval_utils as eu
@@ -18,9 +20,7 @@ import harmonic_inference.utils.eval_utils as eu
 SPLITS = ["train", "valid", "test"]
 
 
-def evaluate(models: Dict, pieces: List[Piece]):
-    model = HarmonicInferenceModel(models)
-
+def evaluate(model: HarmonicInferenceModel, pieces: List[Piece]):
     states = []
     for piece in tqdm(pieces, desc="Getting harmony for pieces"):
         state = model.get_harmony(piece)
@@ -77,6 +77,8 @@ if __name__ == '__main__':
         help=("The directory that holds the h5 data containing file_ids to test on, and the piece "
               "pkl files."),
     )
+
+    add_joint_model_args(parser)
 
     ARGS = parser.parse_args()
 
@@ -140,6 +142,4 @@ if __name__ == '__main__':
                 ScorePiece(notes_df.loc[file_id], chords_df.loc[file_id], measures_df.loc[file_id])
             )
 
-    print(min([key.relative_tonic for piece in pieces for key in piece.get_keys()]))
-
-    evaluate(models, pieces)
+    evaluate(from_args(models, ARGS), pieces)
