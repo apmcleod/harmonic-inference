@@ -89,12 +89,15 @@ def test_chord_from_series():
         )
 
         root = chord_dict['root']
-        bass = chord_dict['bass_note']
         if pitch_type == PitchType.MIDI:
             root = hu.tpc_interval_to_midi_interval(root)
-            bass = hu.tpc_interval_to_midi_interval(bass)
         assert chord.root == hu.transpose_pitch(key.local_tonic, root, pitch_type)
-        assert chord.bass == hu.transpose_pitch(key.local_tonic, bass, pitch_type)
+        assert chord.bass == hu.get_bass_note(
+            chord.chord_type,
+            chord.root,
+            chord.inversion,
+            chord.pitch_type,
+        )
 
     chord_dict = {
         'numeral': 'III',
@@ -117,7 +120,7 @@ def test_chord_from_series():
     }
 
     key_values = {
-        'root': range(-7, 7),
+        'root': range(-2, 2),
         'bass_note': range(-7, 7),
         'chord_type': hc.STRING_TO_CHORD_TYPE.keys(),
         'figbass': hc.FIGBASS_INVERSIONS.keys(),
