@@ -13,3 +13,4 @@ dependencies:
   - pytorch
   - cpuonly
   - pytorch-lightning
+  - pytest
