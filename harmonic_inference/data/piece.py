@@ -1,5 +1,6 @@
 """A class storing a musical piece from score, midi, or audio format."""
-from typing import List, Union, Tuple, Dict
+from typing import DefaultDict, List, Union, Tuple, Dict
+from collections import defaultdict
 from fractions import Fraction
 import logging
 import inspect
@@ -86,7 +87,7 @@ class Note():
         return (
             hc.NUM_PITCHES[PitchType.TPC] +  # Pitch class
             127 // hc.NUM_PITCHES[PitchType.MIDI] +  # octave
-            12  # 4 onset level, 4 offset level, onset, offset, duration, is_lowest
+            14  # 4 onset level, 4 offset level, onset, offset, durations, is_lowest
         )
 
     def to_vec(
@@ -97,6 +98,8 @@ class Note():
         measures_df: pd.DataFrame = None,
         min_pitch: Tuple[int, int] = None,
         note_onset: Fraction = None,
+        dur_from_prev: Union[float, Fraction] = None,
+        dur_to_next: Union[float, Fraction] = None,
     ) -> np.array:
         """
         Get the vectorized representation of this note given a chord.
@@ -130,6 +133,12 @@ class Note():
         note_onset : Fraction
             The duration from the chord onset to the note's onset. If given, this speeds up
             computation by eliminating a call to rhythmic_utils.get_range(...).
+
+        dur_from_prev : Union[float, Fraction]
+            The duration from to this note's onset from the previous note's onset.
+
+        dur_to_next : Union[float, Fraction]
+            The duration from this note's onset to the next note's onset.
 
         Returns
         -------
@@ -186,6 +195,13 @@ class Note():
         else:
             vectors.append(np.zeros(3, dtype=float))
 
+        # Duration to surrounding notes
+        durations = [
+            0 if dur_from_prev is None else dur_from_prev,
+            0 if dur_to_next is None else dur_to_next,
+        ]
+        vectors.append(durations)
+
         # Binary -- is this the lowest note in this set of notes
         min_pitch = np.array(
             [1 if min_pitch is not None and (self.octave, self.pitch_class) == min_pitch else 0]
@@ -219,7 +235,8 @@ class Note():
     def from_series(
         note_row: pd.Series,
         measures_df: pd.DataFrame,
-        pitch_type: PitchType
+        pitch_type: PitchType,
+        levels_cache: Dict[str, Dict[Fraction, int]] = None,
     ) -> 'Note':
         """
         Create a new Note object from a pd.Series, and return it.
@@ -242,6 +259,10 @@ class Note():
                 'timesig' (str): The time signature of the measure.
         pitch_type : PitchType
             The pitch type to use for the Note.
+        levels_cache : Dict[str, Dict[Fraction, int]]
+            If given, a dictionary-based cache mapping time signatures to a 2nd dictionary mapping
+            beat positions to metrical levels. The outer-most dictionary should be a default-dict
+            returning by default an empty dict.
 
         Returns
         -------
@@ -259,17 +280,30 @@ class Note():
                 raise ValueError(f"Invalid pitch type: {pitch_type}")
             octave = note_row.midi // hc.NUM_PITCHES[PitchType.MIDI]
 
-            onset = (note_row["mc"], note_row["onset"])
-            onset_level = ru.get_metrical_level(
-                note_row["onset"],
-                measures_df.loc[measures_df["mc"] == note_row["mc"]].squeeze(),
-            )
+            # Rhythmic info
+            positions = []
+            levels = []
+            for mc, beat in zip(
+                [note_row.mc, note_row.offset_mc],
+                [note_row.onset, note_row.offset_beat]
+            ):
+                measure = measures_df.loc[measures_df["mc"] == mc].squeeze()
 
-            offset = (note_row["offset_mc"], note_row["offset_beat"])
-            offset_level = ru.get_metrical_level(
-                note_row["offset_beat"],
-                measures_df.loc[measures_df["mc"] == note_row["offset_mc"]].squeeze(),
-            )
+                if levels_cache is None:
+                    level = ru.get_metrical_level(beat, measure)
+                else:
+                    time_sig_cache = levels_cache[measure["timesig"]]
+                    if beat in time_sig_cache:
+                        level = time_sig_cache[beat]
+                    else:
+                        level = ru.get_metrical_level(beat, measure)
+                        time_sig_cache[beat] = level
+
+                positions.append((mc, beat))
+                levels.append(level)
+
+            onset, offset = positions
+            onset_level, offset_level = levels
 
             return Note(pitch, octave, onset, onset_level, note_row.duration, offset,
                         offset_level, pitch_type)
@@ -592,7 +626,8 @@ class Chord():
         chord_row: pd.Series,
         measures_df: pd.DataFrame,
         pitch_type: PitchType,
-        key=None,
+        key: 'Key' = None,
+        levels_cache: DefaultDict[str, Dict[Fraction, int]] = None,
     ) -> 'Chord':
         """
         Create a Chord object of the given pitch_type from the given pd.Series.
@@ -632,6 +667,10 @@ class Chord():
             The pitch type to use for the Chord.
         key : Key
             The key during this Chord. If not given, it will be calculated from chord_row.
+        levels_cache : DefaultDict[str, Dict[Fraction, int]]
+            If given, a dictionary-based cache mapping time signatures to a 2nd dictionary mapping
+            beat positions to metrical levels. The outer-most dictionary should be a default-dict
+            returning by default an empty dict.
 
         Returns
         -------
@@ -665,17 +704,29 @@ class Chord():
             assert 0 <= bass < hc.NUM_PITCHES[pitch_type]
 
             # Rhythmic info
-            onset = (chord_row.mc, chord_row.onset)
-            onset_level = ru.get_metrical_level(
-                chord_row["onset"],
-                measures_df.loc[measures_df["mc"] == chord_row["mc"]].squeeze(),
-            )
+            positions = []
+            levels = []
+            for mc, beat in zip(
+                [chord_row.mc, chord_row.mc_next],
+                [chord_row.onset, chord_row.onset_next]
+            ):
+                measure = measures_df.loc[measures_df["mc"] == mc].squeeze()
 
-            offset = (chord_row.mc_next, chord_row.onset_next)
-            offset_level = ru.get_metrical_level(
-                chord_row["onset_next"],
-                measures_df.loc[measures_df["mc"] == chord_row["mc_next"]].squeeze(),
-            )
+                if levels_cache is None:
+                    level = ru.get_metrical_level(beat, measure)
+                else:
+                    time_sig_cache = levels_cache[measure["timesig"]]
+                    if beat in time_sig_cache:
+                        level = time_sig_cache[beat]
+                    else:
+                        level = ru.get_metrical_level(beat, measure)
+                        time_sig_cache[beat] = level
+
+                positions.append((mc, beat))
+                levels.append(level)
+
+            onset, offset = positions
+            onset_level, offset_level = levels
 
             duration = chord_row.duration
 
@@ -1005,6 +1056,10 @@ def get_chord_note_input(
     window_onset_index = onset_index - window
     window_offset_index = offset_index + window
 
+    # Shift duration_cache
+    dur_from_prevs = [None] + list(duration_cache)
+    dur_to_nexts = list(duration_cache) + [None]
+
     # Get the notes within the window
     first_note_index = max(window_onset_index, 0)
     last_note_index = min(window_offset_index, len(notes))
@@ -1034,7 +1089,14 @@ def get_chord_note_input(
                 measures_df=measures_df,
                 min_pitch=min_pitch,
                 note_onset=note_onset,
-            ) for note, note_onset in zip(chord_notes, note_onsets)
+                dur_from_prev=from_prev,
+                dur_to_next=to_next,
+            ) for note, note_onset, from_prev, to_next in zip(
+                chord_notes,
+                note_onsets,
+                dur_from_prevs[first_note_index:last_note_index],
+                dur_to_nexts[first_note_index:last_note_index],
+            )
         ]
     )
 
@@ -1190,12 +1252,14 @@ class ScorePiece(Piece):
         self.measures_df = measures_df
 
         if piece_dict is None:
+            levels_cache = defaultdict(dict)
             notes = np.array([
                 [note, note_id] for note_id, note in enumerate(notes_df.apply(
                     Note.from_series,
                     axis='columns',
                     measures_df=measures_df,
                     pitch_type=PitchType.TPC,
+                    levels_cache=levels_cache,
                 )) if note is not None
             ])
             self.notes, self.note_ilocs = np.hsplit(notes, 2)
@@ -1208,6 +1272,7 @@ class ScorePiece(Piece):
                     axis='columns',
                     measures_df=measures_df,
                     pitch_type=PitchType.TPC,
+                    levels_cache=levels_cache,
                 )) if chord is not None
             ])
             chords, chord_ilocs = np.hsplit(chords, 2)
@@ -1308,6 +1373,7 @@ class ScorePiece(Piece):
                     onset_index,
                     offset_index,
                     window,
+                    duration_cache=self.get_duration_cache(),
                 ) for chord, onset_index, offset_index in zip(
                     self.chords,
                     self.chord_changes,

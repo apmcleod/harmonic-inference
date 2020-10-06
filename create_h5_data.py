@@ -106,3 +106,4 @@ if __name__ == '__main__':
             if dataset_splits[i1][i2] is not None:
                 h5_path = ARGS.output / f'{data_type.__name__}_{split}_seed_{ARGS.seed}.h5'
                 dataset_splits[i1][i2].to_h5(h5_path, file_ids=split_ids[i2])
+                dataset_splits[i1][i2] = None

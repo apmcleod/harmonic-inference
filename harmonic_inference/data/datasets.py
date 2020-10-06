@@ -189,7 +189,16 @@ class ChordTransitionDataset(HarmonicDataset):
         super().__init__(transform=transform)
         self.targets = [piece.get_chord_change_indices() for piece in pieces]
         self.inputs = [
-            np.vstack([note.to_vec() for note in piece.get_inputs()]) for piece in pieces
+            np.vstack(
+                [
+                    note.to_vec(dur_from_prev=from_prev, dur_to_next=to_next)
+                    for note, from_prev, to_next in zip(
+                        piece.get_inputs(),
+                        [None] + list(piece.get_duration_cache()),
+                        list(piece.get_duration_cache()) + [None],
+                    )
+                ]
+            ) for piece in pieces
         ]
         self.target_lengths = np.array([len(target) for target in self.targets])
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
