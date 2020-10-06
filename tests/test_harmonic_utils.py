@@ -413,6 +413,52 @@ def test_get_key_one_hot_index():
         hu.get_key_one_hot_index(KeyMode.MAJOR, hc.NUM_PITCHES[PitchType.TPC], PitchType.TPC)
 
 
+def test_absolute_to_relative():
+    for pitch_type in PitchType:
+        for pitch in range(hc.NUM_PITCHES[pitch_type]):
+            for key_tonic in range(hc.NUM_PITCHES[pitch_type]):
+                for is_key_change, use_extra in itertools.product([True, False], repeat=2):
+                    target = pitch - key_tonic
+                    if pitch_type == PitchType.MIDI:
+                        target %= hc.NUM_PITCHES[PitchType.MIDI]
+                        assert target == hu.absolute_to_relative(
+                            pitch,
+                            key_tonic,
+                            pitch_type,
+                            is_key_change,
+                            use_extra=use_extra,
+                        )
+                        continue
+
+                    if is_key_change:
+                        minimum = hc.MIN_KEY_CHANGE_INTERVAL_TPC
+                        maximum = hc.MAX_KEY_CHANGE_INTERVAL_TPC
+                    else:
+                        minimum = hc.MIN_RELATIVE_TPC
+                        maximum = hc.MAX_RELATIVE_TPC
+                        if use_extra:
+                            minimum -= hc.RELATIVE_TPC_EXTRA
+                            maximum += hc.RELATIVE_TPC_EXTRA
+
+                    if target in range(minimum, maximum):
+                        assert target - minimum == hu.absolute_to_relative(
+                            pitch,
+                            key_tonic,
+                            pitch_type,
+                            is_key_change,
+                            use_extra=use_extra,
+                        )
+                    else:
+                        with pytest.raises(ValueError):
+                            hu.absolute_to_relative(
+                                pitch,
+                                key_tonic,
+                                pitch_type,
+                                is_key_change,
+                                use_extra=use_extra,
+                            )
+
+
 def test_get_bass_note():
     for pitch_type in PitchType:
         for chord_type in ChordType:

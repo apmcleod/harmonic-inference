@@ -1,5 +1,6 @@
 """Utility functions for getting harmonic and pitch information from the corpus DataFrames."""
 from typing import List, Tuple
+import itertools
 
 import pandas as pd
 import numpy as np
@@ -26,16 +27,14 @@ def get_chord_label_list(pitch_type: PitchType, use_inversions=True) -> List[str
     """
     roots = [get_pitch_string(i, pitch_type) for i in range(hc.NUM_PITCHES[pitch_type])]
 
-    labels = []
-    for chord_type in ChordType:
-        for root in roots:
-            if use_inversions:
-                for inv in range(get_chord_inversion_count(chord_type)):
-                    labels.append(f'{root}:{get_chord_string(chord_type)}, inv:{inv}')
-            else:
-                labels.append(f'{root}:{get_chord_string(chord_type)}')
-
-    return labels
+    return [
+        f"{root}:{get_chord_string(chord_type)}{'' if inv is None else f', inv:{inv}'}"
+        for chord_type, root in itertools.product(ChordType, roots)
+        for inv in (
+            range(get_chord_inversion_count(chord_type))
+            if use_inversions else [None]
+        )
+    ]
 
 
 def get_chord_one_hot_index(
@@ -54,7 +53,8 @@ def get_chord_one_hot_index(
     chord_type : ChordType
         The chord type of the chord.
     root_pitch : int
-        The pitch of the root of this chord.
+        The pitch of the root of this chord, either as an absolute or relative pitch,
+        depending on `relative`.
     pitch_type : int
         The representation used for `root_pitch`.
     inversion : int
@@ -113,14 +113,10 @@ def get_key_label_list(pitch_type: PitchType) -> List[str]:
     """
     tonics = [get_pitch_string(i, pitch_type) for i in range(hc.NUM_PITCHES[pitch_type])]
 
-    labels = []
-    for key_mode in KeyMode:
-        for tonic in tonics:
-            if key_mode == KeyMode.MINOR:
-                tonic = str(tonic).lower()
-            labels.append(f'{tonic}:{key_mode}')
-
-    return labels
+    return [
+        f'{tonic.lower() if key_mode == KeyMode.MINOR else tonic}:{key_mode}'
+        for key_mode, tonic in itertools.product(KeyMode, tonics)
+    ]
 
 
 def get_key_one_hot_index(key_mode: KeyMode, tonic: int, pitch_type: PitchType) -> int:
