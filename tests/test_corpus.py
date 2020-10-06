@@ -6,9 +6,6 @@ from tqdm import tqdm
 import pandas as pd
 
 import harmonic_inference.utils.corpus_utils as cu
-import harmonic_inference.utils.harmonic_utils as hu
-from harmonic_inference.data.piece import Chord
-from harmonic_inference.data.data_types import PitchType
 from harmonic_inference.data.corpus_reading import read_dump, load_clean_corpus_dfs
 
 TSV_BASE = Path('corpus_data')
@@ -130,26 +127,6 @@ def test_chords():
     assert all(chords_dfs['dropped'].mc.isin(measures_dfs['removed'].mc))
     assert all(chords_dfs['offsets'].mc.isin(measures_dfs['removed'].mc))
     assert all(chords_dfs['offsets'].mc_next.isin(measures_dfs['removed'].mc))
-
-    # Check all bass notes
-    for chord_id, chord_row in tqdm(
-        chords_dfs['offsets'].iterrows(),
-        desc="Checking chord bass notes",
-        total=len(chords_dfs['offsets']),
-    ):
-        chord = Chord.from_series(
-            chord_row,
-            measures_dfs['removed'].loc[chord_id[0]],
-            PitchType.TPC,
-        )
-        if chord is None:
-            continue
-
-        bass = hu.get_bass_note(chord.chord_type, chord.root, chord.inversion, PitchType.TPC)
-        if bass != chord.bass:
-            logging.error(
-                f"Incorrect bass note ({bass}) for chord_row {chord_id}: {chord_row.label}"
-            )
 
 
 def test_notes():
