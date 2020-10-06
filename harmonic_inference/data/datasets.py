@@ -195,7 +195,7 @@ class ChordTransitionDataset(HarmonicDataset):
                     for note, from_prev, to_next in zip(
                         piece.get_inputs(),
                         [None] + list(piece.get_duration_cache()),
-                        list(piece.get_duration_cache()) + [None],
+                        list(piece.get_duration_cache()),
                     )
                 ]
             ) for piece in pieces

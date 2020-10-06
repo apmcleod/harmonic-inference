@@ -431,7 +431,9 @@ def test_score_piece():
             not_none_chords[0].offset,
             not_none_chords[0].duration,
             measures_df,
-            (notes[0].octave, notes[0].pitch_class)
+            (notes[0].octave, notes[0].pitch_class),
+            dur_from_prev=None,
+            dur_to_next=piece.get_duration_cache()[0],
         )
     )
     assert np.sum(inputs[-1][-2:]) == 0
@@ -443,6 +445,8 @@ def test_score_piece():
             not_none_chords[-1].duration,
             measures_df,
             (notes[-1].octave, notes[-1].pitch_class),
+            dur_from_prev=piece.get_duration_cache()[-2],
+            dur_to_next=piece.get_duration_cache()[-1],
         )
     )
     assert all(
@@ -452,6 +456,8 @@ def test_score_piece():
             not_none_chords[1].offset,
             not_none_chords[1].duration,
             measures_df,
-            (notes[8].octave, notes[8].pitch_class)
+            (notes[8].octave, notes[8].pitch_class),
+            dur_from_prev=piece.get_duration_cache()[7],
+            dur_to_next=piece.get_duration_cache()[8],
         )
     )

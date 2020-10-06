@@ -1058,7 +1058,7 @@ def get_chord_note_input(
 
     # Shift duration_cache
     dur_from_prevs = [None] + list(duration_cache)
-    dur_to_nexts = list(duration_cache) + [None]
+    dur_to_nexts = list(duration_cache)
 
     # Get the notes within the window
     first_note_index = max(window_onset_index, 0)
