@@ -42,7 +42,7 @@ class ChordTransitionModel(pl.LightningModule):
         for i, (index, length) in enumerate(zip(target_indexes, target_lengths)):
             targets[i, index[:length]] = 1.0
 
-        mask = (inputs.sum(axis=2) > 0).long()
+        mask = (inputs.sum(axis=2) > 0).bool()
 
         return inputs, input_lengths, targets, mask
 
@@ -56,7 +56,11 @@ class ChordTransitionModel(pl.LightningModule):
 
         outputs = self(inputs, input_lengths)
 
-        loss = F.binary_cross_entropy(outputs * mask, targets)
+        flat_mask = mask.reshape(-1)
+        outputs = outputs.reshape(-1)[flat_mask]
+        targets = targets.reshape(-1)[flat_mask]
+
+        loss = F.binary_cross_entropy(outputs, targets)
 
         result = pl.TrainResult(loss)
         result.log('train_loss', loss, on_epoch=True)
@@ -67,11 +71,11 @@ class ChordTransitionModel(pl.LightningModule):
 
         outputs = self(inputs, input_lengths)
 
-        loss = F.binary_cross_entropy(outputs * mask, targets)
-
         flat_mask = mask.reshape(-1)
         outputs = outputs.reshape(-1)[flat_mask]
         targets = targets.reshape(-1)[flat_mask]
+
+        loss = F.binary_cross_entropy(outputs, targets)
         acc = 100 * (outputs.round() == targets).sum().float() / len(outputs)
 
         result = pl.EvalResult(checkpoint_on=loss, early_stop_on=loss)

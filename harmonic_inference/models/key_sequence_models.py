@@ -10,7 +10,6 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from harmonic_inference.data.data_types import PitchType
 from harmonic_inference.data.piece import Key, Chord
-from harmonic_inference.utils.harmonic_constants import NUM_PITCHES
 
 
 class KeySequenceModel(pl.LightningModule):

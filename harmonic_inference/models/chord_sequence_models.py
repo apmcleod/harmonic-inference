@@ -69,8 +69,9 @@ class ChordSequenceModel(pl.LightningModule):
         loss = F.nll_loss(outputs.permute(0, 2, 1), targets, ignore_index=-100)
 
         targets = targets.reshape(-1)
-        outputs = outputs.argmax(-1).reshape(-1)[targets != -100]
-        targets = targets[targets != -100]
+        mask = targets != 100
+        outputs = outputs.argmax(-1).reshape(-1)[mask]
+        targets = targets[mask]
         acc = 100 * (outputs == targets).sum().float() / len(targets)
 
         result = pl.EvalResult(checkpoint_on=loss, early_stop_on=loss)
