@@ -448,13 +448,13 @@ def h5_to_dataset(
                     chunk_lengths = dataset.input_lengths[chunk_start:chunk_start + chunk_size]
                     dataset.inputs.extend(
                         [
-                            np.array(item[:length], dtype=np.float32)
+                            np.array(item[:length], dtype=np.float16)
                             for item, length
                             in zip(input_chunk, chunk_lengths)
                         ]
                     )
             else:
-                dataset.inputs = np.array(h5_file['inputs'])
+                dataset.inputs = np.array(h5_file['inputs'], dtype=np.float16)
 
             if 'target_lengths' in h5_file:
                 dataset.target_lengths = np.array(h5_file['target_lengths'])
@@ -467,13 +467,13 @@ def h5_to_dataset(
                     chunk_lengths = dataset.target_lengths[chunk_start:chunk_start + chunk_size]
                     dataset.targets.extend(
                         [
-                            np.array(item[:length], dtype=np.float32)
+                            np.array(item[:length], dtype=np.float16)
                             for item, length
                             in zip(target_chunk, chunk_lengths)
                         ]
                     )
             else:
-                dataset.targets = np.array(h5_file['targets'])
+                dataset.targets = np.array(h5_file['targets'], dtype=np.float16)
             dataset.in_ram = True
 
         except Exception:
@@ -510,7 +510,7 @@ def pad_array(array: List[np.array]) -> Tuple[np.array, np.array]:
         full_array_size += list(array[0].shape)[1:]
     full_array_size = tuple(full_array_size)
 
-    padded_array = np.zeros(full_array_size)
+    padded_array = np.zeros(full_array_size, dtype=np.float16)
     for index, item in enumerate(array):
         padded_array[index, :len(item)] = item
 
