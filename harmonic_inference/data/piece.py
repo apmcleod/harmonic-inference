@@ -148,22 +148,22 @@ class Note():
         vectors = []
 
         # Pitch as one-hot
-        pitch = np.zeros(hc.NUM_PITCHES[self.pitch_type])
+        pitch = np.zeros(hc.NUM_PITCHES[self.pitch_type], dtype=np.float16)
         pitch[self.pitch_class] = 1
         vectors.append(pitch)
 
         # Octave as one-hot
-        octave = np.zeros(127 // hc.NUM_PITCHES[PitchType.MIDI])
+        octave = np.zeros(127 // hc.NUM_PITCHES[PitchType.MIDI], dtype=np.float16)
         octave[self.octave] = 1
         vectors.append(octave)
 
         # Onset metrical level as one-hot
-        onset_level = np.zeros(4)
+        onset_level = np.zeros(4, dtype=np.float16)
         onset_level[self.onset_level] = 1
         vectors.append(onset_level)
 
         # Offset metrical level as one-hot
-        offset_level = np.zeros(4)
+        offset_level = np.zeros(4, dtype=np.float16)
         offset_level[self.offset_level] = 1
         vectors.append(offset_level)
 
@@ -190,10 +190,10 @@ class Note():
                 onset = note_onset / chord_duration
                 duration = self.duration / chord_duration
                 offset = onset + duration
-            metrical = np.array([onset, offset, duration], dtype=float)
+            metrical = np.array([onset, offset, duration], dtype=np.float16)
             vectors.append(metrical)
         else:
-            vectors.append(np.zeros(3, dtype=float))
+            vectors.append(np.zeros(3, dtype=np.float16))
 
         # Duration to surrounding notes
         durations = [
@@ -203,12 +203,12 @@ class Note():
         vectors.append(durations)
 
         # Binary -- is this the lowest note in this set of notes
-        min_pitch = np.array(
-            [1 if min_pitch is not None and (self.octave, self.pitch_class) == min_pitch else 0]
-        )
+        min_pitch = [
+            1 if min_pitch is not None and (self.octave, self.pitch_class) == min_pitch else 0
+        ]
         vectors.append(min_pitch)
 
-        return np.concatenate(vectors)
+        return np.concatenate(vectors).astype(np.float16)
 
     def __eq__(self, other: 'Note') -> bool:
         if not isinstance(other, Note):
@@ -281,11 +281,13 @@ class Note():
             octave = note_row.midi // hc.NUM_PITCHES[PitchType.MIDI]
 
             # Rhythmic info
-            positions = []
-            levels = []
-            for mc, beat in zip(
-                [note_row.mc, note_row.offset_mc],
-                [note_row.onset, note_row.offset_beat]
+            positions = [None, None]
+            levels = [None, None]
+            for i, (mc, beat) in enumerate(
+                zip(
+                    [note_row.mc, note_row.offset_mc],
+                    [note_row.onset, note_row.offset_beat],
+                )
             ):
                 measure = measures_df.loc[measures_df["mc"] == mc].squeeze()
 
@@ -299,8 +301,8 @@ class Note():
                         level = ru.get_metrical_level(beat, measure)
                         time_sig_cache[beat] = level
 
-                positions.append((mc, beat))
-                levels.append(level)
+                positions[i] = (mc, beat)
+                levels[i] = level
 
             onset, offset = positions
             onset_level, offset_level = levels
@@ -494,7 +496,7 @@ class Chord():
         vectors = []
 
         # Relative root as one-hot
-        pitch = np.zeros(num_pitches)
+        pitch = np.zeros(num_pitches, dtype=np.float16)
         index = hu.absolute_to_relative(
             self.root,
             key_tonic,
@@ -506,12 +508,12 @@ class Chord():
         vectors.append(pitch)
 
         # Chord type
-        chord_type = np.zeros(len(ChordType))
+        chord_type = np.zeros(len(ChordType), dtype=np.float16)
         chord_type[self.chord_type.value] = 1
         vectors.append(chord_type)
 
         # Relative bass as one-hot
-        bass_note = np.zeros(num_pitches)
+        bass_note = np.zeros(num_pitches, dtype=np.float16)
         index = hu.absolute_to_relative(
             self.bass,
             key_tonic,
@@ -523,27 +525,24 @@ class Chord():
         vectors.append(bass_note)
 
         # Inversion as one-hot
-        inversion = np.zeros(4)
+        inversion = np.zeros(4, dtype=np.float16)
         inversion[self.inversion] = 1
         vectors.append(inversion)
 
         # Onset metrical level as one-hot
-        onset_level = np.zeros(4)
+        onset_level = np.zeros(4, dtype=np.float16)
         onset_level[self.onset_level] = 1
         vectors.append(onset_level)
 
         # Offset metrical level as one-hot
-        offset_level = np.zeros(4)
+        offset_level = np.zeros(4, dtype=np.float16)
         offset_level[self.offset_level] = 1
         vectors.append(offset_level)
 
         # Binary -- is the current key major
-        is_major = np.array(
-            [1 if key_mode == KeyMode.MAJOR else 0]
-        )
-        vectors.append(is_major)
+        vectors.append([1 if key_mode == KeyMode.MAJOR else 0])
 
-        return np.concatenate(vectors)
+        return np.concatenate(vectors).astype(dtype=np.float16)
 
     def is_repeated(self, other: 'Chord', use_inversion: bool = True) -> bool:
         """
@@ -704,11 +703,13 @@ class Chord():
             assert 0 <= bass < hc.NUM_PITCHES[pitch_type]
 
             # Rhythmic info
-            positions = []
-            levels = []
-            for mc, beat in zip(
-                [chord_row.mc, chord_row.mc_next],
-                [chord_row.onset, chord_row.onset_next]
+            positions = [None, None]
+            levels = [None, None]
+            for i, (mc, beat) in enumerate(
+                zip(
+                    [chord_row.mc, chord_row.mc_next],
+                    [chord_row.onset, chord_row.onset_next],
+                )
             ):
                 measure = measures_df.loc[measures_df["mc"] == mc].squeeze()
 
@@ -722,8 +723,8 @@ class Chord():
                         level = ru.get_metrical_level(beat, measure)
                         time_sig_cache[beat] = level
 
-                positions.append((mc, beat))
-                levels.append(level)
+                positions[i] = (mc, beat)
+                levels[i] = level
 
             onset, offset = positions
             onset_level, offset_level = levels
@@ -822,7 +823,10 @@ class Key():
         change_vector : np.array
             The non-one hot key change vector representing this key change.
         """
-        change_vector = np.zeros(Key.get_key_change_vector_length(self.tonic_type, one_hot=False))
+        change_vector = np.zeros(
+            Key.get_key_change_vector_length(self.tonic_type, one_hot=False),
+            dtype=np.float16,
+        )
 
         # Relative tonic
         change_vector[
