@@ -301,6 +301,8 @@ class HarmonicInferenceModel:
         state : State
             The top estimated state.
         """
+        self.current_piece = piece
+
         # Save caches from piece
         self.duration_cache = piece.get_duration_cache()
         self.onset_cache = (
@@ -315,6 +317,22 @@ class HarmonicInferenceModel:
         # Get chord change probabilities (with CTM)
         logging.info("Getting chord change probabilities")
         change_probs = self.get_chord_change_probs(piece)
+
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            for i, change_prob in enumerate(change_probs):
+                if i in piece.get_chord_change_indices():
+                    if change_prob < self.min_chord_change_prob:
+                        logging.debug(
+                            "Piece changes chord on index %s but change_prob=%s",
+                            i, change_prob,
+                        )
+                else:
+                    if change_prob > self.max_no_chord_change_prob:
+                        logging.debug(
+                            "Piece doesn't change chord on index %s but change_prob=%s",
+                            i, change_prob,
+                        )
+
 
         # Calculate valid chord ranges and their probabilities
         logging.info("Calculating valid chord ranges")
@@ -332,6 +350,8 @@ class HarmonicInferenceModel:
             chord_log_probs,
             chord_classifications,
         )
+
+        self.current_piece = None
 
         return state
 

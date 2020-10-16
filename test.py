@@ -58,7 +58,7 @@ if __name__ == '__main__':
             f"--{model}-checkpoint",
             type=str,
             default=DEFAULT_PATH,
-            help=f"The checkpoint file to load the {model} from."
+            help=f"The checkpoint file to load the {model} from.",
         )
 
     parser.add_argument(
@@ -66,7 +66,14 @@ if __name__ == '__main__':
         "--log",
         type=str,
         default=sys.stderr,
-        help="The log file to print messages to."
+        help="The log file to print messages to.",
+    )
+
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Print verbose logging information.",
     )
 
     parser.add_argument(
@@ -82,8 +89,11 @@ if __name__ == '__main__':
 
     ARGS = parser.parse_args()
 
-    if ARGS.log is not sys.stderr:
-        logging.basicConfig(filename=ARGS.log, level=logging.INFO, filemode='w')
+    logging.basicConfig(
+        filename=None if ARGS.log is sys.stderr else ARGS.log,
+        level=logging.DEBUG if ARGS.verbose else logging.INFO,
+        filemode='w',
+    )
 
     # Load models
     models = {}
