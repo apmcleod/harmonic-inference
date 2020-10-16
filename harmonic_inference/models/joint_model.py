@@ -318,6 +318,7 @@ class HarmonicInferenceModel:
         logging.info("Getting chord change probabilities")
         change_probs = self.get_chord_change_probs(piece)
 
+        # Debug log chord change probabilities
         if logging.getLogger().isEnabledFor(logging.DEBUG):
             for i, change_prob in enumerate(change_probs):
                 if i in piece.get_chord_change_indices():
@@ -333,7 +334,6 @@ class HarmonicInferenceModel:
                             i, change_prob,
                         )
 
-
         # Calculate valid chord ranges and their probabilities
         logging.info("Calculating valid chord ranges")
         chord_ranges, chord_log_probs = self.get_chord_ranges(piece, change_probs)
@@ -341,6 +341,36 @@ class HarmonicInferenceModel:
         # Calculate chord priors for each possible chord range (batched, with CCM)
         logging.info("Classifying chords")
         chord_classifications = self.get_chord_classifications(piece, chord_ranges)
+
+        # Debug log chord classifications
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            for range, chord_probs in zip(chord_ranges, np.exp(chord_classifications)):
+                range_start, range_end = range
+                if range_start in piece.get_chord_change_indices():
+                    start_index = list(piece.get_chord_change_indices()).index(range_start)
+                    if (
+                        start_index == len(piece.get_chord_change_indices()) or
+                        piece.get_chord_change_indices()[start_index + 1] != range_end
+                    ):
+                        continue
+
+                    correct_chord = piece.get_chords()[start_index]
+                    correct_chord_one_hot = correct_chord.get_one_hot_index(
+                        relative=False, use_inversion=True
+                    )
+
+                    if chord_probs[correct_chord_one_hot] < 1.0 - self.target_chord_branch_prob:
+                        logging.debug(
+                            (
+                                "Chord classification not within branch prob for range %s: "
+                                "p(%s)=%s, rank=%s, top_chord=%s"
+                            ),
+                            range,
+                            self.LABELS['chord'][correct_chord_one_hot],
+                            chord_probs[correct_chord_one_hot],
+                            np.argsort(chord_classifications)[correct_chord_one_hot],
+                            self.LABELS['chord'][np.argmax(chord_probs)],
+                        )
 
         # Iterative beam search for other modules
         logging.info("Performing iterative beam search")
