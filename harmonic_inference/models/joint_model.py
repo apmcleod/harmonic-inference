@@ -349,7 +349,7 @@ class HarmonicInferenceModel:
                 if range_start in piece.get_chord_change_indices():
                     start_index = list(piece.get_chord_change_indices()).index(range_start)
                     if (
-                        start_index == len(piece.get_chord_change_indices()) or
+                        start_index == len(piece.get_chord_change_indices()) - 1 or
                         piece.get_chord_change_indices()[start_index + 1] != range_end
                     ):
                         continue
@@ -358,18 +358,43 @@ class HarmonicInferenceModel:
                     correct_chord_one_hot = correct_chord.get_one_hot_index(
                         relative=False, use_inversion=True
                     )
+                    correct_prob = chord_probs[correct_chord_one_hot]
+                    correct_rank = list(np.argsort(-chord_probs)).index(correct_chord_one_hot)
 
-                    if chord_probs[correct_chord_one_hot] < 1.0 - self.target_chord_branch_prob:
+                    if (
+                        correct_prob < 1.0 - self.target_chord_branch_prob or
+                        correct_rank >= self.max_chord_branching_factor
+                    ):
                         logging.debug(
                             (
                                 "Chord classification not within branch prob for range %s: "
-                                "p(%s)=%s, rank=%s, top_chord=%s"
+                                "p(%s)=%s, rank=%s, top_chords=%s"
                             ),
                             range,
-                            self.LABELS['chord'][correct_chord_one_hot],
-                            chord_probs[correct_chord_one_hot],
-                            np.argsort(chord_classifications)[correct_chord_one_hot],
-                            self.LABELS['chord'][np.argmax(chord_probs)],
+                            hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE)[correct_chord_one_hot],
+                            correct_prob,
+                            correct_rank,
+                            np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[
+                                np.argsort(-chord_probs)[
+                                    :min(self.max_chord_branching_factor, correct_rank + 1)
+                                ]
+                            ],
+                        )
+                    else:
+                        logging.debug(
+                            (
+                                "Chord classification success for range %s: "
+                                "p(%s)=%s, rank=%s, top_chords=%s"
+                            ),
+                            range,
+                            hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE)[correct_chord_one_hot],
+                            correct_prob,
+                            correct_rank,
+                            np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[
+                                np.argsort(-chord_probs)[
+                                    :min(self.max_chord_branching_factor, correct_rank + 1)
+                                ]
+                            ],
                         )
 
         # Iterative beam search for other modules
