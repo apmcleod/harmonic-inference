@@ -18,7 +18,7 @@ install:
   - hash -r
   - conda config --set always_yes yes --set changeps1 no
   - conda update -q conda
-  - conda create -n harmony -f environment.yml
+  - conda env create -n harmony -f environment.yml
   - conda activate harmony
   - pip install .
 # command to run tests - the required packages, pytest-runner, pytest, and pytest-cov
