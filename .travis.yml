@@ -11,7 +11,6 @@ jobs:
 before_install:
   - python --version
   - pip install codecov  # for the after_success command
-install:
   - wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
   - bash miniconda.sh -b -p $HOME/miniconda
   - source "$HOME/miniconda/etc/profile.d/conda.sh"
@@ -20,12 +19,11 @@ install:
   - conda update -q conda
   - conda env create -n harmony -f environment.yml
   - conda activate harmony
+install:
   - pip install .
 # command to run tests - the required packages, pytest-runner, pytest, and pytest-cov
 # are installed as configured in setup.cfg under setup_requires and tests_require
 script:
   - python setup.py test
-env:
-  - CODECOV_TOKEN=<token>
 after_success:
   - codecov
