@@ -25,5 +25,7 @@ install:
 # are installed as configured in setup.cfg under setup_requires and tests_require
 script:
   - python setup.py test
+env:
+  - CODECOV_TOKEN=<token>
 after_success:
   - codecov
