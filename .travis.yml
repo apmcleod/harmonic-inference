@@ -12,8 +12,14 @@ before_install:
   - python --version
   - pip install codecov  # for the after_success command
 install:
-  - conda env create -n mdtk -f environment.yml
-  - conda activate mdtk
+  - wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+  - bash miniconda.sh -b -p $HOME/miniconda
+  - source "$HOME/miniconda/etc/profile.d/conda.sh"
+  - hash -r
+  - conda config --set always_yes yes --set changeps1 no
+  - conda update -q conda
+  - conda create -n harmony -f environment.yml
+  - conda activate harmony
   - pip install .
 # command to run tests - the required packages, pytest-runner, pytest, and pytest-cov
 # are installed as configured in setup.cfg under setup_requires and tests_require
