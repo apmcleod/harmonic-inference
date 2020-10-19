@@ -7,6 +7,7 @@ Author: Andrew McLeod
 Author-email: andrew.mcleod@epfl.ch
 License: UNKNOWN
 Description: # harmonic-inference
+Keywords: music harmony chord key inference
 Platform: UNKNOWN
 Classifier: Programming Language :: Python :: 3
 Classifier: License :: OSI Approved :: MIT License

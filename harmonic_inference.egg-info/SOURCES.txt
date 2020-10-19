@@ -1,6 +1,9 @@
 README.md
+setup.cfg
 setup.py
 harmonic_inference.egg-info/PKG-INFO
 harmonic_inference.egg-info/SOURCES.txt
 harmonic_inference.egg-info/dependency_links.txt
+harmonic_inference.egg-info/not-zip-safe
+harmonic_inference.egg-info/requires.txt
 harmonic_inference.egg-info/top_level.txt
