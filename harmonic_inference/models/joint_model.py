@@ -1,42 +1,41 @@
 """Combined models that output a key/chord sequence given an input score, midi, or audio."""
-from argparse import ArgumentParser, Namespace
-from fractions import Fraction
-from typing import List, Tuple, Dict
-import logging
 import heapq
-from collections import defaultdict
 import itertools
+import logging
+from argparse import ArgumentParser, Namespace
+from collections import defaultdict
+from fractions import Fraction
+from typing import Dict, List, Tuple
 
-from torch.utils.data.dataloader import DataLoader
-from tqdm import tqdm
 import numpy as np
 import torch
+from torch.utils.data.dataloader import DataLoader
+from tqdm import tqdm
 
+import harmonic_inference.data.datasets as ds
 import harmonic_inference.models.chord_classifier_models as ccm
 import harmonic_inference.models.chord_sequence_models as csm
 import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
-from harmonic_inference.data.piece import Piece
-import harmonic_inference.data.datasets as ds
-from harmonic_inference.data.data_types import KeyMode, PitchType
-import harmonic_inference.utils.harmonic_utils as hu
 import harmonic_inference.utils.harmonic_constants as hc
+import harmonic_inference.utils.harmonic_utils as hu
+from harmonic_inference.data.data_types import KeyMode, PitchType
+from harmonic_inference.data.piece import Piece
 from harmonic_inference.utils.beam_search_utils import Beam, HashedBeam, State
 
-
 MODEL_CLASSES = {
-    'ccm': ccm.SimpleChordClassifier,
-    'ctm': ctm.SimpleChordTransitionModel,
-    'csm': csm.SimpleChordSequenceModel,
-    'ktm': ktm.SimpleKeyTransitionModel,
-    'ksm': ksm.SimpleKeySequenceModel,
+    "ccm": ccm.SimpleChordClassifier,
+    "ctm": ctm.SimpleChordTransitionModel,
+    "csm": csm.SimpleChordSequenceModel,
+    "ktm": ktm.SimpleKeyTransitionModel,
+    "ksm": ksm.SimpleKeySequenceModel,
 }
 
 
 LABELS = {
-    'chords': [],
-    'keys': [],
+    "chords": [],
+    "keys": [],
 }
 
 
@@ -102,8 +101,10 @@ def add_joint_model_args(parser: ArgumentParser):
         "--target-chord-branch-prob",
         default=0.95,
         type=float,
-        help=("Once the chords branched into account for at least this much probability mass "
-              "stop branching, disregarding --max-chord-branching-factor.")
+        help=(
+            "Once the chords branched into account for at least this much probability mass "
+            "stop branching, disregarding --max-chord-branching-factor."
+        ),
     )
 
     parser.add_argument(
@@ -117,16 +118,20 @@ def add_joint_model_args(parser: ArgumentParser):
         "--target-key-branch-prob",
         default=0.95,
         type=float,
-        help=("Once the keys branched into account for at least this much probability mass "
-              "stop branching, disregarding --max-key-branching-factor."),
+        help=(
+            "Once the keys branched into account for at least this much probability mass "
+            "stop branching, disregarding --max-key-branching-factor."
+        ),
     )
 
     parser.add_argument(
         "--hash-length",
         default=5,
         type=int,
-        help=("If 2 states are identical in chord and key for this many chord changes "
-              "(disregarding change index), only the most likely state is kept in the beam."),
+        help=(
+            "If 2 states are identical in chord and key for this many chord changes "
+            "(disregarding change index), only the most likely state is kept in the beam."
+        ),
     )
 
 
@@ -134,6 +139,7 @@ class HarmonicInferenceModel:
     """
     A model to perform harmonic inference on an input score, midi, or audio piece.
     """
+
     def __init__(
         self,
         models: Dict,
@@ -192,29 +198,29 @@ class HarmonicInferenceModel:
         """
         for model, model_class in MODEL_CLASSES.items():
             assert model in models.keys(), f"`{model}` not in models dict."
-            assert isinstance(models[model], model_class), (
-                f"`{model}` in models dict is not of type {model_class.__name__}."
-            )
+            assert isinstance(
+                models[model], model_class
+            ), f"`{model}` in models dict is not of type {model_class.__name__}."
 
-        self.chord_classifier = models['ccm']
-        self.chord_sequence_model = models['csm']
-        self.chord_transition_model = models['ctm']
-        self.key_sequence_model = models['ksm']
-        self.key_transition_model = models['ktm']
+        self.chord_classifier = models["ccm"]
+        self.chord_sequence_model = models["csm"]
+        self.chord_transition_model = models["ctm"]
+        self.key_sequence_model = models["ksm"]
+        self.key_transition_model = models["ktm"]
 
         # Ensure all types match
-        assert self.chord_classifier.INPUT_TYPE == self.chord_transition_model.INPUT_TYPE, (
-            "Chord Classifier input type does not match Chord Transition Model input type"
-        )
-        assert self.chord_classifier.OUTPUT_TYPE == self.chord_sequence_model.CHORD_TYPE, (
-            "Chord Classifier output type does not match Chord Sequence Model chord type"
-        )
-        assert self.chord_sequence_model.CHORD_TYPE == self.key_transition_model.INPUT_TYPE, (
-            "Chord Sequence Model chord type does not match Key Transition Model input type"
-        )
-        assert self.chord_sequence_model.CHORD_TYPE == self.key_sequence_model.INPUT_TYPE, (
-            "Chord Sequence Model chord type does not match Key Transition Model input type"
-        )
+        assert (
+            self.chord_classifier.INPUT_TYPE == self.chord_transition_model.INPUT_TYPE
+        ), "Chord Classifier input type does not match Chord Transition Model input type"
+        assert (
+            self.chord_classifier.OUTPUT_TYPE == self.chord_sequence_model.CHORD_TYPE
+        ), "Chord Classifier output type does not match Chord Sequence Model chord type"
+        assert (
+            self.chord_sequence_model.CHORD_TYPE == self.key_transition_model.INPUT_TYPE
+        ), "Chord Sequence Model chord type does not match Key Transition Model input type"
+        assert (
+            self.chord_sequence_model.CHORD_TYPE == self.key_sequence_model.INPUT_TYPE
+        ), "Chord Sequence Model chord type does not match Key Transition Model input type"
 
         # Set joint model types
         self.INPUT_TYPE = self.chord_classifier.INPUT_TYPE
@@ -223,39 +229,35 @@ class HarmonicInferenceModel:
 
         # Load labels
         self.LABELS = {
-            'chord': [
+            "chord": [
                 (
                     hu.get_pitch_from_string(root, self.CHORD_OUTPUT_TYPE),
-                    hu.get_chord_type_from_string(description.split(',')[0]),
-                    int(inv)
+                    hu.get_chord_type_from_string(description.split(",")[0]),
+                    int(inv),
                 )
                 for root, description, inv in [
-                    chord.split(':')
+                    chord.split(":")
                     for chord in hu.get_chord_label_list(
                         self.CHORD_OUTPUT_TYPE, use_inversions=True
                     )
                 ]
             ],
-            'key': [
-                (
-                    hu.get_pitch_from_string(tonic, self.KEY_OUTPUT_TYPE),
-                    KeyMode[mode.split('.')[1]]
-                )
+            "key": [
+                (hu.get_pitch_from_string(tonic, self.KEY_OUTPUT_TYPE), KeyMode[mode.split(".")[1]])
                 for tonic, mode in [
-                    key.split(':')
-                    for key in hu.get_key_label_list(self.KEY_OUTPUT_TYPE)
+                    key.split(":") for key in hu.get_key_label_list(self.KEY_OUTPUT_TYPE)
                 ]
             ],
-            'relative_key': list(
+            "relative_key": list(
                 itertools.product(
                     KeyMode,
                     (
                         range(hc.MIN_KEY_CHANGE_INTERVAL_TPC, hc.MAX_KEY_CHANGE_INTERVAL_TPC)
-                        if self.KEY_OUTPUT_TYPE == PitchType.TPC else
-                        range(hc.NUM_PITCHES[PitchType.MIDI])
+                        if self.KEY_OUTPUT_TYPE == PitchType.TPC
+                        else range(hc.NUM_PITCHES[PitchType.MIDI])
                     ),
                 )
-            )
+            ),
         }
 
         # CTM params
@@ -305,14 +307,12 @@ class HarmonicInferenceModel:
 
         # Save caches from piece
         self.duration_cache = piece.get_duration_cache()
-        self.onset_cache = (
-            [vec.onset for vec in piece.get_inputs()] +
-            [piece.get_inputs()[-1].offset]
-        )
-        self.onset_level_cache = (
-            [vec.onset_level for vec in piece.get_inputs()] +
-            [piece.get_inputs()[-1].offset_level]
-        )
+        self.onset_cache = [vec.onset for vec in piece.get_inputs()] + [
+            piece.get_inputs()[-1].offset
+        ]
+        self.onset_level_cache = [vec.onset_level for vec in piece.get_inputs()] + [
+            piece.get_inputs()[-1].offset_level
+        ]
 
         # Get chord change probabilities (with CTM)
         logging.info("Getting chord change probabilities")
@@ -320,19 +320,7 @@ class HarmonicInferenceModel:
 
         # Debug log chord change probabilities
         if logging.getLogger().isEnabledFor(logging.DEBUG):
-            for i, change_prob in enumerate(change_probs):
-                if i in piece.get_chord_change_indices():
-                    if change_prob < self.min_chord_change_prob:
-                        logging.debug(
-                            "Piece changes chord on index %s but change_prob=%s",
-                            i, change_prob,
-                        )
-                else:
-                    if change_prob > self.max_no_chord_change_prob:
-                        logging.debug(
-                            "Piece doesn't change chord on index %s but change_prob=%s",
-                            i, change_prob,
-                        )
+            self.debug_chord_change_probs(change_probs)
 
         # Calculate valid chord ranges and their probabilities
         logging.info("Calculating valid chord ranges")
@@ -344,58 +332,7 @@ class HarmonicInferenceModel:
 
         # Debug log chord classifications
         if logging.getLogger().isEnabledFor(logging.DEBUG):
-            for range, chord_probs in zip(chord_ranges, np.exp(chord_classifications)):
-                range_start, range_end = range
-                if range_start in piece.get_chord_change_indices():
-                    start_index = list(piece.get_chord_change_indices()).index(range_start)
-                    if (
-                        start_index == len(piece.get_chord_change_indices()) - 1 or
-                        piece.get_chord_change_indices()[start_index + 1] != range_end
-                    ):
-                        continue
-
-                    correct_chord = piece.get_chords()[start_index]
-                    correct_chord_one_hot = correct_chord.get_one_hot_index(
-                        relative=False, use_inversion=True
-                    )
-                    correct_prob = chord_probs[correct_chord_one_hot]
-                    correct_rank = list(np.argsort(-chord_probs)).index(correct_chord_one_hot)
-
-                    if (
-                        correct_prob < 1.0 - self.target_chord_branch_prob or
-                        correct_rank >= self.max_chord_branching_factor
-                    ):
-                        logging.debug(
-                            (
-                                "Chord classification not within branch prob for range %s: "
-                                "p(%s)=%s, rank=%s, top_chords=%s"
-                            ),
-                            range,
-                            hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE)[correct_chord_one_hot],
-                            correct_prob,
-                            correct_rank,
-                            np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[
-                                np.argsort(-chord_probs)[
-                                    :min(self.max_chord_branching_factor, correct_rank + 1)
-                                ]
-                            ],
-                        )
-                    else:
-                        logging.debug(
-                            (
-                                "Chord classification success for range %s: "
-                                "p(%s)=%s, rank=%s, top_chords=%s"
-                            ),
-                            range,
-                            hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE)[correct_chord_one_hot],
-                            correct_prob,
-                            correct_rank,
-                            np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[
-                                np.argsort(-chord_probs)[
-                                    :min(self.max_chord_branching_factor, correct_rank + 1)
-                                ]
-                            ],
-                        )
+            self.debug_chord_classifications(chord_ranges, chord_classifications)
 
         # Iterative beam search for other modules
         logging.info("Performing iterative beam search")
@@ -434,7 +371,7 @@ class HarmonicInferenceModel:
         # CTM keeps each piece as a single input, so will only have 1 batch
         for batch in ctm_loader:
             batch_output, batch_length = self.chord_transition_model.get_output(batch)
-            return batch_output[0][:batch_length[0]].numpy()
+            return batch_output[0][: batch_length[0]].numpy()
 
     def get_chord_ranges(
         self,
@@ -500,10 +437,10 @@ class HarmonicInferenceModel:
             # Detect any next chord change positions
             for index, (change_prob, change_log_prob, no_change_log_prob, duration) in enumerate(
                 zip(
-                    change_probs[start + 1:],
-                    change_log_probs[start + 1:],
-                    no_change_log_probs[start + 1:],
-                    self.duration_cache[start:]  # Off-by-one because cache is dur to next note
+                    change_probs[start + 1 :],
+                    change_log_probs[start + 1 :],
+                    no_change_log_probs[start + 1 :],
+                    self.duration_cache[start:],  # Off-by-one because cache is dur to next note
                 ),
                 start=start + 1,
             ):
@@ -611,9 +548,11 @@ class HarmonicInferenceModel:
                 np.cumsum(
                     np.take_along_axis(priors, priors_argsort, -1),
                     axis=-1,
-                ) >= self.target_chord_branch_prob,
+                )
+                >= self.target_chord_branch_prob,
                 axis=-1,
-            ) + 1,
+            )
+            + 1,
             1,
             self.max_chord_branching_factor,
         )
@@ -701,10 +640,7 @@ class HarmonicInferenceModel:
             to_csm_prior_states = []
             to_ksm_states = []
             for change_prob, change_log_prob, no_change_log_prob, state in zip(
-                change_probs,
-                change_log_probs,
-                no_change_log_probs,
-                to_check_for_key_change
+                change_probs, change_log_probs, no_change_log_probs, to_check_for_key_change
             ):
                 can_not_change = change_prob <= self.max_no_key_change_prob and state.is_valid()
                 can_change = change_prob >= self.min_key_change_prob
@@ -837,7 +773,8 @@ class HarmonicInferenceModel:
                 self.onset_cache,
                 self.onset_level_cache,
                 self.LABELS,
-            ) for state in states
+            )
+            for state in states
         ]
 
         # Generate KSM loader
@@ -864,9 +801,11 @@ class HarmonicInferenceModel:
                 np.cumsum(
                     np.take_along_axis(np.exp(key_priors), priors_argsort, -1),
                     axis=-1,
-                ) >= self.target_key_branch_prob,
+                )
+                >= self.target_key_branch_prob,
                 axis=-1,
-            ) + 1,
+            )
+            + 1,
             1,
             self.max_key_branching_factor,
         )
@@ -884,7 +823,7 @@ class HarmonicInferenceModel:
 
             # Branch
             for relative_key_id in prior_argsort[:max_index]:
-                mode, interval = self.LABELS['relative_key'][relative_key_id]
+                mode, interval = self.LABELS["relative_key"][relative_key_id]
                 tonic = state.get_key(self.KEY_OUTPUT_TYPE, self.LABELS).relative_tonic + interval
 
                 if self.KEY_OUTPUT_TYPE == PitchType.MIDI:
@@ -961,6 +900,97 @@ class HarmonicInferenceModel:
         for state, log_prior, hidden, cell in zip(states, priors, hidden_states, cell_states):
             state.csm_log_prior = log_prior.numpy()[0]
             state.csm_hidden_state = (hidden, cell)
+
+    def debug_chord_change_probs(self, change_probs: List[float]):
+        """
+        Log chord change probabilities to as debug messages.
+
+        Parameters
+        ----------
+        change_probs : List[float]
+            The chord change probability for each input.
+        """
+        for i, change_prob in enumerate(change_probs):
+            if i in self.piece.get_chord_change_indices():
+                if change_prob < self.min_chord_change_prob:
+                    logging.debug(
+                        "Piece changes chord on index %s but change_prob=%s",
+                        i,
+                        change_prob,
+                    )
+            else:
+                if change_prob > self.max_no_chord_change_prob:
+                    logging.debug(
+                        "Piece doesn't change chord on index %s but change_prob=%s",
+                        i,
+                        change_prob,
+                    )
+
+    def debug_chord_classifications(
+        self, chord_ranges: List[Tuple[int, int]], chord_classifications: List[float]
+    ):
+        """
+        Log chord classifications as debug messages.
+
+        Parameters
+        ----------
+        chord_ranges : List[Tuple[int, int]]
+            A list of the chord ranges that were classified.
+        chord_classifications : List[List[float]]
+            The log_probability of each chord for each given range.
+        """
+        for range, chord_probs in zip(chord_ranges, np.exp(chord_classifications)):
+            range_start, range_end = range
+            if range_start in self.piece.get_chord_change_indices():
+                start_index = list(self.piece.get_chord_change_indices()).index(range_start)
+                if (
+                    start_index == len(self.piece.get_chord_change_indices()) - 1
+                    or self.piece.get_chord_change_indices()[start_index + 1] != range_end
+                ):
+                    continue
+
+                correct_chord = self.piece.get_chords()[start_index]
+                correct_chord_one_hot = correct_chord.get_one_hot_index(
+                    relative=False, use_inversion=True
+                )
+                correct_prob = chord_probs[correct_chord_one_hot]
+                correct_rank = list(np.argsort(-chord_probs)).index(correct_chord_one_hot)
+
+                if (
+                    correct_prob < 1.0 - self.target_chord_branch_prob
+                    or correct_rank >= self.max_chord_branching_factor
+                ):
+                    logging.debug(
+                        (
+                            "Chord classification not within branch prob for range %s: "
+                            "p(%s)=%s, rank=%s, top_chords=%s"
+                        ),
+                        range,
+                        hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE)[correct_chord_one_hot],
+                        correct_prob,
+                        correct_rank,
+                        np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[
+                            np.argsort(-chord_probs)[
+                                : min(self.max_chord_branching_factor, correct_rank + 1)
+                            ]
+                        ],
+                    )
+                else:
+                    logging.debug(
+                        (
+                            "Chord classification success for range %s: "
+                            "p(%s)=%s, rank=%s, top_chords=%s"
+                        ),
+                        range,
+                        hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE)[correct_chord_one_hot],
+                        correct_prob,
+                        correct_rank,
+                        np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[
+                            np.argsort(-chord_probs)[
+                                : min(self.max_chord_branching_factor, correct_rank + 1)
+                            ]
+                        ],
+                    )
 
 
 def from_args(models: Dict, ARGS: Namespace) -> HarmonicInferenceModel:
