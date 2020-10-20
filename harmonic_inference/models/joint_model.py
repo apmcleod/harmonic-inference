@@ -289,6 +289,9 @@ class HarmonicInferenceModel:
         self.beam_size = beam_size
         self.hash_length = hash_length
 
+        # No piece currently
+        self.current_piece = None
+
     def get_harmony(self, piece: Piece) -> State:
         """
         Run the model on a piece and output its harmony.
@@ -911,7 +914,7 @@ class HarmonicInferenceModel:
             The chord change probability for each input.
         """
         for i, change_prob in enumerate(change_probs):
-            if i in self.piece.get_chord_change_indices():
+            if i in self.current_piece.get_chord_change_indices():
                 if change_prob < self.min_chord_change_prob:
                     logging.debug(
                         "Piece changes chord on index %s but change_prob=%s",
@@ -941,15 +944,15 @@ class HarmonicInferenceModel:
         """
         for range, chord_probs in zip(chord_ranges, np.exp(chord_classifications)):
             range_start, range_end = range
-            if range_start in self.piece.get_chord_change_indices():
-                start_index = list(self.piece.get_chord_change_indices()).index(range_start)
+            if range_start in self.current_piece.get_chord_change_indices():
+                start_index = list(self.current_piece.get_chord_change_indices()).index(range_start)
                 if (
-                    start_index == len(self.piece.get_chord_change_indices()) - 1
-                    or self.piece.get_chord_change_indices()[start_index + 1] != range_end
+                    start_index == len(self.current_piece.get_chord_change_indices()) - 1
+                    or self.current_piece.get_chord_change_indices()[start_index + 1] != range_end
                 ):
                     continue
 
-                correct_chord = self.piece.get_chords()[start_index]
+                correct_chord = self.current_piece.get_chords()[start_index]
                 correct_chord_one_hot = correct_chord.get_one_hot_index(
                     relative=False, use_inversion=True
                 )
