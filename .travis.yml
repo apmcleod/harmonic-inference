@@ -8,7 +8,6 @@ jobs:
 # command to install dependencies
 before_install:
   - python --version
-  - pip install codecov  # for the after_success command
 install:
   - pip install .
 # command to run tests - the required packages, pytest-runner, pytest, and pytest-cov
@@ -16,4 +15,4 @@ install:
 script:
   - python setup.py test
 after_success:
-  - codecov
+  - bash <(curl -s https://codecov.io/bash)
