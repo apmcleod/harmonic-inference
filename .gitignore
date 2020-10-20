@@ -9,3 +9,4 @@ results/**
 .vscode/**
 debug.py
 *.log
+harmonic_inference.egg-info/**
