@@ -916,6 +916,25 @@ class Key:
         is_repeated : bool
             True if the given key is a repeat of this one. False otherwise.
         """
+        return self.equals(other, use_relative=use_relative)
+
+    def equals(self, other: "Key", use_relative: bool = True) -> bool:
+        """
+        Check if the tonic and mode of this Key are the same.
+
+        Parameters
+        ----------
+        other : Key
+            The other key to check for equality.
+        use_relative : bool
+            True to take use relative_tonic and relative_mode.
+            False to use local_tonic and local_mode.
+
+        Returns
+        -------
+        equals : bool
+            True if the keys are equal. False otherwise.
+        """
         if not isinstance(other, Key):
             return False
 
@@ -1277,6 +1296,18 @@ class Piece:
             The indices (into the chords list) at which there is a key change.
         """
         raise NotImplementedError
+
+    def get_key_change_input_indices(self) -> List[int]:
+        """
+        Get a List of the indexes (into the input list) at which there are key changes.
+
+        Returns
+        -------
+        key_change_indices : List[int]
+            The indices (into the input list) at which there is a key change.
+        """
+        chord_changes = self.get_chord_change_indices()
+        return [chord_changes[i] for i in self.get_key_change_indices()]
 
     def get_keys(self) -> List[Key]:
         """

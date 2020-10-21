@@ -1,4 +1,5 @@
 """Combined models that output a key/chord sequence given an input score, midi, or audio."""
+import bisect
 import heapq
 import itertools
 import logging
@@ -749,6 +750,12 @@ class HarmonicInferenceModel:
         # Copy KTM output probabilities to probs return array
         key_change_probs[valid_states] = np.array(outputs)[valid_states]
 
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            self.debug_key_transitions(
+                key_change_probs[valid_states],
+                np.array(states)[valid_states],
+            )
+
         return key_change_probs
 
     def get_key_change_states(self, states: List[State]) -> List[State]:
@@ -996,6 +1003,65 @@ class HarmonicInferenceModel:
                     hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE)[one_hot],
                     chord_probs[one_hot],
                 )
+
+    def debug_key_transitions(self, key_change_probs: List[float], states: List[State]):
+        """
+        Log key transitions as debug messages.
+
+        Parameters
+        ----------
+        key_change_probs : List[float]
+            The probability of a transition for each State.
+        states : List[State]
+            The States.
+        """
+        key_changes = self.current_piece.get_key_change_input_indices()
+        keys = self.current_piece.get_keys()
+
+        for change_prob, state in zip(key_change_probs, states):
+            change_index = state.prev_state.change_index
+            state_key = state.get_key(self.KEY_OUTPUT_TYPE, self.LABELS)
+
+            new_key_index = bisect.bisect_left(key_changes, change_index)
+            correct_key = keys[new_key_index - 1]
+            if not state_key.equals(correct_key, use_relative=True):
+                # Skip if current state's key is incorrect
+                continue
+
+            if key_changes[new_key_index] == change_index:
+                logging.debug(
+                    "Key change at index %s: %s -> %s",
+                    change_index,
+                    correct_key,
+                    keys[new_key_index],
+                )
+
+            else:
+                logging.debug(
+                    "No key change at index %s: %s",
+                    change_index,
+                    correct_key,
+                )
+
+            logging.debug("   Current key: %s", state_key)
+            logging.debug(
+                "    Recent chords: %s",
+                "; ".join(
+                    [
+                        str(
+                            s.get_chord(
+                                self.CHORD_OUTPUT_TYPE,
+                                self.duration_cache,
+                                self.onset_cache,
+                                self.onset_level_cache,
+                                self.LABELS,
+                            )
+                        )
+                        for s in [state, state.prev_state]
+                    ]
+                ),
+            )
+            logging.debug("        p(change) = %s", change_prob)
 
 
 def from_args(models: Dict, ARGS: Namespace) -> HarmonicInferenceModel:
