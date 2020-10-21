@@ -970,6 +970,10 @@ class HarmonicInferenceModel:
                 and range_end in change_indices
             )
             is_classification_correct = is_range_correct and correct_rank[0] == 0
+            is_any_classification_correct = min(correct_rank) == 0
+
+            if is_any_classification_correct and not is_range_correct:
+                continue
 
             correct_string = (
                 "=== " if is_classification_correct else "*** " if is_range_correct else ""
