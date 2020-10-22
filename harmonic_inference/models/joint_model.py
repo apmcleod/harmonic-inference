@@ -609,6 +609,15 @@ class HarmonicInferenceModel:
                     chord_priors_argsort,
                     max_index,
                 ) = range_data
+                range_length = range_end - current_start
+
+                if (
+                    current_start != 0
+                    and len(all_states[range_end]) > 0
+                    and all_states[range_end].beam[0].log_prob >= state.log_prob + range_log_prob
+                ):
+                    # Quick exit if range will never get into resulting beam
+                    continue
 
                 # Ensure each state branches at least once
                 if max_index == 1 and chord_priors_argsort[0] == state.chord:
@@ -624,16 +633,20 @@ class HarmonicInferenceModel:
                     new_state = state.chord_transition(
                         chord_id,
                         range_end,
-                        range_log_prob + chord_log_priors[chord_id],
+                        range_log_prob + chord_log_priors[chord_id] * range_length,
                         self.CHORD_OUTPUT_TYPE,
                         self.LABELS,
                     )
 
-                    if new_state is not None and all_states[range_end].fits_in_beam(
-                        new_state,
-                        check_hash=False,
-                    ):
-                        to_check_for_key_change.append(new_state)
+                    if new_state is not None:
+                        if current_start == 0 or all_states[range_end].fits_in_beam(
+                            new_state,
+                            check_hash=False,
+                        ):
+                            to_check_for_key_change.append(new_state)
+                        else:
+                            # No other chord will fit in beam
+                            break
 
             # Check for key changes
             change_probs = self.get_key_change_probs(to_check_for_key_change)
@@ -646,6 +659,7 @@ class HarmonicInferenceModel:
             for change_prob, change_log_prob, no_change_log_prob, state in zip(
                 change_probs, change_log_probs, no_change_log_probs, to_check_for_key_change
             ):
+                range_length = state.change_index - state.prev_state.change_index
                 can_not_change = change_prob <= self.max_no_key_change_prob and state.is_valid()
                 can_change = change_prob >= self.min_key_change_prob
 
@@ -653,16 +667,18 @@ class HarmonicInferenceModel:
                 change_state = state.copy() if can_change and can_not_change else state
 
                 if can_change:
-                    change_state.log_prob += change_log_prob
-                    if all_states[change_state.change_index].fits_in_beam(
+                    change_state.log_prob += change_log_prob * range_length
+                    if current_start == 0 or all_states[change_state.change_index].fits_in_beam(
                         change_state,
                         check_hash=False,
                     ):
                         to_ksm_states.append(change_state)
 
                 if can_not_change:
-                    state.log_prob += no_change_log_prob
-                    if all_states[state.change_index].fits_in_beam(state, check_hash=True):
+                    state.log_prob += no_change_log_prob * range_length
+                    if current_start == 0 or all_states[state.change_index].fits_in_beam(
+                        state, check_hash=True
+                    ):
                         to_csm_prior_states.append(state)
 
             # Change keys and put resulting states into the appropriate beam
@@ -1033,14 +1049,43 @@ class HarmonicInferenceModel:
         new_key_index = bisect.bisect_left(key_changes, change_index)
         new_chord_index = bisect.bisect_left(chord_changes, change_index)
         correct_key = keys[new_key_index - 1]
-        correct_chord = chords[new_chord_index] if new_chord_index < len(chords) else chords[-1]
+
+        if new_chord_index == len(chords):
+            new_chord_index -= 1
+        if chord_changes[new_chord_index] == change_index:
+            correct_chords = [chords[new_chord_index - 1], chords[new_chord_index]]
+        else:
+            correct_chords = [chords[new_chord_index]]
+
+        if key_changes[new_key_index] == change_index:
+            logging.debug(
+                "Key change at index %s: %s -> %s",
+                change_index,
+                correct_key,
+                keys[new_key_index],
+            )
+
+        else:
+            logging.debug(
+                "No key change at index %s: %s",
+                change_index,
+                correct_key,
+            )
+        logging.debug(
+            "  Recent chords: %s",
+            "; ".join(
+                np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[
+                    [chord.get_one_hot_index() for chord in correct_chords]
+                ]
+            ),
+        )
 
         for change_prob, state in zip(key_change_probs, states):
             if correct_key.get_one_hot_index() != state.key:
                 # Skip if current state's key is incorrect
                 continue
 
-            if correct_chord.get_one_hot_index(relative=False, use_inversion=True) != state.chord:
+            if correct_chords[-1].get_one_hot_index() != state.chord:
                 # Skip if current state's chord is incorrect
                 continue
 
@@ -1050,24 +1095,11 @@ class HarmonicInferenceModel:
                     logging.debug("Key change: Correct")
                     continue
 
-                logging.debug(
-                    "Key change at index %s: %s -> %s",
-                    change_index,
-                    correct_key,
-                    keys[new_key_index],
-                )
-
             else:
                 if change_prob < 0.5:
                     # Correct
                     logging.debug("No key change: Correct")
                     continue
-
-                logging.debug(
-                    "No key change at index %s: %s",
-                    change_index,
-                    correct_key,
-                )
 
             logging.debug("    Current key: %s", state.get_key(self.KEY_OUTPUT_TYPE, self.LABELS))
             logging.debug(

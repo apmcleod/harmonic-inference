@@ -301,15 +301,19 @@ class State:
         LABELS : Dict
             A Dictionary of key and chord labels for the current piece.
         """
-        self.log_prob += self.csm_log_prior[
-            self.get_relative_chord_index(
-                pitch_type,
-                duration_cache,
-                onset_cache,
-                onset_level_cache,
-                LABELS,
-            )
-        ]
+        range_length = self.change_index - self.prev_state.change_index
+        self.log_prob += (
+            range_length
+            * self.csm_log_prior[
+                self.get_relative_chord_index(
+                    pitch_type,
+                    duration_cache,
+                    onset_cache,
+                    onset_level_cache,
+                    LABELS,
+                )
+            ]
+        )
 
     def get_csm_input(
         self,
