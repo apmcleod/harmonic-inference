@@ -972,7 +972,8 @@ class HarmonicInferenceModel:
             is_classification_correct = is_range_correct and correct_rank[0] == 0
             is_any_classification_correct = min(correct_rank) == 0
 
-            if is_any_classification_correct and not is_range_correct:
+            # Bad range or already correct
+            if is_any_classification_correct or not is_range_correct:
                 continue
 
             correct_string = (
@@ -1021,20 +1022,46 @@ class HarmonicInferenceModel:
         """
         key_changes = self.current_piece.get_key_change_input_indices()
         keys = self.current_piece.get_keys()
+        chord_changes = self.current_piece.get_chord_change_indices()
+        chords = self.current_piece.get_chords()
+
+        new_key_index_cache = dict()
+        new_chord_index_cache = dict()
 
         for change_prob, state in zip(key_change_probs, states):
             change_index = state.prev_state.change_index
             state_key = state.get_key(self.KEY_OUTPUT_TYPE, self.LABELS)
+            state_chord = state.get_chord(
+                self.CHORD_OUTPUT_TYPE,
+                self.duration_cache,
+                self.onset_cache,
+                self.onset_level_cache,
+                self.LABELS,
+            )
 
-            new_key_index = bisect.bisect_left(key_changes, change_index)
+            if change_index not in new_key_index_cache:
+                new_key_index_cache[change_index] = bisect.bisect_left(key_changes, change_index)
+                new_chord_index_cache[change_index] = bisect.bisect_left(
+                    chord_changes, change_index
+                )
+            new_key_index = new_key_index_cache[change_index]
+            new_chord_index = new_chord_index_cache[change_index]
+
             correct_key = keys[new_key_index - 1]
+            correct_chord = chords[new_chord_index] if new_chord_index < len(chords) else chords[-1]
+
             if not state_key.equals(correct_key, use_relative=True):
                 # Skip if current state's key is incorrect
+                continue
+
+            if not state_chord.is_repeated(correct_chord, use_inversion=True):
+                # Skip if current state's chord is incorrect
                 continue
 
             if new_key_index < len(key_changes) and key_changes[new_key_index] == change_index:
                 if change_prob > 0.5:
                     # Correct
+                    logging.debug("Key change: Correct")
                     continue
 
                 logging.debug(
@@ -1047,6 +1074,7 @@ class HarmonicInferenceModel:
             else:
                 if change_prob < 0.5:
                     # Correct
+                    logging.debug("No key change: Correct")
                     continue
 
                 logging.debug(
@@ -1059,18 +1087,8 @@ class HarmonicInferenceModel:
             logging.debug(
                 "    Recent chords: %s",
                 "; ".join(
-                    [
-                        str(
-                            s.get_chord(
-                                self.CHORD_OUTPUT_TYPE,
-                                self.duration_cache,
-                                self.onset_cache,
-                                self.onset_level_cache,
-                                self.LABELS,
-                            )
-                        )
-                        for s in [state, state.prev_state]
-                    ]
+                    np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[s.chord]
+                    for s in [state, state.prev_state]
                 ),
             )
             logging.debug("        p(change) = %s", change_prob)
