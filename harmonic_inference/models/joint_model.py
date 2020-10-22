@@ -582,7 +582,7 @@ class HarmonicInferenceModel:
 
         # Add initial states
         for key in range(len(hu.get_key_label_list(self.KEY_OUTPUT_TYPE))):
-            all_states[0].add(State(key=key, hash_length=self.hash_length))
+            all_states[0].add(State(key=key, hash_length=self.hash_length), force=True)
 
         for current_start, current_states in tqdm(
             enumerate(all_states[:-1]),
@@ -667,7 +667,7 @@ class HarmonicInferenceModel:
 
             # Change keys and put resulting states into the appropriate beam
             for state in self.get_key_change_states(to_ksm_states):
-                all_states[state.change_index].add(state)
+                all_states[state.change_index].add(state, force=current_start == 0)
 
             # Add CSM prior and add to beam (CSM is run at the start of each iteration)
             for state in to_csm_prior_states:
@@ -681,7 +681,7 @@ class HarmonicInferenceModel:
                     )
 
                 # Add state to its beam, if it fits
-                all_states[state.change_index].add(state)
+                all_states[state.change_index].add(state, force=current_start == 0)
 
             current_states.empty()
 
@@ -1032,7 +1032,11 @@ class HarmonicInferenceModel:
                 # Skip if current state's key is incorrect
                 continue
 
-            if key_changes[new_key_index] == change_index:
+            if new_key_index < len(key_changes) and key_changes[new_key_index] == change_index:
+                if change_prob > 0.5:
+                    # Correct
+                    continue
+
                 logging.debug(
                     "Key change at index %s: %s -> %s",
                     change_index,
@@ -1041,6 +1045,10 @@ class HarmonicInferenceModel:
                 )
 
             else:
+                if change_prob < 0.5:
+                    # Correct
+                    continue
+
                 logging.debug(
                     "No key change at index %s: %s",
                     change_index,

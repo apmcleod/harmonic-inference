@@ -1,15 +1,15 @@
 """Utils (beams and state) for running beam search."""
-from fractions import Fraction
-from typing import Union, List, Tuple, Iterator, Dict
-import heapq
 import copy
+import heapq
+from fractions import Fraction
+from typing import Dict, Iterator, List, Tuple, Union
 
 import numpy as np
 
+import harmonic_inference.utils.harmonic_constants as hc
+import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.data.data_types import PitchType
 from harmonic_inference.data.piece import Chord, Key
-import harmonic_inference.utils.harmonic_utils as hu
-import harmonic_inference.utils.harmonic_constants as hc
 
 
 class State:
@@ -19,13 +19,14 @@ class State:
     State's are reverse-linked lists, where each State holds a pointer to the previous
     state, and only contains chord and key information for the most recent of each.
     """
+
     def __init__(
         self,
         chord: int = None,
         key: int = None,
         change_index: int = 0,
         log_prob: float = 0.0,
-        prev_state: 'State' = None,
+        prev_state: "State" = None,
         hash_length: int = None,
         csm_hidden_state: np.array = None,
         ktm_hidden_state: np.array = None,
@@ -107,9 +108,10 @@ class State:
         """
         Mark this State as invalid.
         """
-        self._valid = False
+        if self.prev_state is not None and self.prev_state.prev_state is not None:
+            self._valid = False
 
-    def copy(self) -> 'State':
+    def copy(self) -> "State":
         """
         Return a deep copy of this State.
 
@@ -124,7 +126,7 @@ class State:
             change_index=self.change_index,
             log_prob=self.log_prob,
             prev_state=self.prev_state,
-            hash_length=len(self.hash_tuple) if hasattr(self, 'hash_tuple') else None,
+            hash_length=len(self.hash_tuple) if hasattr(self, "hash_tuple") else None,
             csm_hidden_state=self.csm_hidden_state,
             ktm_hidden_state=self.ktm_hidden_state,
             csm_log_prior=self.csm_log_prior,
@@ -139,7 +141,7 @@ class State:
         log_prob: float,
         pitch_type: PitchType,
         LABELS: Dict,
-    ) -> 'State':
+    ) -> "State":
         """
         Perform a chord transition form this State, and return the new State.
 
@@ -162,7 +164,7 @@ class State:
         new_state : State
             The state resulting from the given transition.
         """
-        root, chord_type, inversion = LABELS['chord'][chord]
+        root, chord_type, inversion = LABELS["chord"][chord]
         bass = hu.get_bass_note(chord_type, root, inversion, pitch_type)
 
         tonic = self.get_key(pitch_type, LABELS).relative_tonic
@@ -173,14 +175,15 @@ class State:
         maximum = hc.MAX_RELATIVE_TPC + hc.RELATIVE_TPC_EXTRA
 
         if (
-            relative_root < minimum or relative_bass < minimum or
-            relative_root >= maximum or relative_bass >= maximum
+            relative_root < minimum
+            or relative_bass < minimum
+            or relative_root >= maximum
+            or relative_bass >= maximum
         ):
             return None
 
         must_key_transition = (
-            relative_root < hc.MIN_RELATIVE_TPC or
-            relative_root >= hc.MAX_RELATIVE_TPC
+            relative_root < hc.MIN_RELATIVE_TPC or relative_root >= hc.MAX_RELATIVE_TPC
         )
 
         return State(
@@ -189,7 +192,7 @@ class State:
             change_index=change_index,
             log_prob=self.log_prob + log_prob,
             prev_state=self,
-            hash_length=len(self.hash_tuple) if hasattr(self, 'hash_tuple') else None,
+            hash_length=len(self.hash_tuple) if hasattr(self, "hash_tuple") else None,
             csm_hidden_state=self.csm_hidden_state,
             ktm_hidden_state=self.ktm_hidden_state,
             csm_log_prior=self.csm_log_prior,
@@ -217,7 +220,7 @@ class State:
         log_prob: float,
         pitch_type: PitchType,
         LABELS: Dict,
-    ) -> 'State':
+    ) -> "State":
         """
         Transition to a new key on the most recent chord.
 
@@ -239,10 +242,10 @@ class State:
             Essentially, a replacement of this state (the new state's prev_state is the same),
             but with a new key.
         """
-        root, chord_type, inversion = LABELS['chord'][self.chord]
+        root, chord_type, inversion = LABELS["chord"][self.chord]
         bass = hu.get_bass_note(chord_type, root, inversion, pitch_type)
 
-        tonic, _ = LABELS['key'][key]
+        tonic, _ = LABELS["key"][key]
         relative_root = root - tonic
         relative_bass = bass - tonic
 
@@ -250,8 +253,10 @@ class State:
         maximum_bass = hc.MAX_RELATIVE_TPC + hc.RELATIVE_TPC_EXTRA
 
         if (
-            relative_root < hc.MIN_RELATIVE_TPC or relative_bass < minimum_bass or
-            relative_root >= hc.MAX_RELATIVE_TPC or relative_bass >= maximum_bass
+            relative_root < hc.MIN_RELATIVE_TPC
+            or relative_bass < minimum_bass
+            or relative_root >= hc.MAX_RELATIVE_TPC
+            or relative_bass >= maximum_bass
         ):
             return None
 
@@ -261,7 +266,7 @@ class State:
             change_index=self.change_index,
             log_prob=self.prev_state.log_prob + log_prob,
             prev_state=self.prev_state,
-            hash_length=len(self.hash_tuple) if hasattr(self, 'hash_tuple') else None,
+            hash_length=len(self.hash_tuple) if hasattr(self, "hash_tuple") else None,
             csm_hidden_state=self.csm_hidden_state,
             ktm_hidden_state=self.ktm_hidden_state,
             csm_log_prior=self.csm_log_prior,
@@ -445,9 +450,9 @@ class State:
         ).to_vec()
 
         if (
-            self.prev_state is None or
-            self.prev_state.key != self.key or
-            self.prev_state.chord is None
+            self.prev_state is None
+            or self.prev_state.key != self.key
+            or self.prev_state.chord is None
         ):
             # Base case - this is the first state
             ksm_input = np.zeros((1 + length, len(this_ksm_input)))
@@ -496,7 +501,7 @@ class State:
         """
         if self.chord_obj is None:
             key = self.get_key(pitch_type, LABELS)
-            root, chord_type, inversion = LABELS['chord'][self.chord]
+            root, chord_type, inversion = LABELS["chord"][self.chord]
 
             prev_index = self.prev_state.change_index
             index = self.change_index
@@ -512,7 +517,7 @@ class State:
                 onset_level_cache[prev_index],
                 onset_cache[index],
                 onset_level_cache[index],
-                np.sum(duration_cache[prev_index:self.change_index]),
+                np.sum(duration_cache[prev_index : self.change_index]),
                 pitch_type,
             )
 
@@ -533,7 +538,7 @@ class State:
             The key object of this state.
         """
         if self.key_obj is None:
-            tonic, mode = LABELS['key'][self.key]
+            tonic, mode = LABELS["key"][self.key]
             self.key_obj = Key(tonic, tonic, mode, mode, pitch_type)
 
         return self.key_obj
@@ -656,6 +661,7 @@ class Beam:
 
     Getting the maximum state (O(n) time) is only done once, at the end of the beam search.
     """
+
     def __init__(self, beam_size: int):
         """
         Create a new Beam of the given size.
@@ -691,7 +697,7 @@ class Beam:
         """
         return len(self) < self.beam_size or self.beam[0] < state
 
-    def add(self, state: State) -> bool:
+    def add(self, state: State, force: bool = False) -> bool:
         """
         Add the given state to the beam, if it fits, and return a boolean indicating
         if the state fit.
@@ -700,13 +706,15 @@ class Beam:
         ----------
         state : State
             The state to add to the beam.
+        force : bool
+            Force the state into the beam. Do not check the beam size first.
 
         Returns
         -------
         added : bool
             True if the given state was added to the beam. False otherwise.
         """
-        if len(self) == self.beam_size:
+        if not force and len(self) >= self.beam_size:
             if self.beam[0] < state:
                 heapq.heappushpop(self.beam, state)
                 return True
@@ -757,6 +765,7 @@ class HashedBeam(Beam):
     if it is on the top of the min-heap, the head of the min-heap is repeatedly removed
     until it is valid. (See _fix_beam_min().)
     """
+
     def __init__(self, beam_size: int):
         """
         Create a new HashedBeam with the given overall beam size.
@@ -805,7 +814,7 @@ class HashedBeam(Beam):
         while not self.beam[0].is_valid():
             heapq.heappop(self.beam)
 
-    def add(self, state: State) -> bool:
+    def add(self, state: State, force: bool = False) -> bool:
         """
         Add the given state to the beam, if it fits, and return a boolean indicating
         if the state fit.
@@ -814,6 +823,9 @@ class HashedBeam(Beam):
         ----------
         state : State
             The state to add to the beam.
+        force : bool
+            Force the state into the beam. The hash is still enforced, but not the full
+            beam.
 
         Returns
         -------
@@ -832,7 +844,7 @@ class HashedBeam(Beam):
             return False
 
         # Here, the state is in a new hash
-        if len(self) == self.beam_size:
+        if not force and len(self) >= self.beam_size:
             if self.beam[0] < state:
                 removed_state = heapq.heappushpop(self.beam, state)
                 self.state_dict[state_hash] = state
