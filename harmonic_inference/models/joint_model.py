@@ -1020,41 +1020,27 @@ class HarmonicInferenceModel:
         states : List[State]
             The States.
         """
+        if len(states) == 0:
+            return
+
         key_changes = self.current_piece.get_key_change_input_indices()
         keys = self.current_piece.get_keys()
         chord_changes = self.current_piece.get_chord_change_indices()
         chords = self.current_piece.get_chords()
 
-        new_key_index_cache = dict()
-        new_chord_index_cache = dict()
+        # Previous change is the same for all states here
+        change_index = states[0].prev_state.change_index
+        new_key_index = bisect.bisect_left(key_changes, change_index)
+        new_chord_index = bisect.bisect_left(chord_changes, change_index)
+        correct_key = keys[new_key_index - 1]
+        correct_chord = chords[new_chord_index] if new_chord_index < len(chords) else chords[-1]
 
         for change_prob, state in zip(key_change_probs, states):
-            change_index = state.prev_state.change_index
-            state_key = state.get_key(self.KEY_OUTPUT_TYPE, self.LABELS)
-            state_chord = state.get_chord(
-                self.CHORD_OUTPUT_TYPE,
-                self.duration_cache,
-                self.onset_cache,
-                self.onset_level_cache,
-                self.LABELS,
-            )
-
-            if change_index not in new_key_index_cache:
-                new_key_index_cache[change_index] = bisect.bisect_left(key_changes, change_index)
-                new_chord_index_cache[change_index] = bisect.bisect_left(
-                    chord_changes, change_index
-                )
-            new_key_index = new_key_index_cache[change_index]
-            new_chord_index = new_chord_index_cache[change_index]
-
-            correct_key = keys[new_key_index - 1]
-            correct_chord = chords[new_chord_index] if new_chord_index < len(chords) else chords[-1]
-
-            if not state_key.equals(correct_key, use_relative=True):
+            if correct_key.get_one_hot_index() != state.key:
                 # Skip if current state's key is incorrect
                 continue
 
-            if not state_chord.is_repeated(correct_chord, use_inversion=True):
+            if correct_chord.get_one_hot_index(relative=False, use_inversion=True) != state.chord:
                 # Skip if current state's chord is incorrect
                 continue
 
@@ -1083,7 +1069,7 @@ class HarmonicInferenceModel:
                     correct_key,
                 )
 
-            logging.debug("   Current key: %s", state_key)
+            logging.debug("    Current key: %s", state.get_key(self.KEY_OUTPUT_TYPE, self.LABELS))
             logging.debug(
                 "    Recent chords: %s",
                 "; ".join(

@@ -869,6 +869,21 @@ class Key:
 
         return change_vector
 
+    def get_one_hot_index(self) -> int:
+        """
+        Get the one-hot index of this key.
+
+        Returns
+        -------
+        index : int
+            This Key's one-hot index.
+        """
+        return hu.get_key_one_hot_index(
+            self.relative_mode,
+            self.relative_tonic,
+            self.tonic_type,
+        )
+
     def get_key_change_one_hot_index(self, next_key: "Key") -> int:
         """
         Get the key change as a one-hot index. The one-hot index is based on the mode of the next
