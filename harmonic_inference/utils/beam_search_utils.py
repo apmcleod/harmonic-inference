@@ -361,7 +361,7 @@ class State:
                         onset_cache,
                         onset_level_cache,
                         LABELS,
-                    ).to_vec(),
+                    ).to_vec(pad=False),
                     key_change_vector,
                     [is_key_change],
                 ]
@@ -405,7 +405,7 @@ class State:
                 onset_cache,
                 onset_level_cache,
                 LABELS,
-            ).to_vec(),
+            ).to_vec(pad=True),
             axis=0,
         )
 
@@ -451,7 +451,7 @@ class State:
             onset_cache,
             onset_level_cache,
             LABELS,
-        ).to_vec()
+        ).to_vec(pad=True)
 
         if (
             self.prev_state is None
@@ -582,7 +582,7 @@ class State:
             onset_cache,
             onset_level_cache,
             LABELS,
-        ).get_one_hot_index(relative=True, use_inversion=True)
+        ).get_one_hot_index(relative=True, use_inversion=True, pad=False)
 
     def get_chords(self) -> Tuple[List[int], List[int]]:
         """

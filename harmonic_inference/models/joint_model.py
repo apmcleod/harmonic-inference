@@ -984,7 +984,7 @@ class HarmonicInferenceModel:
 
             correct_chords = self.current_piece.get_chords_within_range(range_start, range_end)
             correct_chords_one_hot = [
-                chord.get_one_hot_index(relative=False, use_inversion=True)
+                chord.get_one_hot_index(relative=False, use_inversion=True, pad=False)
                 for chord in correct_chords
             ]
 
@@ -1087,7 +1087,10 @@ class HarmonicInferenceModel:
             "  Recent chords: %s",
             "; ".join(
                 np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[
-                    [chord.get_one_hot_index() for chord in correct_chords]
+                    [
+                        chord.get_one_hot_index(relative=False, use_inversion=True, pad=False)
+                        for chord in correct_chords
+                    ]
                 ]
             ),
         )
@@ -1097,7 +1100,10 @@ class HarmonicInferenceModel:
                 # Skip if current state's key is incorrect
                 continue
 
-            if correct_chords[-1].get_one_hot_index() != state.chord:
+            if (
+                correct_chords[-1].get_one_hot_index(relative=False, use_inversion=True, pad=False)
+                != state.chord
+            ):
                 # Skip if current state's chord is incorrect
                 continue
 

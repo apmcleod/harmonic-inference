@@ -4,18 +4,19 @@ from typing import Tuple
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 import torch.nn.functional as F
+from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from harmonic_inference.data.data_types import PitchType
-from harmonic_inference.data.piece import Key, Chord
+from harmonic_inference.data.piece import Chord, Key
 
 
 class KeySequenceModel(pl.LightningModule):
     """
     The base class for all Key Sequence Models, which model the sequence of keys of a Piece.
     """
+
     def __init__(self, key_type: PitchType, input_type: PitchType, learning_rate: float):
         """
         Create a new base KeySequenceModel with the given output and input data types.
@@ -35,9 +36,9 @@ class KeySequenceModel(pl.LightningModule):
         self.lr = learning_rate
 
     def get_data_from_batch(self, batch):
-        inputs = batch['inputs'].float()
-        targets = batch['targets'].long()
-        input_lengths = batch['input_lengths']
+        inputs = batch["inputs"].float()
+        targets = batch["targets"].long()
+        input_lengths = batch["input_lengths"]
 
         longest = max(input_lengths)
         inputs = inputs[:, :longest]
@@ -57,7 +58,7 @@ class KeySequenceModel(pl.LightningModule):
         loss = F.nll_loss(outputs, targets)
 
         result = pl.TrainResult(loss)
-        result.log('train_loss', loss, on_epoch=True)
+        result.log("train_loss", loss, on_epoch=True)
         return result
 
     def validation_step(self, batch, batch_idx):
@@ -69,17 +70,13 @@ class KeySequenceModel(pl.LightningModule):
         acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
 
         result = pl.EvalResult(checkpoint_on=loss, early_stop_on=loss)
-        result.log('val_loss', loss)
-        result.log('val_acc', acc)
+        result.log("val_loss", loss)
+        result.log("val_acc", acc)
         return result
 
     def configure_optimizers(self):
         return torch.optim.Adam(
-            self.parameters(),
-            lr=self.lr,
-            betas=(0.9, 0.999),
-            eps=1e-08,
-            weight_decay=0.001
+            self.parameters(), lr=self.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.001
         )
 
 
@@ -92,6 +89,7 @@ class SimpleKeySequenceModel(KeySequenceModel):
     4. Dropout
     5. Linear layer
     """
+
     def __init__(
         self,
         input_type: PitchType,
@@ -134,6 +132,7 @@ class SimpleKeySequenceModel(KeySequenceModel):
             one_hot=False,
             relative=True,
             use_inversions=True,
+            pad=True,
         )
         self.output_dim = Key.get_key_change_vector_length(key_type, one_hot=True)
 
@@ -148,7 +147,7 @@ class SimpleKeySequenceModel(KeySequenceModel):
             self.lstm_hidden_dim,
             num_layers=self.lstm_layers,
             bidirectional=True,
-            batch_first=True
+            batch_first=True,
         )
 
         # Linear layers post-LSTM
@@ -169,7 +168,7 @@ class SimpleKeySequenceModel(KeySequenceModel):
         """
         return (
             Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden_dim)),
-            Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden_dim))
+            Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden_dim)),
         )
 
     def forward(self, inputs, lengths):
@@ -188,12 +187,10 @@ class SimpleKeySequenceModel(KeySequenceModel):
         lstm_out_forward, lstm_out_backward = torch.chunk(lstm_out_unpacked, 2, 2)
 
         # Get lengths in proper format
-        lstm_out_lengths_tensor = lstm_out_lengths.unsqueeze(1).unsqueeze(2).expand(
-            (-1, 1, lstm_out_forward.shape[2])
+        lstm_out_lengths_tensor = (
+            lstm_out_lengths.unsqueeze(1).unsqueeze(2).expand((-1, 1, lstm_out_forward.shape[2]))
         )
-        last_forward = torch.gather(
-            lstm_out_forward, 1, lstm_out_lengths_tensor - 1
-        ).squeeze(dim=1)
+        last_forward = torch.gather(lstm_out_forward, 1, lstm_out_lengths_tensor - 1).squeeze(dim=1)
         last_backward = lstm_out_backward[:, 0, :]
         lstm_out = torch.cat((last_forward, last_backward), 1)
 

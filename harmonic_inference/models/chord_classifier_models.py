@@ -1,15 +1,15 @@
 """Models that generate probability distributions over chord classifications of a given input."""
 from typing import Collection, Tuple
 
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-import torch.nn.functional as F
-import pytorch_lightning as pl
 
 from harmonic_inference.data.data_types import PieceType, PitchType
-from harmonic_inference.data.piece import Note, Chord
+from harmonic_inference.data.piece import Chord, Note
 
 
 class ChordClassifierModel(pl.LightningModule):
@@ -17,6 +17,7 @@ class ChordClassifierModel(pl.LightningModule):
     The base type for all Chord Classifier Models, which take as input sets of frames from Pieces,
     and output chord probabilities for them.
     """
+
     def __init__(self, input_type: PieceType, output_type: PitchType, learning_rate: float):
         """
         Create a new base ChordClassifierModel with the given input and output formats.
@@ -36,46 +37,42 @@ class ChordClassifierModel(pl.LightningModule):
         self.lr = learning_rate
 
     def get_output(self, batch):
-        notes = batch['inputs'].float()
-        notes_lengths = batch['input_lengths']
+        notes = batch["inputs"].float()
+        notes_lengths = batch["input_lengths"]
 
         outputs = self(notes, notes_lengths)
 
         return F.softmax(outputs, dim=-1)
 
     def training_step(self, batch, batch_idx):
-        notes = batch['inputs'].float()
-        notes_lengths = batch['input_lengths']
-        targets = batch['targets'].long()
+        notes = batch["inputs"].float()
+        notes_lengths = batch["input_lengths"]
+        targets = batch["targets"].long()
 
         outputs = self(notes, notes_lengths)
         loss = F.cross_entropy(outputs, targets)
 
         result = pl.TrainResult(loss)
-        result.log('train_loss', loss, on_epoch=True)
+        result.log("train_loss", loss, on_epoch=True)
         return result
 
     def validation_step(self, batch, batch_idx):
-        notes = batch['inputs'].float()
-        notes_lengths = batch['input_lengths']
-        targets = batch['targets'].long()
+        notes = batch["inputs"].float()
+        notes_lengths = batch["input_lengths"]
+        targets = batch["targets"].long()
 
         outputs = self(notes, notes_lengths)
         loss = F.cross_entropy(outputs, targets)
         acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
 
         result = pl.EvalResult(checkpoint_on=loss, early_stop_on=loss)
-        result.log('val_loss', loss)
-        result.log('val_acc', acc)
+        result.log("val_loss", loss)
+        result.log("val_acc", acc)
         return result
 
     def configure_optimizers(self):
         return torch.optim.Adam(
-            self.parameters(),
-            lr=self.lr,
-            betas=(0.9, 0.999),
-            eps=1e-08,
-            weight_decay=0.001
+            self.parameters(), lr=self.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.001
         )
 
 
@@ -87,6 +84,7 @@ class SimpleChordClassifier(ChordClassifierModel):
         3. Dropout
         4. Linear layer
     """
+
     def __init__(
         self,
         input_type: PitchType,
@@ -131,6 +129,7 @@ class SimpleChordClassifier(ChordClassifierModel):
             one_hot=True,
             relative=False,
             use_inversions=use_inversions,
+            pad=False,
         )
 
         # LSTM hidden layer and depth
@@ -141,7 +140,7 @@ class SimpleChordClassifier(ChordClassifierModel):
             self.lstm_hidden_dim,
             num_layers=self.lstm_layers,
             bidirectional=True,
-            batch_first=True
+            batch_first=True,
         )
 
         # Linear layers post-LSTM
@@ -162,7 +161,7 @@ class SimpleChordClassifier(ChordClassifierModel):
         """
         return (
             Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden_dim)),
-            Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden_dim))
+            Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden_dim)),
         )
 
     def forward(self, notes, lengths):
@@ -179,8 +178,8 @@ class SimpleChordClassifier(ChordClassifierModel):
         lstm_out_forward, lstm_out_backward = torch.chunk(lstm_out_unpacked, 2, 2)
 
         # Get lengths in proper format
-        lstm_out_lengths_tensor = lstm_out_lengths.unsqueeze(1).unsqueeze(2).expand(
-            (-1, 1, lstm_out_forward.shape[2])
+        lstm_out_lengths_tensor = (
+            lstm_out_lengths.unsqueeze(1).unsqueeze(2).expand((-1, 1, lstm_out_forward.shape[2]))
         )
         last_forward = torch.gather(lstm_out_forward, 1, lstm_out_lengths_tensor - 1).squeeze()
         last_backward = lstm_out_backward[:, 0, :]
@@ -226,9 +225,17 @@ class TranspositionInvariantCNNClassifier(nn.Module):
         if batch_norm is True, although it is not recommended to use both).
     """
 
-    def __init__(self, num_chord_types, num_input_channels=1, pitch_vector_length=12,
-                 num_conv_channels=10, num_hidden=1, hidden_size=100, batch_norm=False,
-                 dropout=0.0):
+    def __init__(
+        self,
+        num_chord_types,
+        num_input_channels=1,
+        pitch_vector_length=12,
+        num_conv_channels=10,
+        num_hidden=1,
+        hidden_size=100,
+        batch_norm=False,
+        dropout=0.0,
+    ):
         super().__init__()
 
         # Convolutional layer
@@ -236,9 +243,13 @@ class TranspositionInvariantCNNClassifier(nn.Module):
         self.pitch_vector_length = pitch_vector_length
         self.num_conv_channels = num_conv_channels
 
-        self.conv = nn.Conv1d(self.num_input_channels, self.num_conv_channels,
-                              self.pitch_vector_length, padding=self.pitch_vector_length,
-                              padding_mode='circular')
+        self.conv = nn.Conv1d(
+            self.num_input_channels,
+            self.num_conv_channels,
+            self.pitch_vector_length,
+            padding=self.pitch_vector_length,
+            padding_mode="circular",
+        )
 
         # Parallel linear layers
         self.num_chord_types = num_chord_types
@@ -248,13 +259,15 @@ class TranspositionInvariantCNNClassifier(nn.Module):
         self.dropout = dropout
 
         self.input = nn.Linear(num_conv_channels, hidden_size)
-        self.linear = nn.ModuleList([nn.Linear(hidden_size, hidden_size)
-                                     for i in range(num_hidden)])
+        self.linear = nn.ModuleList(
+            [nn.Linear(hidden_size, hidden_size) for i in range(num_hidden)]
+        )
         self.output = nn.Linear(hidden_size, num_chord_types)
 
         if batch_norm:
-            self.batch_norms = nn.ModuleList([nn.BatchNorm1d(hidden_size)
-                                              for i in range(num_hidden + 1)])
+            self.batch_norms = nn.ModuleList(
+                [nn.BatchNorm1d(hidden_size) for i in range(num_hidden + 1)]
+            )
         else:
             self.batch_norms = nn.ModuleList([None] * (num_hidden + 1))
 
@@ -273,8 +286,7 @@ class TranspositionInvariantCNNClassifier(nn.Module):
             parallel = self.batch_norms[0](parallel)
 
         # Hidden layers
-        for layer, dropout, batch_norm in zip(self.linear, self.dropouts[1:],
-                                              self.batch_norms[1:]):
+        for layer, dropout, batch_norm in zip(self.linear, self.dropouts[1:], self.batch_norms[1:]):
             parallel = dropout(F.relu(layer(parallel)))
             if batch_norm is not None:
                 parallel = batch_norm(parallel)

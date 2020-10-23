@@ -80,12 +80,12 @@ class SimpleInitialChordModel:
             counting.
         """
         pitch_type = chords[0].pitch_type
-        one_hot_length = chords[0].get_chord_vector_length(
+        one_hot_length = Chord.get_chord_vector_length(
             pitch_type,
             one_hot=True,
             relative=True,
             use_inversions=use_inversions,
-            use_relative_extra=False,
+            pad=False,
         )
 
         # Initialize with smoothing
@@ -95,7 +95,9 @@ class SimpleInitialChordModel:
 
         # Count chords
         for chord in chords:
-            one_hot_index = chord.get_one_hot_index(relative=True, use_inversion=use_inversions)
+            one_hot_index = chord.get_one_hot_index(
+                relative=True, use_inversion=use_inversions, pad=False
+            )
 
             if chord.key_mode == KeyMode.MAJOR:
                 major_key_chords_one_hots[one_hot_index] += 1

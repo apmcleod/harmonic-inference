@@ -402,7 +402,12 @@ class Chord:
 
         self.params = inspect.getfullargspec(Chord.__init__).args[1:]
 
-    def get_one_hot_index(self, relative: bool = False, use_inversion: bool = True) -> int:
+    def get_one_hot_index(
+        self,
+        relative: bool = False,
+        use_inversion: bool = True,
+        pad: bool = True,
+    ) -> int:
         """
         Get the one-hot index of this chord.
 
@@ -412,6 +417,9 @@ class Chord:
             True to get the relative one-hot index. False for the absolute one-hot index.
         use_inversion : bool
             True to use inversions. False otherwise.
+        pad : bool
+            Only taken into account if self.pitch_type is TPC and relative is True.
+            In that case, if pad is True, an additional padding is used around the valid
 
         Returns
         -------
@@ -419,7 +427,13 @@ class Chord:
             This Chord's one-hot index.
         """
         if relative:
-            root = hu.absolute_to_relative(self.root, self.key_tonic, self.pitch_type, False)
+            root = hu.absolute_to_relative(
+                self.root,
+                self.key_tonic,
+                self.pitch_type,
+                False,
+                pad=pad,
+            )
         else:
             root = self.root
 
@@ -430,6 +444,7 @@ class Chord:
             inversion=self.inversion,
             use_inversion=use_inversion,
             relative=relative,
+            pad=pad,
         )
 
     @staticmethod
@@ -438,7 +453,7 @@ class Chord:
         one_hot: bool = True,
         relative: bool = True,
         use_inversions: bool = True,
-        use_relative_extra: bool = True,
+        pad: bool = False,
     ) -> int:
         """
         Get the length of a chord vector.
@@ -454,9 +469,9 @@ class Chord:
         use_inversions : bool
             True to return the length of the chord vector including inversions. False otherwise.
             Only relevant if one_hot == True.
-        use_relative_extra : bool
-            True to use extra relative pitches for the returned vector length. Used only for
-            pitch_type TPC and relative.
+        pad : bool
+            If True, pitch_type is TPC, and relative is True, pad the possible pitches with
+            extra spaces.
 
         Returns
         -------
@@ -465,18 +480,16 @@ class Chord:
         """
         if relative and pitch_type == PitchType.TPC:
             num_pitches = hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
-            if use_relative_extra:
-                num_pitches += hc.RELATIVE_TPC_EXTRA * 2
+            if pad:
+                hc.RELATIVE_TPC_EXTRA * 2
         else:
             num_pitches = hc.NUM_PITCHES[pitch_type]
 
         if one_hot:
             if use_inversions:
                 return np.sum(
-                    num_pitches
-                    * np.array(
-                        [hu.get_chord_inversion_count(chord_type) for chord_type in ChordType]
-                    )
+                    np.array([hu.get_chord_inversion_count(chord_type) for chord_type in ChordType])
+                    * num_pitches
                 )
             return num_pitches * len(ChordType)
 
@@ -487,7 +500,7 @@ class Chord:
             + 13  # 4 each for inversion, onset level, offset level; 1 for is_major
         )
 
-    def to_vec(self, relative_to: "Key" = None) -> np.ndarray:
+    def to_vec(self, relative_to: "Key" = None, pad: bool = False) -> np.ndarray:
         """
         Get the vectorized representation of this chord.
 
@@ -495,6 +508,9 @@ class Chord:
         ----------
         relative_to : Key
             The key to make this chord vector relative to, if not its key.
+        pad : bool
+            If True, pitch_type is TPC, and relative is True, pad the possible pitches with
+            extra spaces.
 
         Returns
         -------
@@ -504,11 +520,12 @@ class Chord:
         key_tonic = self.key_tonic if relative_to is None else relative_to.relative_tonic
         key_mode = self.key_mode if relative_to is None else relative_to.relative_mode
 
-        num_pitches = (
-            hc.NUM_PITCHES[self.pitch_type]
-            if self.pitch_type == PitchType.MIDI
-            else hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC + 2 * hc.RELATIVE_TPC_EXTRA
-        )
+        if self.pitch_type == PitchType.MIDI:
+            num_pitches = hc.NUM_PITCHES[self.pitch_type]
+        else:
+            num_pitches = hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
+            if pad:
+                num_pitches += 2 * hc.RELATIVE_TPC_EXTRA
 
         vectors = []
 
@@ -519,7 +536,7 @@ class Chord:
             key_tonic,
             self.pitch_type,
             False,
-            use_extra=True,
+            pad=pad,
         )
         pitch[index] = 1
         vectors.append(pitch)
@@ -536,7 +553,7 @@ class Chord:
             key_tonic,
             self.pitch_type,
             False,
-            use_extra=True,
+            pad=pad,
         )
         bass_note[index] = 1
         vectors.append(bass_note)
@@ -867,6 +884,7 @@ class Key:
                 self.relative_tonic,
                 self.tonic_type,
                 True,
+                pad=False,
             )
         ] = 1
 
@@ -910,6 +928,7 @@ class Key:
             self.relative_tonic,
             self.tonic_type,
             True,
+            pad=False,
         )
 
         if self.tonic_type == PitchType.MIDI:
