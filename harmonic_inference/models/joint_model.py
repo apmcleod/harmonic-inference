@@ -589,7 +589,7 @@ class HarmonicInferenceModel:
 
         # Add initial states
         for key in range(len(hu.get_key_label_list(self.KEY_OUTPUT_TYPE))):
-            key_mode = self.LABELS["key"][1]
+            key_mode = self.LABELS["key"][key][1]
             state = State(key=key, hash_length=self.hash_length)
             state.csm_log_prior = self.initial_chord_model.get_prior(
                 key_mode == KeyMode.MINOR,

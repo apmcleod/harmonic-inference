@@ -75,7 +75,7 @@ def get_chord_one_hot_index(
     else:
         num_pitches = hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
         if pad:
-            num_pitches += hc.RELATIVE_TPC_EXTRA
+            num_pitches += 2 * hc.RELATIVE_TPC_EXTRA
 
     if root_pitch < 0 or root_pitch >= num_pitches:
         raise ValueError("Given root is outside of valid range")
