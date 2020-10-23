@@ -696,7 +696,7 @@ class HarmonicInferenceModel:
 
             # Change keys and put resulting states into the appropriate beam
             for state in self.get_key_change_states(to_ksm_states):
-                all_states[state.change_index].add(state, force=current_start == 0)
+                all_states[state.change_index].add(state)
 
             # Add CSM prior and add to beam (CSM is run at the start of each iteration)
             for state in to_csm_prior_states:
@@ -709,7 +709,7 @@ class HarmonicInferenceModel:
                 )
 
                 # Add state to its beam, if it fits
-                all_states[state.change_index].add(state, force=current_start == 0)
+                all_states[state.change_index].add(state)
 
             current_states.empty()
 

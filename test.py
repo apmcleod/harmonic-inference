@@ -7,9 +7,9 @@ from glob import glob
 from pathlib import Path
 from typing import List
 
-import h5py
 from tqdm import tqdm
 
+import h5py
 import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.utils.eval_utils as eu
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
@@ -142,6 +142,7 @@ if __name__ == "__main__":
         models[model_name].freeze()
 
     # Load icm json differently
+    logging.info(f"Loading checkpoint {ARGS.icm_json} for icm.")
     models["icm"] = icm.SimpleInitialChordModel(ARGS.icm_json)
 
     # Load validation data for ctm

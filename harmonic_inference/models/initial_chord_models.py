@@ -5,7 +5,7 @@ from typing import List, Union
 
 import numpy as np
 
-from harmonic_inference.data.data_types import KeyMode
+from harmonic_inference.data.data_types import KeyMode, PitchType
 from harmonic_inference.data.piece import Chord
 
 
@@ -27,7 +27,7 @@ class SimpleInitialChordModel:
         with open(json_path, "r") as json_file:
             data = json.load(json_file)
 
-        self.CHORD_TYPE = data["pitch_type"]
+        self.CHORD_TYPE = PitchType[data["pitch_type"]]
         self.use_inversions = data["use_inversions"]
 
         self.major_prior = data["major"]
