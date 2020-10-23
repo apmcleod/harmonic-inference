@@ -303,8 +303,7 @@ class State:
         """
         range_length = self.change_index - self.prev_state.change_index
         self.log_prob += (
-            range_length
-            * self.csm_log_prior[
+            self.csm_log_prior[
                 self.get_relative_chord_index(
                     pitch_type,
                     duration_cache,
@@ -313,6 +312,7 @@ class State:
                     LABELS,
                 )
             ]
+            * range_length
         )
 
     def get_csm_input(

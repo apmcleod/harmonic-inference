@@ -17,6 +17,7 @@ import harmonic_inference.data.datasets as ds
 import harmonic_inference.models.chord_classifier_models as ccm
 import harmonic_inference.models.chord_sequence_models as csm
 import harmonic_inference.models.chord_transition_models as ctm
+import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
 import harmonic_inference.utils.harmonic_constants as hc
@@ -31,6 +32,7 @@ MODEL_CLASSES = {
     "csm": csm.SimpleChordSequenceModel,
     "ktm": ktm.SimpleKeyTransitionModel,
     "ksm": ksm.SimpleKeySequenceModel,
+    "icm": icm.SimpleInitialChordModel,
 }
 
 
@@ -168,6 +170,7 @@ class HarmonicInferenceModel:
                 'csm': A ChordSequenceModel
                 'ktm': A KeyTransitionModel
                 'ksm': A KeySequenceModel
+                'icm': An InitialChordModel
         min_chord_change_prob : float
             The minimum probability (from the CTM) on which a chord change can occur.
         max_no_chord_change_prob : float
@@ -208,6 +211,7 @@ class HarmonicInferenceModel:
         self.chord_transition_model = models["ctm"]
         self.key_sequence_model = models["ksm"]
         self.key_transition_model = models["ktm"]
+        self.initial_chord_model = models["icm"]
 
         # Ensure all types match
         assert (
@@ -222,6 +226,9 @@ class HarmonicInferenceModel:
         assert (
             self.chord_sequence_model.CHORD_TYPE == self.key_sequence_model.INPUT_TYPE
         ), "Chord Sequence Model chord type does not match Key Transition Model input type"
+        assert (
+            self.initial_chord_model.CHORD_TYPE == self.chord_sequence_model.CHORD_TYPE
+        ), "Initial Chord Model chord type does not match Chord Sequence Model chord type"
 
         # Set joint model types
         self.INPUT_TYPE = self.chord_classifier.INPUT_TYPE
@@ -582,7 +589,13 @@ class HarmonicInferenceModel:
 
         # Add initial states
         for key in range(len(hu.get_key_label_list(self.KEY_OUTPUT_TYPE))):
-            all_states[0].add(State(key=key, hash_length=self.hash_length), force=True)
+            key_mode = self.LABELS["key"][1]
+            state = State(key=key, hash_length=self.hash_length)
+            state.csm_log_prior = self.initial_chord_model.get_prior(
+                key_mode == KeyMode.MINOR,
+                log=True,
+            )
+            all_states[0].add(state, force=True)
 
         for current_start, current_states in tqdm(
             enumerate(all_states[:-1]),
@@ -687,14 +700,13 @@ class HarmonicInferenceModel:
 
             # Add CSM prior and add to beam (CSM is run at the start of each iteration)
             for state in to_csm_prior_states:
-                if current_start != 0:
-                    state.add_csm_prior(
-                        self.CHORD_OUTPUT_TYPE,
-                        self.duration_cache,
-                        self.onset_cache,
-                        self.onset_level_cache,
-                        self.LABELS,
-                    )
+                state.add_csm_prior(
+                    self.CHORD_OUTPUT_TYPE,
+                    self.duration_cache,
+                    self.onset_cache,
+                    self.onset_level_cache,
+                    self.LABELS,
+                )
 
                 # Add state to its beam, if it fits
                 all_states[state.change_index].add(state, force=current_start == 0)
