@@ -438,6 +438,7 @@ class Chord:
         one_hot: bool = True,
         relative: bool = True,
         use_inversions: bool = True,
+        use_relative_extra: bool = True,
     ) -> int:
         """
         Get the length of a chord vector.
@@ -453,6 +454,9 @@ class Chord:
         use_inversions : bool
             True to return the length of the chord vector including inversions. False otherwise.
             Only relevant if one_hot == True.
+        use_relative_extra : bool
+            True to use extra relative pitches for the returned vector length. Used only for
+            pitch_type TPC and relative.
 
         Returns
         -------
@@ -460,7 +464,9 @@ class Chord:
             The length of a single chord vector.
         """
         if relative and pitch_type == PitchType.TPC:
-            num_pitches = hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC + hc.RELATIVE_TPC_EXTRA * 2
+            num_pitches = hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
+            if use_relative_extra:
+                num_pitches += hc.RELATIVE_TPC_EXTRA * 2
         else:
             num_pitches = hc.NUM_PITCHES[pitch_type]
 
@@ -475,10 +481,10 @@ class Chord:
             return num_pitches * len(ChordType)
 
         return (
-            num_pitches
-            + num_pitches  # Root
-            + len(ChordType)  # Bass
-            + 13  # chord type  # 4 each for inversion, onset level, offset level; 1 for is_major
+            num_pitches  # Root
+            + num_pitches  # Bass
+            + len(ChordType)  # chord type
+            + 13  # 4 each for inversion, onset level, offset level; 1 for is_major
         )
 
     def to_vec(self, relative_to: "Key" = None) -> np.ndarray:

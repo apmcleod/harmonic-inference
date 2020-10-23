@@ -48,6 +48,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "-i",
+        "--input",
+        type=Path,
+        default=Path("corpus_data"),
+        help="The directory containing the raw corpus_data tsv files. Used only for -m icm",
+    )
+
+    parser.add_argument(
         "-h5",
         "--h5_dir",
         default=Path("h5_data"),

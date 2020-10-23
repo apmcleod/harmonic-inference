@@ -85,6 +85,7 @@ class SimpleInitialChordModel:
             one_hot=True,
             relative=True,
             use_inversions=use_inversions,
+            use_relative_extra=False,
         )
 
         # Initialize with smoothing
