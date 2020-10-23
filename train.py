@@ -8,6 +8,7 @@ from pathlib import Path
 import h5py
 import pytorch_lightning as pl
 import torch
+from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.profiler import AdvancedProfiler
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -182,6 +183,6 @@ if __name__ == "__main__":
         )
 
     trainer = pl.Trainer(
-        default_root_dir=ARGS.checkpoint, profiler=ARGS.profile, early_stop_callback=True
+        default_root_dir=ARGS.checkpoint, profiler=ARGS.profile, callbacks=[EarlyStopping()]
     )
     trainer.fit(model, dl_train, dl_valid)
