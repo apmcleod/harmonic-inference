@@ -52,9 +52,8 @@ class ChordClassifierModel(pl.LightningModule):
         outputs = self(notes, notes_lengths)
         loss = F.cross_entropy(outputs, targets)
 
-        result = pl.TrainResult(loss)
-        result.log("train_loss", loss, on_epoch=True)
-        return result
+        self.log("train_loss", loss, on_step=True, on_epoch=False)
+        return loss
 
     def validation_step(self, batch, batch_idx):
         notes = batch["inputs"].float()
@@ -65,10 +64,8 @@ class ChordClassifierModel(pl.LightningModule):
         loss = F.cross_entropy(outputs, targets)
         acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
 
-        result = pl.EvalResult(checkpoint_on=loss, early_stop_on=loss)
-        result.log("val_loss", loss)
-        result.log("val_acc", acc)
-        return result
+        self.log("val_loss", loss, on_step=True, on_epoch=True)
+        self.log("val_acc", acc, on_step=True, on_epoch=True)
 
     def configure_optimizers(self):
         return torch.optim.Adam(

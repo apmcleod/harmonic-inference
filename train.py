@@ -183,6 +183,8 @@ if __name__ == "__main__":
         )
 
     trainer = pl.Trainer(
-        default_root_dir=ARGS.checkpoint, profiler=ARGS.profile, callbacks=[EarlyStopping()]
+        default_root_dir=ARGS.checkpoint,
+        profiler=ARGS.profile,
+        callbacks=[EarlyStopping(monitor="val_loss")],
     )
     trainer.fit(model, dl_train, dl_valid)

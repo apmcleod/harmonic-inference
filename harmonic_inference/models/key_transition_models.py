@@ -56,9 +56,8 @@ class KeyTransitionModel(pl.LightningModule):
 
         loss = F.binary_cross_entropy(outputs, targets)
 
-        result = pl.TrainResult(loss)
-        result.log("train_loss", loss, on_epoch=True)
-        return result
+        self.log("train_loss", loss, on_step=True, on_epoch=False)
+        return loss
 
     def validation_step(self, batch, batch_idx):
         inputs, input_lengths, targets, mask = self.get_data_from_batch(batch)
@@ -73,10 +72,8 @@ class KeyTransitionModel(pl.LightningModule):
 
         acc = 100 * (outputs.round().long() == targets).sum().float() / len(outputs)
 
-        result = pl.EvalResult(checkpoint_on=loss, early_stop_on=loss)
-        result.log("val_loss", loss)
-        result.log("val_acc", acc)
-        return result
+        self.log("val_loss", loss, on_step=True, on_epoch=True)
+        self.log("val_acc", acc, on_step=True, on_epoch=True)
 
     def init_hidden(self, batch_size: int):
         # Subclasses should implement this

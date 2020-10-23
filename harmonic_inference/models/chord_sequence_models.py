@@ -58,9 +58,8 @@ class ChordSequenceModel(pl.LightningModule):
 
         loss = F.nll_loss(outputs.permute(0, 2, 1), targets, ignore_index=-100)
 
-        result = pl.TrainResult(loss)
-        result.log("train_loss", loss, on_epoch=True)
-        return result
+        self.log("train_loss", loss, on_step=True, on_epoch=False)
+        return loss
 
     def validation_step(self, batch, batch_idx):
         inputs, input_lengths, targets = self.get_data_from_batch(batch)
@@ -75,10 +74,8 @@ class ChordSequenceModel(pl.LightningModule):
         targets = targets[mask]
         acc = 100 * (outputs == targets).sum().float() / len(targets)
 
-        result = pl.EvalResult(checkpoint_on=loss, early_stop_on=loss)
-        result.log("val_loss", loss)
-        result.log("val_acc", acc)
-        return result
+        self.log("val_loss", loss, on_step=True, on_epoch=True)
+        self.log("val_acc", acc, on_step=True, on_epoch=True)
 
     def init_hidden(self, batch_size: int):
         # Subclasses should implement this
