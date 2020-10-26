@@ -335,7 +335,7 @@ class HarmonicInferenceModel:
 
         # Calculate valid chord ranges and their probabilities
         logging.info("Calculating valid chord ranges")
-        chord_ranges, chord_log_probs = self.get_chord_ranges(piece, change_probs)
+        chord_ranges, range_log_probs = self.get_chord_ranges(change_probs)
 
         # Calculate chord priors for each possible chord range (batched, with CCM)
         logging.info("Classifying chords")
@@ -350,7 +350,7 @@ class HarmonicInferenceModel:
         state = self.beam_search(
             piece,
             chord_ranges,
-            chord_log_probs,
+            range_log_probs,
             chord_classifications,
         )
 
@@ -386,7 +386,6 @@ class HarmonicInferenceModel:
 
     def get_chord_ranges(
         self,
-        piece: Piece,
         change_probs: List[float],
     ) -> Tuple[List[Tuple[int, int]], List[float]]:
         """
@@ -395,8 +394,6 @@ class HarmonicInferenceModel:
 
         Parameters
         ----------
-        piece : Piece
-            The Piece whose chord ranges to return.
         change_probs : List[float]
             The probability of a chord change occurring on each input of the Piece.
 
@@ -405,26 +402,16 @@ class HarmonicInferenceModel:
         chord_ranges : List[Tuple[int, int]]
             A List of possible chord ranges, as (start, end) tuples representing the start
             (inclusive) and end (exclusive) points of each possible range.
-        chord_log_probs : List[float]
+        range_log_probs : List[float]
             For each chord range, it's log-probability, including its end change, but not its
             start change.
         """
         chord_ranges = []
-        chord_log_probs = []
+        range_log_probs = []
 
         # Invalid masks all but first note at each onset position
-        first = 0
-        invalid = np.full(len(change_probs), False, dtype=bool)
-        for i, (prev_note, note) in enumerate(
-            zip(piece.get_inputs()[:-1], piece.get_inputs()[1:]),
-            start=1,
-        ):
-            if prev_note.onset == note.onset:
-                invalid[i] = True
-            else:
-                if first != i - 1:
-                    change_probs[first] = np.max(change_probs[first:i])
-                first = i
+        invalid = np.roll(self.duration_cache == 0, 1)
+        invalid[0] = True
 
         # Log everything vectorized
         change_log_probs = np.log(change_probs)
@@ -442,7 +429,8 @@ class HarmonicInferenceModel:
             start = heapq.heappop(starts)
 
             running_log_prob = 0.0
-            running_duration = Fraction(0.0)
+            # Special case for start == 0 because it is always invalid, but can have duration > 0
+            running_duration = self.duration_cache[start] if start == 0 else Fraction(0)
             reached_end = True
 
             # Detect any next chord change positions
@@ -466,7 +454,7 @@ class HarmonicInferenceModel:
                 if change_prob >= self.min_chord_change_prob:
                     # Chord change can occur
                     chord_ranges.append((start, index))
-                    chord_log_probs.append(running_log_prob + change_log_prob)
+                    range_log_probs.append(running_log_prob + change_log_prob)
 
                     if not in_starts[index]:
                         heapq.heappush(starts, index)
@@ -483,9 +471,9 @@ class HarmonicInferenceModel:
             # Detect if a chord reaches the end of the piece and add it here if so
             if reached_end:
                 chord_ranges.append((start, len(change_probs)))
-                chord_log_probs.append(running_log_prob)
+                range_log_probs.append(running_log_prob)
 
-        return chord_ranges, chord_log_probs
+        return chord_ranges, range_log_probs
 
     def get_chord_classifications(
         self,
@@ -527,7 +515,7 @@ class HarmonicInferenceModel:
         self,
         piece: Piece,
         chord_ranges: List[Tuple[int, int]],
-        chord_log_probs: List[float],
+        range_log_probs: List[float],
         chord_classifications: List[np.array],
     ) -> State:
         """
@@ -539,7 +527,7 @@ class HarmonicInferenceModel:
             The Piece to beam search over.
         chord_ranges : List[Tuple[int, int]]
             A List of possible chord ranges, as (start, end) tuples.
-        chord_log_probs : List[float]
+        range_log_probs : List[float]
             The log probability of each chord ranges in chord_ranges.
         chord_classifications : List[np.array]
             The prior log-probability over all chord symbols for each given range.
@@ -569,7 +557,7 @@ class HarmonicInferenceModel:
         )
         for (start, end), range_log_prob, log_prior, prior_argsort, max_index in zip(
             chord_ranges,
-            chord_log_probs,
+            range_log_probs,
             chord_classifications,
             priors_argsort,
             max_indexes,
@@ -948,7 +936,13 @@ class HarmonicInferenceModel:
         change_probs : List[float]
             The chord change probability for each input.
         """
-        for i, change_prob in enumerate(change_probs):
+        index_invalid = np.roll(self.duration_cache == 0, 1)
+        index_invalid[0] = True
+
+        for i, (change_prob, invalid) in enumerate(zip(change_probs, index_invalid)):
+            if invalid:
+                continue
+
             if i in self.current_piece.get_chord_change_indices():
                 if change_prob < 0.5:
                     logging.debug(
