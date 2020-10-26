@@ -1,13 +1,13 @@
 """Models that output the probability of a key change occurring on a given input."""
 from typing import Tuple
 
-import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
+import pytorch_lightning as pl
 from harmonic_inference.data.data_types import PitchType
 from harmonic_inference.data.piece import Chord
 
@@ -56,7 +56,7 @@ class KeyTransitionModel(pl.LightningModule):
 
         loss = F.binary_cross_entropy(outputs, targets)
 
-        self.log("train_loss", loss, on_step=True, on_epoch=False)
+        self.log("train_loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -72,8 +72,8 @@ class KeyTransitionModel(pl.LightningModule):
 
         acc = 100 * (outputs.round().long() == targets).sum().float() / len(outputs)
 
-        self.log("val_loss", loss, on_step=True, on_epoch=True)
-        self.log("val_acc", acc, on_step=True, on_epoch=True)
+        self.log("val_loss", loss)
+        self.log("val_acc", acc)
 
     def init_hidden(self, batch_size: int):
         # Subclasses should implement this

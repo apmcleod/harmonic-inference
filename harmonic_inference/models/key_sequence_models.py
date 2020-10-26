@@ -1,13 +1,13 @@
 """Models that generate probability distributions over the next key in a sequence."""
 from typing import Tuple
 
-import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
+import pytorch_lightning as pl
 from harmonic_inference.data.data_types import PitchType
 from harmonic_inference.data.piece import Chord, Key
 
@@ -57,7 +57,7 @@ class KeySequenceModel(pl.LightningModule):
 
         loss = F.nll_loss(outputs, targets)
 
-        self.log("train_loss", loss, on_step=True, on_epoch=False)
+        self.log("train_loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -68,8 +68,8 @@ class KeySequenceModel(pl.LightningModule):
         loss = F.nll_loss(outputs, targets)
         acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
 
-        self.log("val_loss", loss, on_step=True, on_epoch=True)
-        self.log("val_acc", acc, on_step=True, on_epoch=True)
+        self.log("val_loss", loss)
+        self.log("val_acc", acc)
 
     def configure_optimizers(self):
         return torch.optim.Adam(
