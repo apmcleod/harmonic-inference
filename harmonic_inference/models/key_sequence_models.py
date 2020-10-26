@@ -78,11 +78,7 @@ class KeySequenceModel(pl.LightningModule):
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5)
 
-        return {
-            "optimizer": optimizer,
-            "scheduler": scheduler,
-            "monitor": "val_loss",
-        }
+        return [optimizer], [{"scheduler": scheduler, "monitor": "val_loss"}]
 
 
 class SimpleKeySequenceModel(KeySequenceModel):

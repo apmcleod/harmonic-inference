@@ -86,6 +86,14 @@ if __name__ == "__main__":
         help="The learning rate to use.",
     )
 
+    parser.add_argument(
+        "-s",
+        "--seed",
+        default=0,
+        type=int,
+        help="The seed used when generating the h5_data.",
+    )
+
     ARGS = parser.parse_args()
 
     if ARGS.checkpoint == DEFAULT_CHECKPOINT_PATH:
@@ -114,7 +122,7 @@ if __name__ == "__main__":
         dataset = ds.KeySequenceDataset
     elif ARGS.model == "icm":
         # Load training data for ctm, just to get file_ids
-        h5_path = Path(ARGS.h5_dir / "ChordTransitionDataset_train_seed_0.h5")
+        h5_path = Path(ARGS.h5_dir / f"ChordTransitionDataset_train_seed_{ARGS.seed}.h5")
         with h5py.File(h5_path, "r") as h5_file:
             if "file_ids" not in h5_file:
                 logging.error(f"file_ids not found in {h5_path}. Re-create with create_h5_data.py")
@@ -126,7 +134,7 @@ if __name__ == "__main__":
         files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(ARGS.input)
 
         # Load from pkl if available
-        pkl_path = Path(ARGS.h5_dir / "pieces_train_seed_0.pkl")
+        pkl_path = Path(ARGS.h5_dir / f"pieces_train_seed_{ARGS.seed}.pkl")
         if pkl_path.exists():
             with open(pkl_path, "rb") as pkl_file:
                 piece_dicts = pickle.load(pkl_file)
@@ -158,8 +166,8 @@ if __name__ == "__main__":
         logging.error(f"Invalid model: {ARGS.model}")
         sys.exit(1)
 
-    h5_path_train = Path(ARGS.h5_dir / f"{dataset.__name__}_train_seed_0.h5")
-    h5_path_valid = Path(ARGS.h5_dir / f"{dataset.__name__}_valid_seed_0.h5")
+    h5_path_train = Path(ARGS.h5_dir / f"{dataset.__name__}_train_seed_{ARGS.seed}.h5")
+    h5_path_valid = Path(ARGS.h5_dir / f"{dataset.__name__}_valid_seed_{ARGS.seed}.h5")
 
     dataset_train = ds.h5_to_dataset(h5_path_train, dataset, transform=torch.from_numpy)
     dataset_valid = ds.h5_to_dataset(h5_path_valid, dataset, transform=torch.from_numpy)

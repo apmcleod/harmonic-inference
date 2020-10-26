@@ -4,12 +4,12 @@ import shutil
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Tuple, Union
 
-import h5py
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
+import h5py
 from harmonic_inference.data.piece import Key, Piece, ScorePiece
 
 
@@ -179,8 +179,7 @@ class ChordTransitionDataset(HarmonicDataset):
 
     Each input is the sequence of input vectors of a piece.
 
-    Each target is a list of the indexes at which there is a chord change in that list of input
-    vectors.
+    Each target is a list of 0 (no change), 1 (change), and -100 (do not measure).
     """
 
     train_batch_size = 8
@@ -189,7 +188,6 @@ class ChordTransitionDataset(HarmonicDataset):
 
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
-        self.targets = [piece.get_chord_change_indices() for piece in pieces]
         self.inputs = [
             np.vstack(
                 [
@@ -203,8 +201,15 @@ class ChordTransitionDataset(HarmonicDataset):
             )
             for piece in pieces
         ]
-        self.target_lengths = np.array([len(target) for target in self.targets])
+
+        self.targets = [np.zeros(len(piece_input), dtype=int) for piece_input in self.inputs]
+        for piece, target in zip(pieces, self.targets):
+            target[piece.get_chord_change_indices()] = 1
+            target[0] = -100
+            target[np.roll(piece.get_duration_cache() == 0, 1)] = -100
+
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
+        self.target_lengths = np.array([len(target) for target in self.targets])
 
 
 class ChordClassificationDataset(HarmonicDataset):

@@ -37,13 +37,11 @@ class ChordTransitionModel(pl.LightningModule):
         input_lengths = batch["input_lengths"]
         inputs = inputs[:, : max(input_lengths)]
 
-        target_indexes = batch["targets"].long()
+        targets = batch["targets"].long()
         target_lengths = batch["target_lengths"].long()
-        targets = torch.zeros(inputs.shape[:2]).float()
-        for i, (index, length) in enumerate(zip(target_indexes, target_lengths)):
-            targets[i, index[:length]] = 1.0
+        targets = targets[:, : max(target_lengths)]
 
-        mask = (inputs.sum(axis=2) > 0).bool()
+        mask = ((inputs.sum(axis=2) > 0) & (targets != -100)).bool()
 
         return inputs, input_lengths, targets, mask
 
@@ -61,7 +59,7 @@ class ChordTransitionModel(pl.LightningModule):
         outputs = outputs.reshape(-1)[flat_mask]
         targets = targets.reshape(-1)[flat_mask]
 
-        loss = F.binary_cross_entropy(outputs, targets)
+        loss = F.binary_cross_entropy(outputs, targets.float())
 
         self.log("train_loss", loss)
         return loss
@@ -75,7 +73,7 @@ class ChordTransitionModel(pl.LightningModule):
         outputs = outputs.reshape(-1)[flat_mask]
         targets = targets.reshape(-1)[flat_mask]
 
-        loss = F.binary_cross_entropy(outputs, targets)
+        loss = F.binary_cross_entropy(outputs, targets.float())
         acc = 100 * (outputs.round() == targets).sum().float() / len(outputs)
 
         self.log("val_loss", loss)
@@ -88,11 +86,7 @@ class ChordTransitionModel(pl.LightningModule):
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5)
 
-        return {
-            "optimizer": optimizer,
-            "scheduler": scheduler,
-            "monitor": "val_loss",
-        }
+        return [optimizer], [{"scheduler": scheduler, "monitor": "val_loss"}]
 
 
 class SimpleChordTransitionModel(ChordTransitionModel):

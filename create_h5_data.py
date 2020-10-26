@@ -1,13 +1,13 @@
-from pathlib import Path
-import logging
 import argparse
-import sys
+import logging
 import pickle
+import sys
+from pathlib import Path
 
 import numpy as np
 
-from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 import harmonic_inference.data.datasets as ds
+from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 
 DATASET_CLASSES = [
     ds.ChordTransitionDataset,
@@ -19,9 +19,9 @@ DATASET_CLASSES = [
 
 SPLITS = ["train", "valid", "test"]
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description='Create the h5 dataset files for each type of dataset.',
+        description="Create the h5 dataset files for each type of dataset.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
@@ -30,7 +30,7 @@ if __name__ == '__main__':
         "--input",
         type=Path,
         default=Path("corpus_data"),
-        help='The directory containing the raw corpus_data tsv files.',
+        help="The directory containing the raw corpus_data tsv files.",
     )
 
     parser.add_argument(
@@ -42,19 +42,11 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
-        "-l",
-        "--log",
-        type=str,
-        default=sys.stderr,
-        help="The log file to print messages to."
+        "-l", "--log", type=str, default=sys.stderr, help="The log file to print messages to."
     )
 
     parser.add_argument(
-        "-s",
-        "--seed",
-        type=int,
-        default=None,
-        help="The random seed to use to create the data."
+        "-s", "--seed", type=int, default=None, help="The random seed to use to create the data."
     )
 
     parser.add_argument(
@@ -78,7 +70,7 @@ if __name__ == '__main__':
     ARGS.splits = [split / sum_splits for split in ARGS.splits]
 
     if ARGS.log is not sys.stderr:
-        logging.basicConfig(filename=ARGS.log, level=logging.INFO, filemode='w')
+        logging.basicConfig(filename=ARGS.log, level=logging.INFO, filemode="w")
     files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(ARGS.input)
 
     if ARGS.seed is None:
@@ -86,7 +78,7 @@ if __name__ == '__main__':
         logging.info(f"Using seed {ARGS.seed}")
 
     dataset_splits, split_ids, split_pieces = ds.get_dataset_splits(
-        files_df,
+        files_df[:10],
         measures_df,
         chords_df,
         notes_df,
@@ -97,13 +89,13 @@ if __name__ == '__main__':
 
     for split, pieces in zip(SPLITS, split_pieces):
         if len(pieces) > 0:
-            pickle_path = ARGS.output / f'pieces_{split}_seed_{ARGS.seed}.pkl'
-            with open(pickle_path, 'wb') as pickle_file:
+            pickle_path = ARGS.output / f"pieces_{split}_seed_{ARGS.seed}.pkl"
+            with open(pickle_path, "wb") as pickle_file:
                 pickle.dump([piece.to_dict() for piece in pieces], pickle_file)
 
     for i1, data_type in enumerate(DATASET_CLASSES):
         for i2, split in enumerate(SPLITS):
             if dataset_splits[i1][i2] is not None:
-                h5_path = ARGS.output / f'{data_type.__name__}_{split}_seed_{ARGS.seed}.h5'
+                h5_path = ARGS.output / f"{data_type.__name__}_{split}_seed_{ARGS.seed}.h5"
                 dataset_splits[i1][i2].to_h5(h5_path, file_ids=split_ids[i2])
                 dataset_splits[i1][i2] = None
