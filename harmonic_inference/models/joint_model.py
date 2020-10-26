@@ -950,6 +950,8 @@ class HarmonicInferenceModel:
                         i,
                         change_prob,
                     )
+                else:
+                    logging.debug("CORRECT: Change on index %s with prob=%s", i, change_prob)
             else:
                 if change_prob > 0.5:
                     logging.debug(
@@ -957,6 +959,8 @@ class HarmonicInferenceModel:
                         i,
                         change_prob,
                     )
+                else:
+                    logging.debug("CORRECT: No change on index %s with prob=%s", i, change_prob)
 
     def debug_chord_classifications(
         self, chord_ranges: List[Tuple[int, int]], chord_classifications: List[float]

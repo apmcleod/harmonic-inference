@@ -7,9 +7,9 @@ from glob import glob
 from pathlib import Path
 from typing import List
 
+import h5py
 from tqdm import tqdm
 
-import h5py
 import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.utils.eval_utils as eu
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
@@ -101,6 +101,14 @@ if __name__ == "__main__":
         ),
     )
 
+    parser.add_argument(
+        "-s",
+        "--seed",
+        default=0,
+        type=int,
+        help="The seed used when generating the h5_data.",
+    )
+
     add_joint_model_args(parser)
 
     ARGS = parser.parse_args()
@@ -125,7 +133,7 @@ if __name__ == "__main__":
         if checkpoint_arg == DEFAULT_PATH:
             checkpoint_arg = checkpoint_arg.replace("`--checkpoint`", ARGS.checkpoint)
 
-        possible_checkpoints = list(glob(checkpoint_arg))
+        possible_checkpoints = sorted(glob(checkpoint_arg))
         if len(possible_checkpoints) == 0:
             logging.error(f"No checkpoints found for {model_name} in {checkpoint_arg}")
             sys.exit(2)
@@ -146,7 +154,7 @@ if __name__ == "__main__":
     models["icm"] = icm.SimpleInitialChordModel(ARGS.icm_json)
 
     # Load validation data for ctm
-    h5_path = Path(ARGS.h5_dir / "ChordTransitionDataset_valid_seed_0.h5")
+    h5_path = Path(ARGS.h5_dir / f"ChordTransitionDataset_valid_seed_{ARGS.seed}.h5")
     with h5py.File(h5_path, "r") as h5_file:
         if "file_ids" not in h5_file:
             logging.error(f"file_ids not found in {h5_path}. Re-create with create_h5_data.py")
@@ -158,7 +166,7 @@ if __name__ == "__main__":
     files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(ARGS.input)
 
     # Load from pkl if available
-    pkl_path = Path(ARGS.h5_dir / "pieces_valid_seed_0.pkl")
+    pkl_path = Path(ARGS.h5_dir / f"pieces_valid_seed_{ARGS.seed}.pkl")
     if pkl_path.exists():
         with open(pkl_path, "rb") as pkl_file:
             piece_dicts = pickle.load(pkl_file)
