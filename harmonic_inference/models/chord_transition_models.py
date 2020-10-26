@@ -82,9 +82,17 @@ class ChordTransitionModel(pl.LightningModule):
         self.log("val_acc", acc)
 
     def configure_optimizers(self):
-        return torch.optim.Adam(
+        optimizer = torch.optim.Adam(
             self.parameters(), lr=self.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.001
         )
+
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5)
+
+        return {
+            "optimizer": optimizer,
+            "scheduler": scheduler,
+            "monitor": "val_loss",
+        }
 
 
 class SimpleChordTransitionModel(ChordTransitionModel):

@@ -5,14 +5,11 @@ import pickle
 import sys
 from pathlib import Path
 
-import h5py
-import pytorch_lightning as pl
 import torch
-from pytorch_lightning.callbacks import EarlyStopping
-from pytorch_lightning.profiler import AdvancedProfiler
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+import h5py
 import harmonic_inference.data.datasets as ds
 import harmonic_inference.models.chord_classifier_models as ccm
 import harmonic_inference.models.chord_sequence_models as csm
@@ -20,10 +17,13 @@ import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
+import pytorch_lightning as pl
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 from harmonic_inference.data.data_types import PieceType, PitchType
 from harmonic_inference.data.piece import ScorePiece
 from harmonic_inference.models.joint_model import MODEL_CLASSES
+from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
+from pytorch_lightning.profiler import AdvancedProfiler
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -182,9 +182,16 @@ if __name__ == "__main__":
             output_filename=os.path.join(ARGS.checkpoint, "profile.log")
         )
 
+    early_stopping_callback = EarlyStopping(
+        monitor="val_loss",
+        patience=20,
+    )
+
+    lr_logger = LearningRateMonitor()
+
     trainer = pl.Trainer(
         default_root_dir=ARGS.checkpoint,
         profiler=ARGS.profile,
-        callbacks=[EarlyStopping(monitor="val_loss")],
+        callbacks=[early_stopping_callback, lr_logger],
     )
     trainer.fit(model, dl_train, dl_valid)
