@@ -1109,6 +1109,9 @@ def debug_chord_classifications(
     """
     change_indices = piece.get_chord_change_indices()
 
+    num_correct_ranges = 0
+    num_correct_chords = 0
+
     for range, chord_probs in zip(chord_ranges, np.exp(chord_classifications)):
         range_start, range_end = range
 
@@ -1129,6 +1132,12 @@ def debug_chord_classifications(
         )
         is_classification_correct = is_range_correct and correct_rank[0] == 0
         is_any_classification_correct = min(correct_rank) == 0
+
+        if is_range_correct:
+            num_correct_ranges += 1
+
+            if is_classification_correct:
+                num_correct_chords += 1
 
         # Bad range or already correct
         if is_any_classification_correct or not is_range_correct:
@@ -1158,6 +1167,14 @@ def debug_chord_classifications(
                 hu.get_chord_label_list(chord_output_type)[one_hot],
                 chord_probs[one_hot],
             )
+
+    logging.debug("CCM accuracy")
+    logging.debug(
+        "    correct_chords / correct_ranges: %s / %s = %s",
+        num_correct_chords,
+        num_correct_ranges,
+        num_correct_chords / num_correct_ranges,
+    )
 
 
 def from_args(models: Dict, ARGS: Namespace) -> HarmonicInferenceModel:
