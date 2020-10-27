@@ -331,7 +331,7 @@ class HarmonicInferenceModel:
 
         # Debug log chord change probabilities
         if logging.getLogger().isEnabledFor(logging.DEBUG):
-            self.debug_chord_change_probs(change_probs)
+            debug_chord_change_probs(self.current_piece, change_probs)
 
         # Calculate valid chord ranges and their probabilities
         logging.info("Calculating valid chord ranges")
@@ -343,7 +343,13 @@ class HarmonicInferenceModel:
 
         # Debug log chord classifications
         if logging.getLogger().isEnabledFor(logging.DEBUG):
-            self.debug_chord_classifications(chord_ranges, chord_classifications)
+            debug_chord_classifications(
+                self.current_piece,
+                chord_ranges,
+                chord_classifications,
+                self.CHORD_OUTPUT_TYPE,
+                self.max_chord_branching_factor,
+            )
 
         # Iterative beam search for other modules
         logging.info("Performing iterative beam search")
@@ -927,114 +933,6 @@ class HarmonicInferenceModel:
             state.csm_log_prior = log_prior.numpy()[0]
             state.csm_hidden_state = (hidden, cell)
 
-    def debug_chord_change_probs(self, change_probs: List[float]):
-        """
-        Log chord change probabilities to as debug messages.
-
-        Parameters
-        ----------
-        change_probs : List[float]
-            The chord change probability for each input.
-        """
-        index_invalid = np.roll(self.duration_cache == 0, 1)
-        index_invalid[0] = True
-
-        for i, (change_prob, invalid) in enumerate(zip(change_probs, index_invalid)):
-            if invalid:
-                continue
-
-            if i in self.current_piece.get_chord_change_indices():
-                if change_prob < 0.5:
-                    logging.debug(
-                        "Piece changes chord on index %s but change_prob=%s",
-                        i,
-                        change_prob,
-                    )
-                else:
-                    logging.debug("CORRECT: Change on index %s with prob=%s", i, change_prob)
-            else:
-                if change_prob > 0.5:
-                    logging.debug(
-                        "Piece doesn't change chord on index %s but change_prob=%s",
-                        i,
-                        change_prob,
-                    )
-                else:
-                    logging.debug("CORRECT: No change on index %s with prob=%s", i, change_prob)
-
-    def debug_chord_classifications(
-        self, chord_ranges: List[Tuple[int, int]], chord_classifications: List[float]
-    ):
-        """
-        Log chord classifications as debug messages.
-
-        Parameters
-        ----------
-        chord_ranges : List[Tuple[int, int]]
-            A list of the chord ranges that were classified.
-        chord_classifications : List[List[float]]
-            The log_probability of each chord for each given range.
-        """
-        change_indices = self.current_piece.get_chord_change_indices()
-
-        for range, chord_probs in zip(chord_ranges, np.exp(chord_classifications)):
-            range_start, range_end = range
-
-            correct_chords = self.current_piece.get_chords_within_range(range_start, range_end)
-            correct_chords_one_hot = [
-                chord.get_one_hot_index(relative=False, use_inversion=True, pad=False)
-                for chord in correct_chords
-            ]
-
-            rankings = list(np.argsort(-chord_probs))
-            correct_probs = [chord_probs[one_hot] for one_hot in correct_chords_one_hot]
-            correct_rank = [rankings.index(one_hot) for one_hot in correct_chords_one_hot]
-
-            is_range_correct = (
-                len(correct_chords) == 1
-                and range_start in change_indices
-                and range_end in change_indices
-            )
-            is_classification_correct = is_range_correct and correct_rank[0] == 0
-            is_any_classification_correct = min(correct_rank) == 0
-
-            # Bad range or already correct
-            if is_any_classification_correct or not is_range_correct:
-                continue
-
-            correct_string = (
-                "=== " if is_classification_correct else "*** " if is_range_correct else ""
-            )
-
-            logging.debug("%sChord classification results for range %s:", correct_string, range)
-            logging.debug(
-                "    correct chords: %s",
-                "; ".join(
-                    np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[
-                        correct_chords_one_hot
-                    ]
-                ),
-            )
-            for one_hot, prob, rank in zip(correct_chords_one_hot, correct_probs, correct_rank):
-                logging.debug(
-                    "        p(%s)=%s, rank=%s",
-                    hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE)[one_hot],
-                    prob,
-                    rank,
-                )
-
-            logging.debug("    Top chords:")
-            for rank, one_hot in enumerate(
-                rankings[: min(self.max_chord_branching_factor, max(correct_rank) + 1)]
-            ):
-                logging.debug(
-                    "       %s%s: p(%s) = %s",
-                    "*" if one_hot in correct_chords_one_hot else " ",
-                    rank,
-                    hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE)[one_hot],
-                    chord_probs[one_hot],
-                )
-
     def debug_key_transitions(self, key_change_probs: List[float], states: List[State]):
         """
         Log key transitions as debug messages.
@@ -1126,6 +1024,140 @@ class HarmonicInferenceModel:
                 ),
             )
             logging.debug("        p(change) = %s", change_prob)
+
+
+def debug_chord_change_probs(piece: Piece, change_probs: List[float]):
+    """
+    Log chord change probabilities to as debug messages.
+
+    Parameters
+    ----------
+    piece : Piece
+        The piece whose change probs to debug.
+    change_probs : List[float]
+        The chord change probability for each input.
+    """
+    index_invalid = np.roll(piece.get_duration_cache() == 0, 1)
+    index_invalid[0] = True
+
+    change_correct = 0
+    change_total = 0
+    no_change_correct = 0
+    no_change_total = 0
+
+    for i, (change_prob, invalid) in enumerate(zip(change_probs, index_invalid)):
+        if invalid:
+            continue
+
+        if i in piece.get_chord_change_indices():
+            change_total += 1
+            if change_prob < 0.5:
+                logging.debug(
+                    "Piece changes chord on index %s but change_prob=%s",
+                    i,
+                    change_prob,
+                )
+            else:
+                change_correct += 1
+
+        else:
+            no_change_total += 1
+            if change_prob > 0.5:
+                logging.debug(
+                    "Piece doesn't change chord on index %s but change_prob=%s",
+                    i,
+                    change_prob,
+                )
+            else:
+                no_change_correct += 1
+
+    logging.debug("CTM accuracy")
+    logging.debug(
+        "    Change: %s / %s = %s", change_correct, change_total, change_correct / change_total
+    )
+    logging.debug(
+        "    No change: %s / %s = %s",
+        no_change_correct,
+        no_change_total,
+        no_change_correct / no_change_total,
+    )
+
+
+def debug_chord_classifications(
+    piece: Piece,
+    chord_ranges: List[Tuple[int, int]],
+    chord_classifications: List[float],
+    chord_output_type: PitchType,
+    max_to_print: bool = 20,
+):
+    """
+    Log chord classifications as debug messages.
+
+    Parameters
+    ----------
+    piece : Piece
+        The piece whose chord classifications to debug.
+    chord_ranges : List[Tuple[int, int]]
+        A list of the chord ranges that were classified.
+    chord_classifications : List[List[float]]
+        The log_probability of each chord for each given range.
+    chord_output_type : PitchType
+        The pitch type used in the chord classifications.
+    max_to_print : int
+        The maximum number of chord classifications to print, if the correct chord is not
+        within this range.
+    """
+    change_indices = piece.get_chord_change_indices()
+
+    for range, chord_probs in zip(chord_ranges, np.exp(chord_classifications)):
+        range_start, range_end = range
+
+        correct_chords = piece.get_chords_within_range(range_start, range_end)
+        correct_chords_one_hot = [
+            chord.get_one_hot_index(relative=False, use_inversion=True, pad=False)
+            for chord in correct_chords
+        ]
+
+        rankings = list(np.argsort(-chord_probs))
+        correct_probs = [chord_probs[one_hot] for one_hot in correct_chords_one_hot]
+        correct_rank = [rankings.index(one_hot) for one_hot in correct_chords_one_hot]
+
+        is_range_correct = (
+            len(correct_chords) == 1
+            and range_start in change_indices
+            and range_end in change_indices
+        )
+        is_classification_correct = is_range_correct and correct_rank[0] == 0
+        is_any_classification_correct = min(correct_rank) == 0
+
+        # Bad range or already correct
+        if is_any_classification_correct or not is_range_correct:
+            continue
+
+        correct_string = "=== " if is_classification_correct else "*** " if is_range_correct else ""
+
+        logging.debug("%sChord classification results for range %s:", correct_string, range)
+        logging.debug(
+            "    correct chords: %s",
+            "; ".join(np.array(hu.get_chord_label_list(chord_output_type))[correct_chords_one_hot]),
+        )
+        for one_hot, prob, rank in zip(correct_chords_one_hot, correct_probs, correct_rank):
+            logging.debug(
+                "        p(%s)=%s, rank=%s",
+                hu.get_chord_label_list(chord_output_type)[one_hot],
+                prob,
+                rank,
+            )
+
+        logging.debug("    Top chords:")
+        for rank, one_hot in enumerate(rankings[: min(max_to_print, max(correct_rank) + 1)]):
+            logging.debug(
+                "       %s%s: p(%s) = %s",
+                "*" if one_hot in correct_chords_one_hot else " ",
+                rank,
+                hu.get_chord_label_list(chord_output_type)[one_hot],
+                chord_probs[one_hot],
+            )
 
 
 def from_args(models: Dict, ARGS: Namespace) -> HarmonicInferenceModel:
