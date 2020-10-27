@@ -821,17 +821,17 @@ class HarmonicInferenceModel:
         )
 
         # Run KSM
-        key_priors = []
+        key_log_priors = []
         for batch in ksm_loader:
             priors = self.key_sequence_model.get_output(batch)
-            key_priors.extend(priors.numpy())
+            key_log_priors.extend(priors.numpy())
 
-        key_priors = np.array(key_priors)
-        priors_argsort = np.argsort(-key_priors)  # Negative to sort descending
+        key_log_priors = np.array(key_log_priors)
+        priors_argsort = np.argsort(-key_log_priors)  # Negative to sort descending
         max_indexes = np.clip(
             np.argmax(
                 np.cumsum(
-                    np.take_along_axis(np.exp(key_priors), priors_argsort, -1),
+                    np.take_along_axis(np.exp(key_log_priors), priors_argsort, -1),
                     axis=-1,
                 )
                 >= self.target_key_branch_prob,
@@ -842,10 +842,13 @@ class HarmonicInferenceModel:
             self.max_key_branching_factor,
         )
 
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            self.debug_key_sequences(key_log_priors, states)
+
         new_states = []
         for state, log_priors, prior_argsort, max_index in zip(
             states,
-            key_priors,
+            key_log_priors,
             priors_argsort,
             max_indexes,
         ):
@@ -1035,6 +1038,143 @@ class HarmonicInferenceModel:
                 total_correct,
                 total,
                 total_correct / total,
+            )
+        else:
+            logging.debug("    No correct key/chord states")
+
+    def debug_key_sequences(self, key_log_priors: List[List[float]], states: List[State]):
+        """
+        Log key sequence outputs as debug messages.
+
+        Parameters
+        ----------
+        key_log_priors : List[List[float]]
+            The prior for the next key for each State.
+        states : List[State]
+            The States.
+        """
+        if len(states) == 0:
+            return
+
+        key_changes = self.current_piece.get_key_change_input_indices()
+        keys = self.current_piece.get_keys()
+        chord_changes = self.current_piece.get_chord_change_indices()
+        chords = self.current_piece.get_chords()
+
+        # Previous change is the same for all states here
+        change_index = states[0].prev_state.change_index
+        new_key_index = bisect.bisect_left(key_changes, change_index)
+        new_chord_index = bisect.bisect_left(chord_changes, change_index)
+
+        if new_key_index == len(key_changes) or key_changes[new_key_index] != change_index:
+            # Piece doesn't have a key change here
+            return
+
+        correct_prev_key = keys[new_key_index - 1]
+        correct_next_key = keys[new_key_index]
+        correct_key_change_one_hot = correct_prev_key.get_key_change_one_hot_index(correct_next_key)
+
+        if chord_changes[new_chord_index] == change_index:
+            if new_chord_index == len(chords):
+                new_chord_index -= 1
+            correct_chords = [chords[new_chord_index - 1], chords[new_chord_index]]
+        else:
+            correct_chords = [chords[new_chord_index - 1]]
+
+        logging.debug(
+            "Key change at index %s: %s -> %s = %s",
+            change_index,
+            correct_prev_key,
+            correct_next_key,
+            self.LABELS["relative_key"][correct_key_change_one_hot],
+        )
+        logging.debug(
+            "  Recent correct chords: %s",
+            "; ".join(
+                np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[
+                    [
+                        chord.get_one_hot_index(relative=False, use_inversion=True, pad=False)
+                        for chord in correct_chords
+                    ]
+                ]
+            ),
+        )
+
+        total = 0
+        total_chord_correct = 0
+        total_correct = 0
+        total_chord_correct_correct = 0
+
+        for state, key_prior in zip(states, np.exp(key_log_priors)):
+            if correct_prev_key.get_one_hot_index() != state.key:
+                # Skip if state's key is incorrect
+                continue
+
+            is_chord_correct = False
+            if (
+                correct_chords[-1].get_one_hot_index(relative=False, use_inversion=True, pad=False)
+                == state.chord
+            ):
+                # State's chord is incorrect
+                is_chord_correct = True
+                total_chord_correct += 1
+
+            total += 1
+
+            rankings = list(np.argsort(-key_prior))
+            correct_prob = key_prior[correct_key_change_one_hot]
+            correct_rank = rankings.index(correct_key_change_one_hot)
+
+            if correct_rank == 0:
+                if is_chord_correct:
+                    total_chord_correct_correct += 1
+                total_correct += 1
+                continue
+
+            logging.debug("    Current key: %s", state.get_key(self.KEY_OUTPUT_TYPE, self.LABELS))
+            logging.debug(
+                "    Recent chords: %s",
+                "; ".join(
+                    np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[s.chord]
+                    for s in [state.prev_state, state]
+                ),
+            )
+            logging.debug(
+                "      p(%s)=%s, rank=%s",
+                correct_next_key,
+                correct_prob,
+                correct_rank,
+            )
+
+            logging.debug("      Top keys:")
+            for rank, one_hot in enumerate(
+                rankings[: min(self.max_key_branching_factor, correct_rank + 1)]
+            ):
+                logging.debug(
+                    "         %s%s: p(%s) = %s",
+                    "*" if one_hot == correct_key_change_one_hot else " ",
+                    rank,
+                    self.LABELS["relative_key"][one_hot],
+                    key_prior[one_hot],
+                )
+
+        logging.debug("KSM accuracy")
+        if total > 0:
+            logging.debug(
+                "    Correct key states accuracy: %s / %s = %s",
+                total_correct,
+                total,
+                total_correct / total,
+            )
+        else:
+            logging.debug("    No correct key states")
+
+        if total_chord_correct > 0:
+            logging.debug(
+                "    Correct key/chord states accuracy: %s / %s = %s",
+                total_chord_correct_correct,
+                total_chord_correct,
+                total_chord_correct_correct / total_chord_correct,
             )
         else:
             logging.debug("    No correct key/chord states")

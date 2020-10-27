@@ -7,9 +7,9 @@ from glob import glob
 from pathlib import Path
 from typing import List
 
-import h5py
 from tqdm import tqdm
 
+import h5py
 import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.utils.eval_utils as eu
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
@@ -172,34 +172,25 @@ if __name__ == "__main__":
     if pkl_path.exists():
         with open(pkl_path, "rb") as pkl_file:
             piece_dicts = pickle.load(pkl_file)
-        pieces = [
-            ScorePiece(
-                None,
-                None,
-                measures_df.loc[file_id],
-                piece_dict=piece_dict,
-                name=(
-                    f"{file_id}: {files_df.loc[file_id, 'corpus_name']}/"
-                    f"{files_df.loc[file_id, 'file_name']}"
-                ),
-            )
-            for file_id, piece_dict in zip(file_ids, piece_dicts)
-        ]
-
-    # Generate from dfs
     else:
-        pieces = []
-        for file_id in tqdm(file_ids, desc="Loading Pieces"):
-            pieces.append(
-                ScorePiece(
-                    notes_df.loc[file_id],
-                    chords_df.loc[file_id],
-                    measures_df.loc[file_id],
-                    name=(
-                        f"{file_id}: {files_df.loc[file_id, 'corpus_name']}/"
-                        f"{files_df.loc[file_id, 'file_name']}"
-                    ),
-                )
-            )
+        piece_dicts = [None] * len(file_ids)
+
+    pieces = [
+        ScorePiece(
+            notes_df.loc[file_id],
+            chords_df.loc[file_id],
+            measures_df.loc[file_id],
+            piece_dict=piece_dict,
+            name=(
+                f"{file_id}: {files_df.loc[file_id, 'corpus_name']}/"
+                f"{files_df.loc[file_id, 'file_name']}"
+            ),
+        )
+        for file_id, piece_dict in tqdm(
+            zip(file_ids, piece_dicts),
+            total=len(file_ids),
+            desc="Loading pieces",
+        )
+    ]
 
     evaluate(from_args(models, ARGS), pieces)
