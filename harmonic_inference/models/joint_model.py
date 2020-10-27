@@ -965,7 +965,7 @@ class HarmonicInferenceModel:
         else:
             correct_chords = [chords[new_chord_index - 1]]
 
-        if key_changes[new_key_index] == change_index:
+        if new_key_index < len(key_changes) and key_changes[new_key_index] == change_index:
             logging.debug(
                 "Key change at index %s: %s -> %s",
                 change_index,
