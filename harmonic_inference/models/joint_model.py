@@ -958,12 +958,12 @@ class HarmonicInferenceModel:
         new_chord_index = bisect.bisect_left(chord_changes, change_index)
         correct_key = keys[new_key_index - 1]
 
-        if new_chord_index == len(chords):
-            new_chord_index -= 1
         if chord_changes[new_chord_index] == change_index:
+            if new_chord_index == len(chords):
+                new_chord_index -= 1
             correct_chords = [chords[new_chord_index - 1], chords[new_chord_index]]
         else:
-            correct_chords = [chords[new_chord_index]]
+            correct_chords = [chords[new_chord_index - 1]]
 
         if key_changes[new_key_index] == change_index:
             logging.debug(
@@ -980,7 +980,7 @@ class HarmonicInferenceModel:
                 correct_key,
             )
         logging.debug(
-            "  Recent chords: %s",
+            "  Recent correct chords: %s",
             "; ".join(
                 np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[
                     [
@@ -990,6 +990,9 @@ class HarmonicInferenceModel:
                 ]
             ),
         )
+
+        total = 0
+        total_correct = 0
 
         for change_prob, state in zip(key_change_probs, states):
             if correct_key.get_one_hot_index() != state.key:
@@ -1003,16 +1006,16 @@ class HarmonicInferenceModel:
                 # Skip if current state's chord is incorrect
                 continue
 
+            total += 1
+
             if new_key_index < len(key_changes) and key_changes[new_key_index] == change_index:
                 if change_prob > 0.5:
-                    # Correct
-                    logging.debug("Key change: Correct")
+                    total_correct += 1
                     continue
 
             else:
                 if change_prob < 0.5:
-                    # Correct
-                    logging.debug("No key change: Correct")
+                    total_correct += 1
                     continue
 
             logging.debug("    Current key: %s", state.get_key(self.KEY_OUTPUT_TYPE, self.LABELS))
@@ -1020,10 +1023,21 @@ class HarmonicInferenceModel:
                 "    Recent chords: %s",
                 "; ".join(
                     np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[s.chord]
-                    for s in [state, state.prev_state]
+                    for s in [state.prev_state, state]
                 ),
             )
             logging.debug("        p(change) = %s", change_prob)
+
+        logging.debug("KTM accuracy")
+        if total > 0:
+            logging.debug(
+                "    Correct key transitions / correct key/chord states: %s / %s = %s",
+                total_correct,
+                total,
+                total_correct / total,
+            )
+        else:
+            logging.debug("    No correct key/chord states")
 
 
 def debug_chord_change_probs(piece: Piece, change_probs: List[float]):

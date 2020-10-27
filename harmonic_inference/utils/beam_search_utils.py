@@ -183,7 +183,10 @@ class State:
             return None
 
         must_key_transition = (
-            relative_root < hc.MIN_RELATIVE_TPC or relative_root >= hc.MAX_RELATIVE_TPC
+            relative_root < hc.MIN_RELATIVE_TPC
+            or relative_root >= hc.MAX_RELATIVE_TPC
+            or relative_bass < hc.MIN_RELATIVE_TPC
+            or relative_bass >= hc.MAX_RELATIVE_TPC
         )
 
         return State(
