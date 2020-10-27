@@ -1204,7 +1204,7 @@ class Piece:
     A single musical piece, which can be from score, midi, or audio.
     """
 
-    def __init__(self, data_type: PieceType):
+    def __init__(self, data_type: PieceType, name: str = None):
         """
         Create a new musical Piece object of the given data type.
 
@@ -1212,8 +1212,11 @@ class Piece:
         ----------
         data_type : PieceType
             The data type of the piece.
+        name : str
+            The name of the piece, an optional identifier.
         """
         self.DATA_TYPE = data_type
+        self.name = name
 
     def get_inputs(self) -> List[Note]:
         """
@@ -1373,6 +1376,7 @@ class ScorePiece(Piece):
         chords_df: pd.DataFrame,
         measures_df: pd.DataFrame,
         piece_dict: Dict = None,
+        name: str = None,
     ):
         """
         Create a ScorePiece object from the given 3 pandas DataFrames.
@@ -1387,8 +1391,11 @@ class ScorePiece(Piece):
             A DataFrame containing information about the measures in the piece.
         piece_dict : Dict
             An optional dict, to load data from instead of calculating everything from the dfs.
+            If given, only measures_df must also be given. The rest can be None.
+        name : str
+            A string identifier for this piece.
         """
-        super().__init__(PieceType.SCORE)
+        super().__init__(PieceType.SCORE, name=name)
         self.measures_df = measures_df
 
         if piece_dict is None:

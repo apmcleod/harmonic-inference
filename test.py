@@ -27,6 +27,8 @@ SPLITS = ["train", "valid", "test"]
 def evaluate(model: HarmonicInferenceModel, pieces: List[Piece]):
     states = []
     for piece in tqdm(pieces, desc="Getting harmony for pieces"):
+        if piece.name is not None:
+            logging.info(f"Running piece {piece.name}")
         state = model.get_harmony(piece)
         print(eu.evaluate(piece, state))
 
@@ -171,7 +173,16 @@ if __name__ == "__main__":
         with open(pkl_path, "rb") as pkl_file:
             piece_dicts = pickle.load(pkl_file)
         pieces = [
-            ScorePiece(None, None, measures_df.loc[file_id], piece_dict=piece_dict)
+            ScorePiece(
+                None,
+                None,
+                measures_df.loc[file_id],
+                piece_dict=piece_dict,
+                name=(
+                    f"{file_id}: {files_df.loc[file_id, 'corpus_name']}/"
+                    f"{files_df.loc[file_id, 'file_name']}"
+                ),
+            )
             for file_id, piece_dict in zip(file_ids, piece_dicts)
         ]
 
@@ -180,7 +191,15 @@ if __name__ == "__main__":
         pieces = []
         for file_id in tqdm(file_ids, desc="Loading Pieces"):
             pieces.append(
-                ScorePiece(notes_df.loc[file_id], chords_df.loc[file_id], measures_df.loc[file_id])
+                ScorePiece(
+                    notes_df.loc[file_id],
+                    chords_df.loc[file_id],
+                    measures_df.loc[file_id],
+                    name=(
+                        f"{file_id}: {files_df.loc[file_id, 'corpus_name']}/"
+                        f"{files_df.loc[file_id, 'file_name']}"
+                    ),
+                )
             )
 
     evaluate(from_args(models, ARGS), pieces)
