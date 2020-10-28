@@ -1192,14 +1192,15 @@ class HarmonicInferenceModel:
 
     def debug_chord_sequence_priors(self, states: List[State], max_to_print: int = 20):
         """
-        [summary]
+        Log chord sequence priors as debug messages.
 
         Parameters
         ----------
         states : List[State]
-            [description]
+            A List of states which contain a csm_log_prior.
         max_to_print : int, optional
-            [description], by default 20
+            Print maximum this many incorrect chords from the prior for each state
+            (or until the correct chord is reached).
         """
         if len(states) == 0:
             return
@@ -1292,6 +1293,17 @@ class HarmonicInferenceModel:
             if correct_rank == 0:
                 total_correct += 1
                 continue
+
+            state_prev_chords_one_hots, _ = state.get_chords()
+            state_prev_chords_one_hots = state_prev_chords_one_hots[-6:-1]
+            logging.debug(
+                "      Previous chords: %s",
+                "; ".join(
+                    np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE, use_inversions=True))[
+                        state_prev_chords_one_hots
+                    ]
+                ),
+            )
 
             logging.debug("      Top chords:")
             for rank, one_hot in enumerate(rankings[: min(max_to_print, correct_rank + 1)]):
@@ -1472,20 +1484,20 @@ def debug_chord_classifications(
     )
 
 
-def debug_initial_chord_prior(piece: Piece, csm_prior: List[float], max_to_print: int = 20):
+def debug_initial_chord_prior(piece: Piece, icm_prior: List[float], max_to_print: int = 20):
     """
-    [summary]
+    Log the initial chord prior as a debug message.
 
     Parameters
     ----------
     piece : Piece
-        [description]
-    csm_prior : List[float]
-        [description]
+        The Piece containing the correct initial chord.
+    icm_prior : List[float]
+        A list of probabilities for each relative chord symbol.
     max_to_print : int, optional
-        [description], by default 20
+        Print at most this many incorrect relative chords before the correct chord.
     """
-    rankings = list(np.argsort(-np.array(csm_prior)))
+    rankings = list(np.argsort(-np.array(icm_prior)))
 
     correct_chord = piece.get_chords()[0]
     correct_key = piece.get_keys()[0]
@@ -1501,7 +1513,7 @@ def debug_initial_chord_prior(piece: Piece, csm_prior: List[float], max_to_print
         pad=False,
     )
 
-    correct_prob = csm_prior[correct_chord_one_hot_relative]
+    correct_prob = icm_prior[correct_chord_one_hot_relative]
     correct_rank = rankings.index(correct_chord_one_hot_relative)
 
     logging.debug("Initial chord prior relative to key %s:", correct_key)
@@ -1521,7 +1533,7 @@ def debug_initial_chord_prior(piece: Piece, csm_prior: List[float], max_to_print
                 "*" if one_hot == correct_chord_one_hot_relative else " ",
                 rank,
                 one_hot,  # TODO: Get relative label
-                csm_prior[one_hot],
+                icm_prior[one_hot],
             )
 
 
