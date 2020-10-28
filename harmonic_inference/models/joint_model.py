@@ -1285,14 +1285,7 @@ class HarmonicInferenceModel:
             if correct_rank == 0:
                 total_correct += 1
                 continue
-
-            logging.debug(
-                "      State prev chord: %s",
-                hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE, use_inversions=True)[
-                    state.prev_state.chord
-                ],
-            )
-            logging.debug("        Top chords:")
+            logging.debug("      Top chords:")
             for rank, one_hot in enumerate(rankings[: min(max_to_print, correct_rank + 1)]):
                 logging.debug(
                     "           %s%s: p(%s) = %s",
@@ -1302,7 +1295,16 @@ class HarmonicInferenceModel:
                     csm_prior[one_hot],
                 )
 
-        # TODO: Print final results / acc
+        logging.debug("CSM accuracy")
+        if total > 0:
+            logging.debug(
+                "    Correct chord priors / correct key/prev chord states: %s / %s = %s",
+                total_correct,
+                total,
+                total_correct / total,
+            )
+        else:
+            logging.debug("    No correct key/prev chord states")
 
 
 def debug_chord_change_probs(piece: Piece, change_probs: List[float]):
