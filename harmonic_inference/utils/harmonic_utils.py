@@ -9,7 +9,13 @@ import harmonic_inference.utils.harmonic_constants as hc
 from harmonic_inference.data.data_types import ChordType, KeyMode, PitchType
 
 
-def get_chord_label_list(pitch_type: PitchType, use_inversions=True) -> List[str]:
+def get_chord_label_list(
+    pitch_type: PitchType,
+    use_inversions: bool = True,
+    relative: bool = False,
+    relative_to: int = None,
+    pad: bool = False,
+) -> List[str]:
     """
     Get the human-readable label of every chord label.
 
@@ -19,13 +25,48 @@ def get_chord_label_list(pitch_type: PitchType, use_inversions=True) -> List[str
         The pitch type representation being used.
     use_inversions : bool
         True to count the different inversions of each chord as different chords.
+    relative : bool
+        True to get relative chord labels. False otherwise.
+    relative_to : int
+        The pitch to be relative to, if any.
+    pad : bool
+        True to add padding around possible pitches, if relative is True.
 
     Returns
     -------
     labels : List[String]
         A List, where labels[0] is the String interpretation of the one-hot chord label 0, etc.
     """
-    roots = [get_pitch_string(i, pitch_type) for i in range(hc.NUM_PITCHES[pitch_type])]
+    if relative:
+        if pitch_type == PitchType.TPC:
+            minimum = hc.MIN_RELATIVE_TPC
+            maximum = hc.MAX_RELATIVE_TPC
+            if pad:
+                minimum -= hc.RELATIVE_TPC_EXTRA
+                maximum += hc.RELATIVE_TPC_EXTRA
+
+            int_roots = list(range(minimum, maximum))
+
+        else:
+            int_roots = list(range(0, hc.NUM_PITCHES[pitch_type]))
+
+        if relative_to is None:
+            roots = [str(root) for root in int_roots]
+        else:
+            roots = []
+            for root in int_roots:
+                try:
+                    roots.append(
+                        get_pitch_string(
+                            transpose_pitch(root, relative_to, pitch_type),
+                            pitch_type,
+                        )
+                    )
+                except ValueError:
+                    roots.append(str(root))
+
+    else:
+        roots = [get_pitch_string(i, pitch_type) for i in range(hc.NUM_PITCHES[pitch_type])]
 
     return [
         f"{root}:{get_chord_string(chord_type)}{'' if inv is None else f', inv:{inv}'}"

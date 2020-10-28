@@ -1280,18 +1280,32 @@ class HarmonicInferenceModel:
             rankings = list(np.argsort(-csm_prior))
             correct_prob = csm_prior[correct_next_chord_relative_one_hot]
             correct_rank = rankings.index(correct_next_chord_relative_one_hot)
-            logging.debug("    p(correct)=%s rank=%s", correct_prob, correct_rank)
+            logging.debug(
+                "    p(%s)=%s rank=%s",
+                hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE, use_inversions=True)[
+                    correct_next_chord_one_hot
+                ],
+                correct_prob,
+                correct_rank,
+            )
 
             if correct_rank == 0:
                 total_correct += 1
                 continue
+
             logging.debug("      Top chords:")
             for rank, one_hot in enumerate(rankings[: min(max_to_print, correct_rank + 1)]):
                 logging.debug(
                     "           %s%s: p(%s) = %s",
                     "*" if one_hot == correct_next_chord_relative_one_hot else " ",
                     rank,
-                    one_hot,  # TODO: Get relative label
+                    hu.get_chord_label_list(
+                        self.CHORD_OUTPUT_TYPE,
+                        use_inversions=True,
+                        relative=True,
+                        relative_to=correct_key.relative_tonic,
+                        pad=False,
+                    )[one_hot],
                     csm_prior[one_hot],
                 )
 
