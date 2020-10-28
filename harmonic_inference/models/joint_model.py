@@ -586,10 +586,17 @@ class HarmonicInferenceModel:
             key_mode = self.LABELS["key"][key][1]
             state = State(key=key, hash_length=self.hash_length)
             state.csm_log_prior = self.initial_chord_model.get_prior(
-                key_mode == KeyMode.MINOR,
-                log=True,
+                key_mode == KeyMode.MINOR, log=True
             )
             all_states[0].add(state, force=True)
+
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            debug_initial_chord_prior(
+                self.current_piece,
+                self.initial_chord_model.get_prior(
+                    KeyMode.MINOR == self.current_piece.get_keys()[0].relative_mode, log=False
+                ),
+            )
 
         for current_start, current_states in tqdm(
             enumerate(all_states[:-1]),
@@ -693,6 +700,10 @@ class HarmonicInferenceModel:
                 all_states[state.change_index].add(state)
 
             # Add CSM prior and add to beam (CSM is run at the start of each iteration)
+            if current_start != 0 and logging.getLogger().isEnabledFor(logging.DEBUG):
+                self.debug_chord_sequence_priors(
+                    to_csm_prior_states, max_to_print=self.max_chord_branching_factor
+                )
             for state in to_csm_prior_states:
                 state.add_csm_prior(
                     self.CHORD_OUTPUT_TYPE,
@@ -1179,6 +1190,120 @@ class HarmonicInferenceModel:
         else:
             logging.debug("    No correct key/chord states")
 
+    def debug_chord_sequence_priors(self, states: List[State], max_to_print: int = 20):
+        """
+        [summary]
+
+        Parameters
+        ----------
+        states : List[State]
+            [description]
+        max_to_print : int, optional
+            [description], by default 20
+        """
+        if len(states) == 0:
+            return
+
+        change_index = states[0].prev_state.change_index
+        if change_index == 0:
+            # ICM is used here
+            return
+
+        chords = self.current_piece.get_chords()
+        chord_changes = self.current_piece.get_chord_change_indices()
+        keys = self.current_piece.get_keys()
+        key_changes = self.current_piece.get_key_change_input_indices()
+
+        chord_index = bisect.bisect_left(chord_changes, change_index)
+        if chord_index == len(chord_changes) or chord_changes[chord_index] != change_index:
+            # Change index is incorrect
+            return
+
+        key_index = bisect.bisect_left(key_changes, change_index)
+        if key_index != len(key_changes) and key_changes[key_index] == change_index:
+            # Key change here (csm is unused)
+            return
+
+        correct_key = keys[key_index - 1]
+        correct_key_one_hot = correct_key.get_one_hot_index()
+
+        correct_next_chord = chords[chord_index]
+        correct_next_chord_one_hot = correct_next_chord.get_one_hot_index(
+            relative=False, use_inversion=True, pad=False
+        )
+        correct_next_chord_relative_one_hot = correct_next_chord.get_one_hot_index(
+            relative=True, use_inversion=True, pad=False
+        )
+
+        correct_prev_chords = chords[max(0, chord_index - 5) : chord_index]
+        correct_prev_chords_one_hots = [
+            chord.get_one_hot_index(relative=False, use_inversion=True, pad=False)
+            for chord in correct_prev_chords
+        ]
+
+        logging.debug(
+            "Chord prior for index %s relative to key %s:",
+            change_index,
+            correct_key,
+        )
+        logging.debug(
+            "  Recent correct chords: %s",
+            "; ".join(
+                np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE, use_inversions=True))[
+                    correct_prev_chords_one_hots
+                ]
+            ),
+        )
+        logging.debug(
+            "  Correct next chord: %s",
+            hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE, use_inversions=True)[
+                correct_next_chord_one_hot
+            ],
+        )
+
+        total = 0
+        total_correct = 0
+
+        for state in states:
+            if state.prev_state.chord != correct_prev_chords_one_hots[-1]:
+                # Most recent chord is incorrect
+                continue
+
+            if state.key != correct_key_one_hot:
+                # Current key is incorrect
+                continue
+
+            total += 1
+
+            csm_prior = np.exp(state.csm_log_prior)
+
+            rankings = list(np.argsort(-csm_prior))
+            correct_prob = csm_prior[correct_next_chord_relative_one_hot]
+            correct_rank = rankings.index(correct_next_chord_relative_one_hot)
+            logging.debug("    p(correct)=%s rank=%s", correct_prob, correct_rank)
+
+            if correct_rank == 0:
+                total_correct += 1
+                continue
+
+            logging.debug(
+                "      State prev chord: %s",
+                hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE, use_inversions=True)[
+                    state.prev_state.chord
+                ],
+            )
+            logging.debug("        Top chords:")
+            for rank, one_hot in enumerate(rankings[: min(max_to_print, correct_rank + 1)]):
+                logging.debug(
+                    "           %s%s: p(%s) = %s",
+                    "*" if one_hot == correct_next_chord_relative_one_hot else " ",
+                    rank,
+                    one_hot,  # TODO: Get relative label
+                    csm_prior[one_hot],
+                )
+
+        # TODO: Print final results / acc
+
 
 def debug_chord_change_probs(piece: Piece, change_probs: List[float]):
     """
@@ -1329,6 +1454,59 @@ def debug_chord_classifications(
         num_correct_ranges,
         num_correct_chords / num_correct_ranges,
     )
+
+
+def debug_initial_chord_prior(piece: Piece, csm_prior: List[float], max_to_print: int = 20):
+    """
+    [summary]
+
+    Parameters
+    ----------
+    piece : Piece
+        [description]
+    csm_prior : List[float]
+        [description]
+    max_to_print : int, optional
+        [description], by default 20
+    """
+    rankings = list(np.argsort(-np.array(csm_prior)))
+
+    correct_chord = piece.get_chords()[0]
+    correct_key = piece.get_keys()[0]
+
+    correct_chord_one_hot_relative = correct_chord.get_one_hot_index(
+        relative=True,
+        use_inversion=True,
+        pad=False,
+    )
+    correct_chord_one_hot = correct_chord.get_one_hot_index(
+        relative=False,
+        use_inversion=True,
+        pad=False,
+    )
+
+    correct_prob = csm_prior[correct_chord_one_hot_relative]
+    correct_rank = rankings.index(correct_chord_one_hot_relative)
+
+    logging.debug("Initial chord prior relative to key %s:", correct_key)
+    logging.debug(
+        "  Correct chord: %s",
+        hu.get_chord_label_list(correct_chord.pitch_type, use_inversions=True)[
+            correct_chord_one_hot
+        ],
+    )
+    logging.debug("    prob=%s rank=%s", correct_prob, correct_rank)
+
+    if correct_rank != 0:
+        logging.debug("      Top chords:")
+        for rank, one_hot in enumerate(rankings[: min(max_to_print, correct_rank + 1)]):
+            logging.debug(
+                "         %s%s: p(%s) = %s",
+                "*" if one_hot == correct_chord_one_hot_relative else " ",
+                rank,
+                one_hot,  # TODO: Get relative label
+                csm_prior[one_hot],
+            )
 
 
 def from_args(models: Dict, ARGS: Namespace) -> HarmonicInferenceModel:
