@@ -966,6 +966,8 @@ class HarmonicInferenceModel:
         chord_changes = self.current_piece.get_chord_change_indices()
         chords = self.current_piece.get_chords()
 
+        labels = np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))
+
         # Previous change is the same for all states here
         change_index = states[0].prev_state.change_index
         new_key_index = bisect.bisect_left(key_changes, change_index)
@@ -996,7 +998,7 @@ class HarmonicInferenceModel:
         logging.debug(
             "  Recent correct chords: %s",
             "; ".join(
-                np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[
+                labels[
                     [
                         chord.get_one_hot_index(relative=False, use_inversion=True, pad=False)
                         for chord in correct_chords
@@ -1035,10 +1037,7 @@ class HarmonicInferenceModel:
             logging.debug("    Current key: %s", state.get_key(self.KEY_OUTPUT_TYPE, self.LABELS))
             logging.debug(
                 "    Recent chords: %s",
-                "; ".join(
-                    np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[s.chord]
-                    for s in [state.prev_state, state]
-                ),
+                "; ".join([labels[s.chord] for s in [state.prev_state, state]]),
             )
             logging.debug("        p(change) = %s", change_prob)
 
@@ -1066,6 +1065,8 @@ class HarmonicInferenceModel:
         """
         if len(states) == 0:
             return
+
+        labels = np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))
 
         key_changes = self.current_piece.get_key_change_input_indices()
         keys = self.current_piece.get_keys()
@@ -1102,7 +1103,7 @@ class HarmonicInferenceModel:
         logging.debug(
             "  Recent correct chords: %s",
             "; ".join(
-                np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[
+                labels[
                     [
                         chord.get_one_hot_index(relative=False, use_inversion=True, pad=False)
                         for chord in correct_chords
@@ -1145,10 +1146,7 @@ class HarmonicInferenceModel:
             logging.debug("    Current key: %s", state.get_key(self.KEY_OUTPUT_TYPE, self.LABELS))
             logging.debug(
                 "    Recent chords: %s",
-                "; ".join(
-                    np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))[s.chord]
-                    for s in [state.prev_state, state]
-                ),
+                "; ".join([labels[s.chord] for s in [state.prev_state, state]]),
             )
             logging.debug(
                 "      p(%s)=%s, rank=%s",
@@ -1242,6 +1240,15 @@ class HarmonicInferenceModel:
             for chord in correct_prev_chords
         ]
 
+        labels = np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE, use_inversions=True))
+        relative_labels = hu.get_chord_label_list(
+            self.CHORD_OUTPUT_TYPE,
+            use_inversions=True,
+            relative=True,
+            relative_to=correct_key.relative_tonic,
+            pad=False,
+        )
+
         logging.debug(
             "Chord prior for index %s relative to key %s:",
             change_index,
@@ -1249,18 +1256,9 @@ class HarmonicInferenceModel:
         )
         logging.debug(
             "  Recent correct chords: %s",
-            "; ".join(
-                np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE, use_inversions=True))[
-                    correct_prev_chords_one_hots
-                ]
-            ),
+            "; ".join(labels[correct_prev_chords_one_hots]),
         )
-        logging.debug(
-            "  Correct next chord: %s",
-            hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE, use_inversions=True)[
-                correct_next_chord_one_hot
-            ],
-        )
+        logging.debug("  Correct next chord: %s", labels[correct_next_chord_one_hot])
 
         total = 0
         total_correct = 0
@@ -1283,9 +1281,7 @@ class HarmonicInferenceModel:
             correct_rank = rankings.index(correct_next_chord_relative_one_hot)
             logging.debug(
                 "    p(%s)=%s rank=%s",
-                hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE, use_inversions=True)[
-                    correct_next_chord_one_hot
-                ],
+                labels[correct_next_chord_one_hot],
                 correct_prob,
                 correct_rank,
             )
@@ -1298,11 +1294,7 @@ class HarmonicInferenceModel:
             state_prev_chords_one_hots = state_prev_chords_one_hots[-6:-1]
             logging.debug(
                 "      Previous chords: %s",
-                "; ".join(
-                    np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE, use_inversions=True))[
-                        state_prev_chords_one_hots
-                    ]
-                ),
+                "; ".join(labels[state_prev_chords_one_hots]),
             )
 
             logging.debug("      Top chords:")
@@ -1311,13 +1303,7 @@ class HarmonicInferenceModel:
                     "           %s%s: p(%s) = %s",
                     "*" if one_hot == correct_next_chord_relative_one_hot else " ",
                     rank,
-                    hu.get_chord_label_list(
-                        self.CHORD_OUTPUT_TYPE,
-                        use_inversions=True,
-                        relative=True,
-                        relative_to=correct_key.relative_tonic,
-                        pad=False,
-                    )[one_hot],
+                    relative_labels[one_hot],
                     csm_prior[one_hot],
                 )
 
@@ -1416,6 +1402,8 @@ def debug_chord_classifications(
     """
     change_indices = piece.get_chord_change_indices()
 
+    labels = np.array(hu.get_chord_label_list(chord_output_type))
+
     num_correct_ranges = 0
     num_correct_chords = 0
 
@@ -1455,12 +1443,12 @@ def debug_chord_classifications(
         logging.debug("%sChord classification results for range %s:", correct_string, range)
         logging.debug(
             "    correct chords: %s",
-            "; ".join(np.array(hu.get_chord_label_list(chord_output_type))[correct_chords_one_hot]),
+            "; ".join(labels[correct_chords_one_hot]),
         )
         for one_hot, prob, rank in zip(correct_chords_one_hot, correct_probs, correct_rank):
             logging.debug(
                 "        p(%s)=%s, rank=%s",
-                hu.get_chord_label_list(chord_output_type)[one_hot],
+                labels[one_hot],
                 prob,
                 rank,
             )
@@ -1471,7 +1459,7 @@ def debug_chord_classifications(
                 "       %s%s: p(%s) = %s",
                 "*" if one_hot in correct_chords_one_hot else " ",
                 rank,
-                hu.get_chord_label_list(chord_output_type)[one_hot],
+                labels[one_hot],
                 chord_probs[one_hot],
             )
 
@@ -1525,6 +1513,14 @@ def debug_initial_chord_prior(piece: Piece, icm_prior: List[float], max_to_print
     )
     logging.debug("    prob=%s rank=%s", correct_prob, correct_rank)
 
+    relative_labels = hu.get_chord_label_list(
+        correct_chord.pitch_type,
+        use_inversions=True,
+        relative=True,
+        relative_to=correct_key.relative_tonic,
+        pad=False,
+    )
+
     if correct_rank != 0:
         logging.debug("      Top chords:")
         for rank, one_hot in enumerate(rankings[: min(max_to_print, correct_rank + 1)]):
@@ -1532,7 +1528,7 @@ def debug_initial_chord_prior(piece: Piece, icm_prior: List[float], max_to_print
                 "         %s%s: p(%s) = %s",
                 "*" if one_hot == correct_chord_one_hot_relative else " ",
                 rank,
-                one_hot,  # TODO: Get relative label
+                relative_labels[one_hot],
                 icm_prior[one_hot],
             )
 
