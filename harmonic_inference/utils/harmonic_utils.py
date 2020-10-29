@@ -138,7 +138,11 @@ def get_chord_one_hot_index(
     return index
 
 
-def get_key_label_list(pitch_type: PitchType) -> List[str]:
+def get_key_label_list(
+    pitch_type: PitchType,
+    relative: bool = False,
+    relative_to: int = None,
+) -> List[str]:
     """
     Get the list of all key labels, in human-readable format.
 
@@ -146,13 +150,43 @@ def get_key_label_list(pitch_type: PitchType) -> List[str]:
     ----------
     pitch_type : PitchType
         The pitch type of the tonic labels.
+    relative : bool
+        True to output relative key labels. False for absolute.
+    relative_to : int
+        The pitch to be relative to, if any.
 
     Returns
     -------
     key_labels : List[str]
         A List where key_labels[i] is the human-readable label for key index i.
     """
-    tonics = [get_pitch_string(i, pitch_type) for i in range(hc.NUM_PITCHES[pitch_type])]
+    if relative:
+        if pitch_type == PitchType.TPC:
+            minimum = hc.MIN_KEY_CHANGE_INTERVAL_TPC
+            maximum = hc.MAX_KEY_CHANGE_INTERVAL_TPC
+
+            int_tonics = list(range(minimum, maximum))
+
+        else:
+            int_tonics = list(range(0, hc.NUM_PITCHES[pitch_type]))
+
+        if relative_to is None:
+            tonics = [str(tonic) for tonic in int_tonics]
+        else:
+            tonics = []
+            for tonic in int_tonics:
+                try:
+                    tonics.append(
+                        get_pitch_string(
+                            transpose_pitch(tonic, relative_to, pitch_type),
+                            pitch_type,
+                        )
+                    )
+                except ValueError:
+                    tonics.append(str(tonic))
+
+    else:
+        tonics = [get_pitch_string(i, pitch_type) for i in range(hc.NUM_PITCHES[pitch_type])]
 
     return [
         f"{tonic.lower() if key_mode == KeyMode.MINOR else tonic}:{key_mode}"
