@@ -1155,7 +1155,7 @@ class DebugLogger:
         relative_key_labels = hu.get_key_label_list(
             self.KEY_OUTPUT_TYPE,
             relative=True,
-            relative_to=correct_next_key.relative_tonic,
+            relative_to=correct_prev_key.relative_tonic,
         )
 
         for state, key_prior in zip(states, np.exp(key_log_priors)):
