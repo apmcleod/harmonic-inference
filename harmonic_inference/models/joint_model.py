@@ -963,20 +963,20 @@ class DebugLogger:
         max_keys_to_print: int = 5,
     ):
         """
-        [summary]
+        Create a new debug log printer for a particular piece.
 
         Parameters
         ----------
         piece : Piece
-            [description]
+            The piece to print debug messages for.
         chord_type : PitchType
-            [description]
+            The pitch type for chord root labels and priors.
         key_type : PitchType
-            [description]
+            The pitch type for key tonic labels and priors.
         max_chords_to_print : int
-            [description], by default 20
+            The maximum number of chords to print, until the correct chord.
         max_keys_to_print : int
-            [description]
+            The maximum number of keys to print, until the correct key.
         """
         self.piece = piece
         self.CHORD_OUTPUT_TYPE = chord_type
