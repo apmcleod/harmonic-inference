@@ -951,7 +951,7 @@ class HarmonicInferenceModel:
 
 class DebugLogger:
     """
-    [description]
+    A DebugLogger will print debug messages for various model outputs.
     """
 
     def __init__(
