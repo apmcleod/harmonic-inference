@@ -6,7 +6,7 @@ from typing import List, Union
 import numpy as np
 
 from harmonic_inference.data.data_types import KeyMode, PitchType
-from harmonic_inference.data.piece import Chord
+from harmonic_inference.data.piece import Chord, Piece
 
 
 class SimpleInitialChordModel:
@@ -55,6 +55,35 @@ class SimpleInitialChordModel:
         if is_minor:
             return self.minor_log_prior if log else self.minor_prior
         return self.major_log_prior if log else self.major_prior
+
+    def evaluate(self, pieces: List[Piece]):
+        correct = 0
+        total_loss = 0
+
+        major_max_index = np.argmax(self.get_prior(False, log=True))
+        minor_max_index = np.argmax(self.get_prior(True, log=True))
+
+        for piece in pieces:
+            first_chord_one_hot = piece.get_chords()[0].get_one_hot_index(
+                relative=True, use_inversion=True, pad=False
+            )
+
+            if piece.get_keys()[0].relative_mode == KeyMode.MAJOR:
+                correct_index = major_max_index
+                log_prior = self.get_prior(False, log=True)
+            else:
+                correct_index = minor_max_index
+                log_prior = self.get_prior(True, log=True)
+
+            if first_chord_one_hot == correct_index:
+                correct += 1
+
+            total_loss -= log_prior[first_chord_one_hot]
+
+        return {
+            "acc": 100 * correct / len(pieces),
+            "loss": total_loss / len(pieces),
+        }
 
     @staticmethod
     def train(

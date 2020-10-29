@@ -6,9 +6,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 import pytorch_lightning as pl
 from harmonic_inference.data.data_types import PitchType
+from harmonic_inference.data.datasets import KeyTransitionDataset
 from harmonic_inference.data.piece import Chord
 
 
@@ -74,6 +77,35 @@ class KeyTransitionModel(pl.LightningModule):
 
         self.log("val_loss", loss)
         self.log("val_acc", acc)
+
+    def evaluate(self, dataset: KeyTransitionDataset):
+        dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
+
+        total = 0
+        total_acc = 0
+        total_loss = 0
+
+        for batch in tqdm(dl, desc="Evaluating KTM"):
+            inputs, input_lengths, targets, mask = self.get_data_from_batch(batch)
+
+            outputs, _ = self(inputs, input_lengths)
+
+            flat_mask = mask.reshape(-1)
+            outputs = outputs.reshape(-1)[flat_mask]
+            targets = targets.reshape(-1)[flat_mask]
+
+            batch_count = len(outputs)
+            loss = F.binary_cross_entropy(outputs, targets)
+            acc = 100 * (outputs.round().long() == targets).sum().float() / len(outputs)
+
+            total += batch_count
+            total_acc += acc * batch_count
+            total_loss += loss * batch_count
+
+        return {
+            "acc": (total_acc / total).item(),
+            "loss": (total_loss / total).item(),
+        }
 
     def init_hidden(self, batch_size: int):
         # Subclasses should implement this

@@ -6,9 +6,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 import pytorch_lightning as pl
 from harmonic_inference.data.data_types import PitchType
+from harmonic_inference.data.datasets import ChordSequenceDataset
 from harmonic_inference.data.piece import Chord, Key
 
 
@@ -69,13 +72,43 @@ class ChordSequenceModel(pl.LightningModule):
         loss = F.nll_loss(outputs.permute(0, 2, 1), targets, ignore_index=-100)
 
         targets = targets.reshape(-1)
-        mask = targets != 100
+        mask = targets != -100
         outputs = outputs.argmax(-1).reshape(-1)[mask]
         targets = targets[mask]
         acc = 100 * (outputs == targets).sum().float() / len(targets)
 
         self.log("val_loss", loss)
         self.log("val_acc", acc)
+
+    def evaluate(self, dataset: ChordSequenceDataset):
+        dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
+
+        total = 0
+        total_loss = 0
+        total_acc = 0
+
+        for batch in tqdm(dl, desc="Evaluating CSM"):
+            inputs, input_lengths, targets = self.get_data_from_batch(batch)
+
+            outputs, _ = self(inputs, input_lengths)
+
+            loss = F.nll_loss(outputs.permute(0, 2, 1), targets, ignore_index=-100)
+
+            targets = targets.reshape(-1)
+            mask = targets != -100
+            outputs = outputs.argmax(-1).reshape(-1)[mask]
+            targets = targets[mask]
+            batch_count = len(targets)
+            acc = 100 * (outputs == targets).sum().float() / len(targets)
+
+            total += batch_count
+            total_loss += loss * batch_count
+            total_acc += acc * batch_count
+
+        return {
+            "acc": (total_acc / total).item(),
+            "loss": (total_loss / total).item(),
+        }
 
     def init_hidden(self, batch_size: int):
         # Subclasses should implement this

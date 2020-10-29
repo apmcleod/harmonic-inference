@@ -6,9 +6,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 import pytorch_lightning as pl
 from harmonic_inference.data.data_types import PitchType
+from harmonic_inference.data.datasets import KeySequenceDataset
 from harmonic_inference.data.piece import Chord, Key
 
 
@@ -70,6 +73,31 @@ class KeySequenceModel(pl.LightningModule):
 
         self.log("val_loss", loss)
         self.log("val_acc", acc)
+
+    def evaluate(self, dataset: KeySequenceDataset):
+        dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
+
+        total = 0
+        total_acc = 0
+        total_loss = 0
+
+        for batch in tqdm(dl, desc="Evaluating KSM"):
+            inputs, input_lengths, targets = self.get_data_from_batch(batch)
+
+            outputs = self(inputs, input_lengths)
+
+            batch_count = len(batch)
+            loss = F.nll_loss(outputs, targets)
+            acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
+
+            total += batch_count
+            total_acc += acc * batch_count
+            total_loss += loss * batch_count
+
+        return {
+            "acc": (total_acc / total).item(),
+            "loss": (total_loss / total).item(),
+        }
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
