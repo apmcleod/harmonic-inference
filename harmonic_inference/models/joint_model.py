@@ -23,7 +23,7 @@ import harmonic_inference.models.key_transition_models as ktm
 import harmonic_inference.utils.harmonic_constants as hc
 import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.data.data_types import KeyMode, PitchType
-from harmonic_inference.data.piece import Piece
+from harmonic_inference.data.piece import Piece, get_range_start
 from harmonic_inference.utils.beam_search_utils import Beam, HashedBeam, State
 
 MODEL_CLASSES = {
@@ -344,6 +344,12 @@ class HarmonicInferenceModel:
         # Calculate valid chord ranges and their probabilities
         logging.info("Calculating valid chord ranges")
         chord_ranges, range_log_probs = self.get_chord_ranges(change_probs)
+
+        # Convert range starting points to new starts based on the note offsets
+        chord_ranges = [
+            (get_range_start(piece.get_inputs()[start].onset, piece.get_inputs()), end)
+            for start, end in chord_ranges
+        ]
 
         # Calculate chord priors for each possible chord range (batched, with CCM)
         logging.info("Classifying chords")

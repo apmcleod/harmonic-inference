@@ -1199,6 +1199,29 @@ def get_chord_note_input(
     return chord_input
 
 
+def get_range_start(onset: Union[float, Tuple[int, Fraction]], notes: List[Note]) -> int:
+    """
+    Get the index of the first note whose offset is after the given range onset.
+
+    Parameters
+    ----------
+    onset : Union[float, Tuple[int, Fraction]]
+        The onset time of a range.
+    notes : List[Note]
+        A List of the Notes of a piece.
+
+    Returns
+    -------
+    start : int
+        The index of the first note whose offset is after the given range's onset.
+    """
+    for note_id, note in enumerate(notes):
+        if note.onset >= onset or note.offset > onset:
+            return note_id
+
+    return len(notes)
+
+
 class Piece:
     """
     A single musical piece, which can be from score, midi, or audio.
@@ -1237,6 +1260,17 @@ class Piece:
         -------
         chord_change_indices : np.array[int]
             The indices (into the inputs list) at which there is a chord change.
+        """
+        raise NotImplementedError
+
+    def get_chord_ranges(self) -> List[Tuple[int, int]]:
+        """
+        Get a List of the indexes (into the input list) that contain inputs for each chord.
+
+        Returns
+        -------
+        ranges : List[Tuple[int, int]]
+            The indexes (into the input list) that contain inputs for each chord.
         """
         raise NotImplementedError
 
@@ -1459,6 +1493,12 @@ class ScorePiece(Piece):
                     note_index += 1
                 self.chord_changes[chord_index] = note_index
 
+            # The note input ranges for each chord
+            self.chord_ranges = [
+                (get_range_start(chord.onset, self.notes), end)
+                for chord, end in zip(self.chords, list(self.chord_changes) + [len(self.notes)])
+            ]
+
             key_cols = chords_df.loc[
                 chords_df.index[self.chord_ilocs],
                 [
@@ -1493,6 +1533,7 @@ class ScorePiece(Piece):
             self.chords = np.array([Chord(**chord) for chord in piece_dict["chords"]])
             self.keys = np.array([Key(**key) for key in piece_dict["keys"]])
             self.chord_changes = np.array(piece_dict["chord_changes"])
+            self.chord_ranges = np.array(piece_dict["chord_ranges"])
             self.key_changes = np.array(piece_dict["key_changes"])
 
     def get_duration_cache(self):
@@ -1518,6 +1559,9 @@ class ScorePiece(Piece):
     def get_chord_change_indices(self) -> List[int]:
         return self.chord_changes
 
+    def get_chord_ranges(self) -> List[Tuple[int, int]]:
+        return self.chord_ranges
+
     def get_chords(self) -> List[Chord]:
         return self.chords
 
@@ -1535,11 +1579,7 @@ class ScorePiece(Piece):
                     window,
                     duration_cache=self.get_duration_cache(),
                 )
-                for chord, onset_index, offset_index in zip(
-                    self.chords,
-                    self.chord_changes,
-                    list(self.chord_changes[1:]) + [len(self.notes)],
-                )
+                for chord, (onset_index, offset_index) in zip(self.chords, self.chord_ranges)
             ]
         else:
             last_offset = self.chords[-1].offset
@@ -1586,5 +1626,6 @@ class ScorePiece(Piece):
             "chords": [chord.to_dict() for chord in self.get_chords()],
             "keys": [key.to_dict() for key in self.get_keys()],
             "chord_changes": self.get_chord_change_indices(),
+            "chord_ranges": self.get_chord_ranges(),
             "key_changes": self.get_key_change_indices(),
         }
