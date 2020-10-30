@@ -20,8 +20,12 @@ def evaluate(piece: Piece, state: State):
     gt_changes = piece.get_chord_change_indices()
     gt_labels = np.zeros(len(piece.get_inputs()))
     for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
-        gt_labels[start:end] = chord.get_one_hot_index()
-    gt_labels[gt_changes[-1]:] = gt_chords[-1].get_one_hot_index()
+        gt_labels[start:end] = chord.get_one_hot_index(
+            relative=False, use_inversion=True, pad=False
+        )
+    gt_labels[gt_changes[-1] :] = gt_chords[-1].get_one_hot_index(
+        relative=False, use_inversion=True, pad=False
+    )
 
     chords, changes = state.get_chords()
     estimated_labels = np.zeros(len(piece.get_inputs()))

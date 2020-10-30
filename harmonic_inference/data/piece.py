@@ -402,7 +402,12 @@ class Chord:
 
         self.params = inspect.getfullargspec(Chord.__init__).args[1:]
 
-    def get_one_hot_index(self, relative: bool = False, use_inversion: bool = True) -> int:
+    def get_one_hot_index(
+        self,
+        relative: bool = False,
+        use_inversion: bool = True,
+        pad: bool = True,
+    ) -> int:
         """
         Get the one-hot index of this chord.
 
@@ -412,6 +417,9 @@ class Chord:
             True to get the relative one-hot index. False for the absolute one-hot index.
         use_inversion : bool
             True to use inversions. False otherwise.
+        pad : bool
+            Only taken into account if self.pitch_type is TPC and relative is True.
+            In that case, if pad is True, an additional padding is used around the valid
 
         Returns
         -------
@@ -419,7 +427,13 @@ class Chord:
             This Chord's one-hot index.
         """
         if relative:
-            root = hu.absolute_to_relative(self.root, self.key_tonic, self.pitch_type, False)
+            root = hu.absolute_to_relative(
+                self.root,
+                self.key_tonic,
+                self.pitch_type,
+                False,
+                pad=pad,
+            )
         else:
             root = self.root
 
@@ -430,6 +444,7 @@ class Chord:
             inversion=self.inversion,
             use_inversion=use_inversion,
             relative=relative,
+            pad=pad,
         )
 
     @staticmethod
@@ -438,6 +453,7 @@ class Chord:
         one_hot: bool = True,
         relative: bool = True,
         use_inversions: bool = True,
+        pad: bool = False,
     ) -> int:
         """
         Get the length of a chord vector.
@@ -453,6 +469,9 @@ class Chord:
         use_inversions : bool
             True to return the length of the chord vector including inversions. False otherwise.
             Only relevant if one_hot == True.
+        pad : bool
+            If True, pitch_type is TPC, and relative is True, pad the possible pitches with
+            extra spaces.
 
         Returns
         -------
@@ -460,28 +479,28 @@ class Chord:
             The length of a single chord vector.
         """
         if relative and pitch_type == PitchType.TPC:
-            num_pitches = hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC + hc.RELATIVE_TPC_EXTRA * 2
+            num_pitches = hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
+            if pad:
+                num_pitches += hc.RELATIVE_TPC_EXTRA * 2
         else:
             num_pitches = hc.NUM_PITCHES[pitch_type]
 
         if one_hot:
             if use_inversions:
                 return np.sum(
-                    num_pitches
-                    * np.array(
-                        [hu.get_chord_inversion_count(chord_type) for chord_type in ChordType]
-                    )
+                    np.array([hu.get_chord_inversion_count(chord_type) for chord_type in ChordType])
+                    * num_pitches
                 )
             return num_pitches * len(ChordType)
 
         return (
-            num_pitches
-            + num_pitches  # Root
-            + len(ChordType)  # Bass
-            + 13  # chord type  # 4 each for inversion, onset level, offset level; 1 for is_major
+            num_pitches  # Root
+            + num_pitches  # Bass
+            + len(ChordType)  # chord type
+            + 13  # 4 each for inversion, onset level, offset level; 1 for is_major
         )
 
-    def to_vec(self, relative_to: "Key" = None) -> np.ndarray:
+    def to_vec(self, relative_to: "Key" = None, pad: bool = False) -> np.ndarray:
         """
         Get the vectorized representation of this chord.
 
@@ -489,6 +508,9 @@ class Chord:
         ----------
         relative_to : Key
             The key to make this chord vector relative to, if not its key.
+        pad : bool
+            If True, pitch_type is TPC, and relative is True, pad the possible pitches with
+            extra spaces.
 
         Returns
         -------
@@ -498,11 +520,12 @@ class Chord:
         key_tonic = self.key_tonic if relative_to is None else relative_to.relative_tonic
         key_mode = self.key_mode if relative_to is None else relative_to.relative_mode
 
-        num_pitches = (
-            hc.NUM_PITCHES[self.pitch_type]
-            if self.pitch_type == PitchType.MIDI
-            else hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC + 2 * hc.RELATIVE_TPC_EXTRA
-        )
+        if self.pitch_type == PitchType.MIDI:
+            num_pitches = hc.NUM_PITCHES[self.pitch_type]
+        else:
+            num_pitches = hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
+            if pad:
+                num_pitches += 2 * hc.RELATIVE_TPC_EXTRA
 
         vectors = []
 
@@ -513,7 +536,7 @@ class Chord:
             key_tonic,
             self.pitch_type,
             False,
-            use_extra=True,
+            pad=pad,
         )
         pitch[index] = 1
         vectors.append(pitch)
@@ -530,7 +553,7 @@ class Chord:
             key_tonic,
             self.pitch_type,
             False,
-            use_extra=True,
+            pad=pad,
         )
         bass_note[index] = 1
         vectors.append(bass_note)
@@ -861,6 +884,7 @@ class Key:
                 self.relative_tonic,
                 self.tonic_type,
                 True,
+                pad=False,
             )
         ] = 1
 
@@ -868,6 +892,21 @@ class Key:
         change_vector[-2 + next_key.relative_mode.value] = 1
 
         return change_vector
+
+    def get_one_hot_index(self) -> int:
+        """
+        Get the one-hot index of this key.
+
+        Returns
+        -------
+        index : int
+            This Key's one-hot index.
+        """
+        return hu.get_key_one_hot_index(
+            self.relative_mode,
+            self.relative_tonic,
+            self.tonic_type,
+        )
 
     def get_key_change_one_hot_index(self, next_key: "Key") -> int:
         """
@@ -889,6 +928,7 @@ class Key:
             self.relative_tonic,
             self.tonic_type,
             True,
+            pad=False,
         )
 
         if self.tonic_type == PitchType.MIDI:
@@ -915,6 +955,25 @@ class Key:
         -------
         is_repeated : bool
             True if the given key is a repeat of this one. False otherwise.
+        """
+        return self.equals(other, use_relative=use_relative)
+
+    def equals(self, other: "Key", use_relative: bool = True) -> bool:
+        """
+        Check if the tonic and mode of this Key are the same.
+
+        Parameters
+        ----------
+        other : Key
+            The other key to check for equality.
+        use_relative : bool
+            True to take use relative_tonic and relative_mode.
+            False to use local_tonic and local_mode.
+
+        Returns
+        -------
+        equals : bool
+            True if the keys are equal. False otherwise.
         """
         if not isinstance(other, Key):
             return False
@@ -1145,7 +1204,7 @@ class Piece:
     A single musical piece, which can be from score, midi, or audio.
     """
 
-    def __init__(self, data_type: PieceType):
+    def __init__(self, data_type: PieceType, name: str = None):
         """
         Create a new musical Piece object of the given data type.
 
@@ -1153,8 +1212,11 @@ class Piece:
         ----------
         data_type : PieceType
             The data type of the piece.
+        name : str
+            The name of the piece, an optional identifier.
         """
         self.DATA_TYPE = data_type
+        self.name = name
 
     def get_inputs(self) -> List[Note]:
         """
@@ -1216,7 +1278,7 @@ class Piece:
         chord_change_indices = self.get_chord_change_indices()
 
         start_index = bisect.bisect_left(chord_change_indices, start)
-        if chord_change_indices[start_index] != start:
+        if start_index == len(chord_change_indices) or chord_change_indices[start_index] != start:
             # Subtract 1 to get end of partial chord if exact match is not found
             start_index -= 1
 
@@ -1278,6 +1340,18 @@ class Piece:
         """
         raise NotImplementedError
 
+    def get_key_change_input_indices(self) -> List[int]:
+        """
+        Get a List of the indexes (into the input list) at which there are key changes.
+
+        Returns
+        -------
+        key_change_indices : List[int]
+            The indices (into the input list) at which there is a key change.
+        """
+        chord_changes = self.get_chord_change_indices()
+        return [chord_changes[i] for i in self.get_key_change_indices()]
+
     def get_keys(self) -> List[Key]:
         """
         Get a List of the keys in this piece.
@@ -1302,6 +1376,7 @@ class ScorePiece(Piece):
         chords_df: pd.DataFrame,
         measures_df: pd.DataFrame,
         piece_dict: Dict = None,
+        name: str = None,
     ):
         """
         Create a ScorePiece object from the given 3 pandas DataFrames.
@@ -1316,8 +1391,11 @@ class ScorePiece(Piece):
             A DataFrame containing information about the measures in the piece.
         piece_dict : Dict
             An optional dict, to load data from instead of calculating everything from the dfs.
+            If given, only measures_df must also be given. The rest can be None.
+        name : str
+            A string identifier for this piece.
         """
-        super().__init__(PieceType.SCORE)
+        super().__init__(PieceType.SCORE, name=name)
         self.measures_df = measures_df
 
         if piece_dict is None:

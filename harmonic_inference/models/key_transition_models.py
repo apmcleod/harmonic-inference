@@ -1,14 +1,17 @@
 """Models that output the probability of a key change occurring on a given input."""
 from typing import Tuple
 
-import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 import torch.nn.functional as F
+from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
+import pytorch_lightning as pl
 from harmonic_inference.data.data_types import PitchType
+from harmonic_inference.data.datasets import KeyTransitionDataset
 from harmonic_inference.data.piece import Chord
 
 
@@ -16,6 +19,7 @@ class KeyTransitionModel(pl.LightningModule):
     """
     The base class for all Key Transition Models which model when a key change will occur.
     """
+
     def __init__(self, input_type: PitchType, learning_rate: float):
         """
         Create a new base model.
@@ -33,12 +37,12 @@ class KeyTransitionModel(pl.LightningModule):
         self.lr = learning_rate
 
     def get_data_from_batch(self, batch):
-        inputs = batch['inputs'].float()
-        input_lengths = batch['input_lengths']
+        inputs = batch["inputs"].float()
+        input_lengths = batch["input_lengths"]
         max_length = max(input_lengths)
         inputs = inputs[:, :max_length]
 
-        targets = batch['targets'].float()[:, :max_length]
+        targets = batch["targets"].float()[:, :max_length]
 
         mask = (inputs.sum(axis=2) > 0).bool()
 
@@ -55,9 +59,8 @@ class KeyTransitionModel(pl.LightningModule):
 
         loss = F.binary_cross_entropy(outputs, targets)
 
-        result = pl.TrainResult(loss)
-        result.log('train_loss', loss, on_epoch=True)
-        return result
+        self.log("train_loss", loss)
+        return loss
 
     def validation_step(self, batch, batch_idx):
         inputs, input_lengths, targets, mask = self.get_data_from_batch(batch)
@@ -72,32 +75,59 @@ class KeyTransitionModel(pl.LightningModule):
 
         acc = 100 * (outputs.round().long() == targets).sum().float() / len(outputs)
 
-        result = pl.EvalResult(checkpoint_on=loss, early_stop_on=loss)
-        result.log('val_loss', loss)
-        result.log('val_acc', acc)
-        return result
+        self.log("val_loss", loss)
+        self.log("val_acc", acc)
+
+    def evaluate(self, dataset: KeyTransitionDataset):
+        dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
+
+        total = 0
+        total_acc = 0
+        total_loss = 0
+
+        for batch in tqdm(dl, desc="Evaluating KTM"):
+            inputs, input_lengths, targets, mask = self.get_data_from_batch(batch)
+
+            outputs, _ = self(inputs, input_lengths)
+
+            flat_mask = mask.reshape(-1)
+            outputs = outputs.reshape(-1)[flat_mask]
+            targets = targets.reshape(-1)[flat_mask]
+
+            batch_count = len(outputs)
+            loss = F.binary_cross_entropy(outputs, targets)
+            acc = 100 * (outputs.round().long() == targets).sum().float() / len(outputs)
+
+            total += batch_count
+            total_acc += acc * batch_count
+            total_loss += loss * batch_count
+
+        return {
+            "acc": (total_acc / total).item(),
+            "loss": (total_loss / total).item(),
+        }
 
     def init_hidden(self, batch_size: int):
         # Subclasses should implement this
         raise NotImplementedError()
 
     def run_one_step(self, batch):
-        inputs = batch['inputs'].float()
+        inputs = batch["inputs"].float()
         hidden = (
-            torch.transpose(batch['hidden_states'][0], 0, 1),
-            torch.transpose(batch['hidden_states'][1], 0, 1),
+            torch.transpose(batch["hidden_states"][0], 0, 1),
+            torch.transpose(batch["hidden_states"][1], 0, 1),
         )
 
         return self(inputs, torch.ones(len(inputs)), hidden=hidden)
 
     def configure_optimizers(self):
-        return torch.optim.Adam(
-            self.parameters(),
-            lr=self.lr,
-            betas=(0.9, 0.999),
-            eps=1e-08,
-            weight_decay=0.001
+        optimizer = torch.optim.Adam(
+            self.parameters(), lr=self.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.001
         )
+
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5)
+
+        return [optimizer], [{"scheduler": scheduler, "monitor": "val_loss"}]
 
 
 class SimpleKeyTransitionModel(KeyTransitionModel):
@@ -109,6 +139,7 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
         4. Dropout
         5. Linear layer
     """
+
     def __init__(
         self,
         input_type: PitchType,
@@ -148,6 +179,7 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
             one_hot=False,
             relative=True,
             use_inversions=True,
+            pad=True,
         )
 
         self.embed_dim = embed_dim
@@ -161,7 +193,7 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
             self.lstm_hidden_dim,
             num_layers=self.lstm_layers,
             bidirectional=False,
-            batch_first=True
+            batch_first=True,
         )
 
         # Linear layers post-LSTM
@@ -182,7 +214,7 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
         """
         return (
             Variable(torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim)),
-            Variable(torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim))
+            Variable(torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim)),
         )
 
     def forward(self, inputs, lengths, hidden=None):

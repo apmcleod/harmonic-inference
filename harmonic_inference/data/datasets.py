@@ -1,22 +1,23 @@
 """Module containing datasets for the various models."""
-from typing import List, Iterable, Union, Tuple, Callable, Dict
-from pathlib import Path
 import logging
 import shutil
+from pathlib import Path
+from typing import Callable, Dict, Iterable, List, Tuple, Union
 
-from tqdm import tqdm
 import numpy as np
 import pandas as pd
-import h5py
 from torch.utils.data import Dataset
+from tqdm import tqdm
 
-from harmonic_inference.data.piece import Piece, ScorePiece, Key
+import h5py
+from harmonic_inference.data.piece import Key, Piece, ScorePiece
 
 
 class HarmonicDataset(Dataset):
     """
     The base dataset that all model-specific dataset objects will inherit from.
     """
+
     def __init__(self, transform: Callable = None):
         """
         Create a new base dataset.
@@ -41,8 +42,8 @@ class HarmonicDataset(Dataset):
             The number of data points in this dataset.
         """
         if not self.in_ram:
-            with h5py.File(self.h5_path, 'r') as h5_file:
-                return len(h5_file['inputs'])
+            with h5py.File(self.h5_path, "r") as h5_file:
+                return len(h5_file["inputs"])
         return len(self.inputs)
 
     def __getitem__(self, item) -> Dict:
@@ -64,7 +65,7 @@ class HarmonicDataset(Dataset):
         """
         if not self.in_ram:
             assert self.h5_path is not None, "Data must be either in ram or in an h5_file."
-            with h5py.File(self.h5_path, 'r') as h5_file:
+            with h5py.File(self.h5_path, "r") as h5_file:
                 data = {
                     key: h5_file[key][item]
                     for key in ["inputs", "targets", "input_lengths", "target_lengths"]
@@ -85,7 +86,7 @@ class HarmonicDataset(Dataset):
                 if not hasattr(self, "max_input_length"):
                     self.max_input_length = max(self.input_lengths)
                 padded_input = np.zeros(([self.max_input_length] + list(data["inputs"][0].shape)))
-                padded_input[:len(data["inputs"])] = data["inputs"]
+                padded_input[: len(data["inputs"])] = data["inputs"]
                 data["inputs"] = padded_input
                 data["input_lengths"] = self.input_lengths[item]
 
@@ -95,7 +96,7 @@ class HarmonicDataset(Dataset):
                 padded_target = np.zeros(
                     ([self.max_target_length] + list(data["targets"][0].shape))
                 )
-                padded_target[:len(data["targets"])] = data["targets"]
+                padded_target[: len(data["targets"])] = data["targets"]
                 data["targets"] = padded_target
                 data["target_lengths"] = self.target_lengths[item]
 
@@ -161,7 +162,7 @@ class HarmonicDataset(Dataset):
                 )
             return
 
-        h5_file = h5py.File(h5_path, 'w')
+        h5_file = h5py.File(h5_path, "w")
 
         keys = ["inputs", "targets", "input_lengths", "target_lengths"]
         for key in keys:
@@ -178,16 +179,15 @@ class ChordTransitionDataset(HarmonicDataset):
 
     Each input is the sequence of input vectors of a piece.
 
-    Each target is a list of the indexes at which there is a chord change in that list of input
-    vectors.
+    Each target is a list of 0 (no change), 1 (change), and -100 (do not measure).
     """
+
     train_batch_size = 8
     valid_batch_size = 64
     chunk_size = 64
 
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
-        self.targets = [piece.get_chord_change_indices() for piece in pieces]
         self.inputs = [
             np.vstack(
                 [
@@ -198,10 +198,18 @@ class ChordTransitionDataset(HarmonicDataset):
                         list(piece.get_duration_cache()),
                     )
                 ]
-            ) for piece in pieces
+            )
+            for piece in pieces
         ]
-        self.target_lengths = np.array([len(target) for target in self.targets])
+
+        self.targets = [np.zeros(len(piece_input), dtype=int) for piece_input in self.inputs]
+        for piece, target in zip(pieces, self.targets):
+            target[piece.get_chord_change_indices()] = 1
+            target[0] = -100
+            target[np.roll(piece.get_duration_cache() == 0, 1)] = -100
+
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
+        self.target_lengths = np.array([len(target) for target in self.targets])
 
 
 class ChordClassificationDataset(HarmonicDataset):
@@ -213,6 +221,7 @@ class ChordClassificationDataset(HarmonicDataset):
 
     The targets are the one_hot indexes of each of those chords.
     """
+
     train_batch_size = 256
     valid_batch_size = 512
     chunk_size = 1024
@@ -238,11 +247,13 @@ class ChordClassificationDataset(HarmonicDataset):
         if dummy_targets:
             self.targets = np.zeros(len(self.inputs))
         else:
-            self.targets = np.array([
-                chord.get_one_hot_index(relative=False, use_inversion=True)
-                for piece in pieces
-                for chord in piece.get_chords()
-            ])
+            self.targets = np.array(
+                [
+                    chord.get_one_hot_index(relative=False, use_inversion=True, pad=False)
+                    for piece in pieces
+                    for chord in piece.get_chords()
+                ]
+            )
 
     def pad(self):
         self.inputs, self.input_lengths = pad_array(self.inputs)
@@ -263,6 +274,7 @@ class ChordSequenceDataset(HarmonicDataset):
     should not be performed on targets that lie on a key change, and targets should
     be shifted backwards by 1 (such that the target of each chord is the following chord).
     """
+
     train_batch_size = 32
     valid_batch_size = 64
     chunk_size = 256
@@ -283,12 +295,9 @@ class ChordSequenceDataset(HarmonicDataset):
             )
 
             for prev_key, key, start, end in zip(
-                [None] + list(keys[:-1]),
-                keys,
-                key_changes,
-                list(key_changes[1:]) + [len(chords)]
+                [None] + list(keys[:-1]), keys, key_changes, list(key_changes[1:]) + [len(chords)]
             ):
-                chord_vectors = np.vstack([chord.to_vec() for chord in chords[start:end]])
+                chord_vectors = np.vstack([chord.to_vec(pad=False) for chord in chords[start:end]])
                 key_vectors = np.zeros((len(chord_vectors), key_vector_length))
                 if prev_key is not None:
                     key_vectors[0, :-1] = prev_key.get_key_change_vector(key)
@@ -300,7 +309,7 @@ class ChordSequenceDataset(HarmonicDataset):
             self.targets.append(
                 np.array(
                     [
-                        chord.get_one_hot_index(relative=True, use_inversion=True)
+                        chord.get_one_hot_index(relative=True, use_inversion=True, pad=False)
                         for chord in chords
                     ]
                 )
@@ -321,6 +330,7 @@ class KeyTransitionDataset(HarmonicDataset):
     The targets are 1 if the last chord is on a chord change, and 0 otherwise
     (if the last chord is the last chord of a piece).
     """
+
     train_batch_size = 128
     valid_batch_size = 512
     chunk_size = 1024
@@ -335,9 +345,7 @@ class KeyTransitionDataset(HarmonicDataset):
             key_changes = piece.get_key_change_indices()
 
             for key, start, end in zip(
-                piece.get_keys(),
-                key_changes,
-                list(key_changes[1:]) + [len(chords)]
+                piece.get_keys(), key_changes, list(key_changes[1:]) + [len(chords)]
             ):
                 target = 0
                 # If not the last chord, extend the input vector by 1 and set target to 1
@@ -347,10 +355,9 @@ class KeyTransitionDataset(HarmonicDataset):
                 self.targets.append(np.array([0] * (end - start - 1) + [target]))
 
                 self.inputs.append(
-                    np.vstack([
-                        chord.to_vec(relative_to=key)
-                        for chord in chords[start:end]
-                    ])
+                    np.vstack(
+                        [chord.to_vec(relative_to=key, pad=True) for chord in chords[start:end]]
+                    )
                 )
 
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
@@ -368,6 +375,7 @@ class KeySequenceDataset(HarmonicDataset):
     There is one target per input list: a one-hot index representing the key change (transposition
     and new mode of the new key).
     """
+
     train_batch_size = 256
     valid_batch_size = 512
     chunk_size = 512
@@ -383,16 +391,15 @@ class KeySequenceDataset(HarmonicDataset):
             keys = piece.get_keys()
 
             for key, next_key, start, end in zip(
-                keys[:-1],
-                keys[1:],
-                key_changes[:-1],
-                list(key_changes[1:])
+                keys[:-1], keys[1:], key_changes[:-1], list(key_changes[1:])
             ):
                 self.inputs.append(
-                    np.vstack([
-                        chord.to_vec(relative_to=key)
-                        for chord in chords[start:end + 1]
-                    ])
+                    np.vstack(
+                        [
+                            chord.to_vec(relative_to=key, pad=True)
+                            for chord in chords[start : end + 1]
+                        ]
+                    )
                 )
                 self.targets.append(key.get_key_change_one_hot_index(next_key))
 
@@ -403,9 +410,7 @@ class KeySequenceDataset(HarmonicDataset):
 
 
 def h5_to_dataset(
-    h5_path: Union[str, Path],
-    dataset_class: HarmonicDataset,
-    transform: Callable = None
+    h5_path: Union[str, Path], dataset_class: HarmonicDataset, transform: Callable = None
 ) -> HarmonicDataset:
     """
     Load a harmonic dataset object from an h5 file into the given HarmonicDataset subclass.
@@ -428,52 +433,50 @@ def h5_to_dataset(
     """
     dataset = dataset_class([], transform=transform)
 
-    with h5py.File(h5_path, 'r') as h5_file:
-        assert 'inputs' in h5_file
-        assert 'targets' in h5_file
+    with h5py.File(h5_path, "r") as h5_file:
+        assert "inputs" in h5_file
+        assert "targets" in h5_file
         dataset.h5_path = h5_path
         dataset.padded = False
         dataset.in_ram = False
         chunk_size = dataset.chunk_size
 
         try:
-            if 'input_lengths' in h5_file:
-                dataset.input_lengths = np.array(h5_file['input_lengths'])
+            if "input_lengths" in h5_file:
+                dataset.input_lengths = np.array(h5_file["input_lengths"])
                 dataset.inputs = []
                 for chunk_start in tqdm(
                     range(0, len(dataset.input_lengths), chunk_size),
                     desc=f"Loading input chunks from {h5_path}",
                 ):
-                    input_chunk = h5_file['inputs'][chunk_start:chunk_start + chunk_size]
-                    chunk_lengths = dataset.input_lengths[chunk_start:chunk_start + chunk_size]
+                    input_chunk = h5_file["inputs"][chunk_start : chunk_start + chunk_size]
+                    chunk_lengths = dataset.input_lengths[chunk_start : chunk_start + chunk_size]
                     dataset.inputs.extend(
                         [
                             np.array(item[:length], dtype=np.float16)
-                            for item, length
-                            in zip(input_chunk, chunk_lengths)
+                            for item, length in zip(input_chunk, chunk_lengths)
                         ]
                     )
             else:
-                dataset.inputs = np.array(h5_file['inputs'], dtype=np.float16)
+                dataset.inputs = np.array(h5_file["inputs"], dtype=np.float16)
 
-            if 'target_lengths' in h5_file:
-                dataset.target_lengths = np.array(h5_file['target_lengths'])
+            if "target_lengths" in h5_file:
+                dataset.target_lengths = np.array(h5_file["target_lengths"])
                 dataset.targets = []
                 for chunk_start in tqdm(
                     range(0, len(dataset.target_lengths), chunk_size),
                     desc=f"Loading target chunks from {h5_path}",
                 ):
-                    target_chunk = h5_file['targets'][chunk_start:chunk_start + chunk_size]
-                    chunk_lengths = dataset.target_lengths[chunk_start:chunk_start + chunk_size]
+                    target_chunk = h5_file["targets"][chunk_start : chunk_start + chunk_size]
+                    chunk_lengths = dataset.target_lengths[chunk_start : chunk_start + chunk_size]
                     dataset.targets.extend(
                         [
                             np.array(item[:length], dtype=np.float16)
-                            for item, length
-                            in zip(target_chunk, chunk_lengths)
+                            for item, length in zip(target_chunk, chunk_lengths)
                         ]
                     )
             else:
-                dataset.targets = np.array(h5_file['targets'], dtype=np.float16)
+                dataset.targets = np.array(h5_file["targets"], dtype=np.float16)
             dataset.in_ram = True
 
         except Exception:
@@ -512,7 +515,7 @@ def pad_array(array: List[np.array]) -> Tuple[np.array, np.array]:
 
     padded_array = np.zeros(full_array_size, dtype=np.float16)
     for index, item in enumerate(array):
-        padded_array[index, :len(item)] = item
+        padded_array[index, : len(item)] = item
 
     return padded_array, array_lengths
 
@@ -562,17 +565,17 @@ def get_split_file_ids_and_pieces(
     pieces = []
 
     for i in tqdm(files.index):
-        file_name = f'{files.loc[i].corpus_name}/{files.loc[i].file_name}'
+        file_name = f"{files.loc[i].corpus_name}/{files.loc[i].file_name}"
         logging.info(f"Parsing {file_name} (id {i})")
 
         dfs = [chords, measures, notes]
-        names = ['chords', 'measures', 'notes']
+        names = ["chords", "measures", "notes"]
         exists = [i in df.index.get_level_values(0) for df in dfs]
 
         if not all(exists):
             for exist, name in zip(exists, names):
                 if not exist:
-                    logging.warning(f'{name}_df does not contain {file_name} data (id {i}).')
+                    logging.warning(f"{name}_df does not contain {file_name} data (id {i}).")
             continue
 
         try:

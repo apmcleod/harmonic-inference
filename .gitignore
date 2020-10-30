@@ -10,3 +10,4 @@ results/**
 debug.py
 *.log
 harmonic_inference.egg-info/**
+.coverage

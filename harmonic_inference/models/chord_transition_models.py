@@ -1,14 +1,17 @@
 """Models that output the probability of a chord change occurring on a given input."""
 from typing import Tuple
 
-import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 import torch.nn.functional as F
+from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
+import pytorch_lightning as pl
 from harmonic_inference.data.data_types import PieceType, PitchType
+from harmonic_inference.data.datasets import ChordTransitionDataset
 from harmonic_inference.data.piece import Note
 
 
@@ -16,6 +19,7 @@ class ChordTransitionModel(pl.LightningModule):
     """
     The base class for all Chord Transition Models which model when a chord change will occur.
     """
+
     def __init__(self, input_type: PieceType, learning_rate: float):
         """
         Create a new base model.
@@ -32,17 +36,15 @@ class ChordTransitionModel(pl.LightningModule):
         self.lr = learning_rate
 
     def get_data_from_batch(self, batch):
-        inputs = batch['inputs'].float()
-        input_lengths = batch['input_lengths']
-        inputs = inputs[:, :max(input_lengths)]
+        inputs = batch["inputs"].float()
+        input_lengths = batch["input_lengths"]
+        inputs = inputs[:, : max(input_lengths)]
 
-        target_indexes = batch['targets'].long()
-        target_lengths = batch['target_lengths'].long()
-        targets = torch.zeros(inputs.shape[:2]).float()
-        for i, (index, length) in enumerate(zip(target_indexes, target_lengths)):
-            targets[i, index[:length]] = 1.0
+        targets = batch["targets"].long()
+        target_lengths = batch["target_lengths"].long()
+        targets = targets[:, : max(target_lengths)]
 
-        mask = (inputs.sum(axis=2) > 0).bool()
+        mask = ((inputs.sum(axis=2) > 0) & (targets != -100)).bool()
 
         return inputs, input_lengths, targets, mask
 
@@ -60,11 +62,10 @@ class ChordTransitionModel(pl.LightningModule):
         outputs = outputs.reshape(-1)[flat_mask]
         targets = targets.reshape(-1)[flat_mask]
 
-        loss = F.binary_cross_entropy(outputs, targets)
+        loss = F.binary_cross_entropy(outputs, targets.float())
 
-        result = pl.TrainResult(loss)
-        result.log('train_loss', loss, on_epoch=True)
-        return result
+        self.log("train_loss", loss)
+        return loss
 
     def validation_step(self, batch, batch_idx):
         inputs, input_lengths, targets, mask = self.get_data_from_batch(batch)
@@ -75,22 +76,49 @@ class ChordTransitionModel(pl.LightningModule):
         outputs = outputs.reshape(-1)[flat_mask]
         targets = targets.reshape(-1)[flat_mask]
 
-        loss = F.binary_cross_entropy(outputs, targets)
+        loss = F.binary_cross_entropy(outputs, targets.float())
         acc = 100 * (outputs.round() == targets).sum().float() / len(outputs)
 
-        result = pl.EvalResult(checkpoint_on=loss, early_stop_on=loss)
-        result.log('val_loss', loss)
-        result.log('val_acc', acc)
-        return result
+        self.log("val_loss", loss)
+        self.log("val_acc", acc)
+
+    def evaluate(self, dataset: ChordTransitionDataset):
+        dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
+
+        total = 0
+        total_loss = 0
+        total_acc = 0
+
+        for batch in tqdm(dl, desc="Evaluating CTM"):
+            inputs, input_lengths, targets, mask = self.get_data_from_batch(batch)
+
+            outputs = self(inputs, input_lengths)
+
+            flat_mask = mask.reshape(-1)
+            outputs = outputs.reshape(-1)[flat_mask]
+            targets = targets.reshape(-1)[flat_mask]
+
+            batch_count = len(outputs)
+            loss = F.binary_cross_entropy(outputs, targets.float())
+            acc = 100 * (outputs.round() == targets).sum().float() / len(outputs)
+
+            total += batch_count
+            total_loss += loss * batch_count
+            total_acc += acc * batch_count
+
+        return {
+            "acc": (total_acc / total).item(),
+            "loss": (total_loss / total).item(),
+        }
 
     def configure_optimizers(self):
-        return torch.optim.Adam(
-            self.parameters(),
-            lr=self.lr,
-            betas=(0.9, 0.999),
-            eps=1e-08,
-            weight_decay=0.001
+        optimizer = torch.optim.Adam(
+            self.parameters(), lr=self.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.001
         )
+
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5)
+
+        return [optimizer], [{"scheduler": scheduler, "monitor": "val_loss"}]
 
 
 class SimpleChordTransitionModel(ChordTransitionModel):
@@ -102,6 +130,7 @@ class SimpleChordTransitionModel(ChordTransitionModel):
         4. Dropout
         5. Linear layer
     """
+
     def __init__(
         self,
         input_type: PieceType,
@@ -151,7 +180,7 @@ class SimpleChordTransitionModel(ChordTransitionModel):
             self.lstm_hidden_dim,
             num_layers=self.lstm_layers,
             bidirectional=True,
-            batch_first=True
+            batch_first=True,
         )
 
         # Linear layers post-LSTM
@@ -172,7 +201,7 @@ class SimpleChordTransitionModel(ChordTransitionModel):
         """
         return (
             Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden_dim)),
-            Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden_dim))
+            Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden_dim)),
         )
 
     def forward(self, inputs, lengths):

@@ -1,15 +1,21 @@
 """Utility functions for getting harmonic and pitch information from the corpus DataFrames."""
-from typing import List, Tuple
 import itertools
+from typing import List, Tuple
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
-from harmonic_inference.data.data_types import KeyMode, PitchType, ChordType
 import harmonic_inference.utils.harmonic_constants as hc
+from harmonic_inference.data.data_types import ChordType, KeyMode, PitchType
 
 
-def get_chord_label_list(pitch_type: PitchType, use_inversions=True) -> List[str]:
+def get_chord_label_list(
+    pitch_type: PitchType,
+    use_inversions: bool = True,
+    relative: bool = False,
+    relative_to: int = None,
+    pad: bool = False,
+) -> List[str]:
     """
     Get the human-readable label of every chord label.
 
@@ -19,21 +25,53 @@ def get_chord_label_list(pitch_type: PitchType, use_inversions=True) -> List[str
         The pitch type representation being used.
     use_inversions : bool
         True to count the different inversions of each chord as different chords.
+    relative : bool
+        True to get relative chord labels. False otherwise.
+    relative_to : int
+        The pitch to be relative to, if any.
+    pad : bool
+        True to add padding around possible pitches, if relative is True.
 
     Returns
     -------
     labels : List[String]
         A List, where labels[0] is the String interpretation of the one-hot chord label 0, etc.
     """
-    roots = [get_pitch_string(i, pitch_type) for i in range(hc.NUM_PITCHES[pitch_type])]
+    if relative:
+        if pitch_type == PitchType.TPC:
+            minimum = hc.MIN_RELATIVE_TPC
+            maximum = hc.MAX_RELATIVE_TPC
+            if pad:
+                minimum -= hc.RELATIVE_TPC_EXTRA
+                maximum += hc.RELATIVE_TPC_EXTRA
+
+            int_roots = list(range(minimum, maximum))
+
+        else:
+            int_roots = list(range(0, hc.NUM_PITCHES[pitch_type]))
+
+        if relative_to is None:
+            roots = [str(root) for root in int_roots]
+        else:
+            roots = []
+            for root in int_roots:
+                try:
+                    roots.append(
+                        get_pitch_string(
+                            transpose_pitch(root, relative_to, pitch_type),
+                            pitch_type,
+                        )
+                    )
+                except ValueError:
+                    roots.append(str(root))
+
+    else:
+        roots = [get_pitch_string(i, pitch_type) for i in range(hc.NUM_PITCHES[pitch_type])]
 
     return [
         f"{root}:{get_chord_string(chord_type)}{'' if inv is None else f', inv:{inv}'}"
         for chord_type, root in itertools.product(ChordType, roots)
-        for inv in (
-            range(get_chord_inversion_count(chord_type))
-            if use_inversions else [None]
-        )
+        for inv in (range(get_chord_inversion_count(chord_type)) if use_inversions else [None])
     ]
 
 
@@ -44,6 +82,7 @@ def get_chord_one_hot_index(
     inversion: int = 0,
     use_inversion: bool = True,
     relative: bool = False,
+    pad: bool = False,
 ) -> int:
     """
     Get the one hot index of a given chord.
@@ -63,32 +102,34 @@ def get_chord_one_hot_index(
         True to take the chord's inversion into acccount.
     relative : bool
         True to get the chord's relative one-hot index. False for absolute.
+    pad : bool
+        If True, pitch_type is TPC, and relative is True, add extra pitches to the number
+        of possible chord roots.
 
     Returns
     -------
     index : int
         The index of the given chord's label in the list of all possible chord labels.
     """
-    num_pitches = (
-        hc.NUM_PITCHES[pitch_type]
-        if pitch_type == PitchType.MIDI or not relative else
-        hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
-    )
+    if pitch_type == PitchType.MIDI or not relative:
+        num_pitches = hc.NUM_PITCHES[pitch_type]
+    else:
+        num_pitches = hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
+        if pad:
+            num_pitches += 2 * hc.RELATIVE_TPC_EXTRA
 
     if root_pitch < 0 or root_pitch >= num_pitches:
         raise ValueError("Given root is outside of valid range")
     if use_inversion:
         if inversion < 0 or inversion >= get_chord_inversion_count(chord_type):
-            raise ValueError(
-                f"inversion {inversion} outside of valid range for chord {chord_type}"
-            )
+            raise ValueError(f"inversion {inversion} outside of valid range for chord {chord_type}")
         chord_inversions = np.array(
             [get_chord_inversion_count(chord) for chord in ChordType], dtype=int
         )
     else:
         chord_inversions = np.ones(len(ChordType), dtype=int)
 
-    index = np.sum(num_pitches * chord_inversions[:chord_type.value])
+    index = np.sum(num_pitches * chord_inversions[: chord_type.value])
     index += chord_inversions[chord_type.value] * root_pitch
 
     if use_inversion:
@@ -97,7 +138,11 @@ def get_chord_one_hot_index(
     return index
 
 
-def get_key_label_list(pitch_type: PitchType) -> List[str]:
+def get_key_label_list(
+    pitch_type: PitchType,
+    relative: bool = False,
+    relative_to: int = None,
+) -> List[str]:
     """
     Get the list of all key labels, in human-readable format.
 
@@ -105,16 +150,46 @@ def get_key_label_list(pitch_type: PitchType) -> List[str]:
     ----------
     pitch_type : PitchType
         The pitch type of the tonic labels.
+    relative : bool
+        True to output relative key labels. False for absolute.
+    relative_to : int
+        The pitch to be relative to, if any.
 
     Returns
     -------
     key_labels : List[str]
         A List where key_labels[i] is the human-readable label for key index i.
     """
-    tonics = [get_pitch_string(i, pitch_type) for i in range(hc.NUM_PITCHES[pitch_type])]
+    if relative:
+        if pitch_type == PitchType.TPC:
+            minimum = hc.MIN_KEY_CHANGE_INTERVAL_TPC
+            maximum = hc.MAX_KEY_CHANGE_INTERVAL_TPC
+
+            int_tonics = list(range(minimum, maximum))
+
+        else:
+            int_tonics = list(range(0, hc.NUM_PITCHES[pitch_type]))
+
+        if relative_to is None:
+            tonics = [str(tonic) for tonic in int_tonics]
+        else:
+            tonics = []
+            for tonic in int_tonics:
+                try:
+                    tonics.append(
+                        get_pitch_string(
+                            transpose_pitch(tonic, relative_to, pitch_type),
+                            pitch_type,
+                        )
+                    )
+                except ValueError:
+                    tonics.append(str(tonic))
+
+    else:
+        tonics = [get_pitch_string(i, pitch_type) for i in range(hc.NUM_PITCHES[pitch_type])]
 
     return [
-        f'{tonic.lower() if key_mode == KeyMode.MINOR else tonic}:{key_mode}'
+        f"{tonic.lower() if key_mode == KeyMode.MINOR else tonic}:{key_mode}"
         for key_mode, tonic in itertools.product(KeyMode, tonics)
     ]
 
@@ -189,7 +264,7 @@ def absolute_to_relative(
     key_tonic: int,
     pitch_type: PitchType,
     is_key_change: bool,
-    use_extra: bool = False,
+    pad: bool = False,
 ) -> int:
     """
     Convert an absolute pitch to one relative to the given tonic.
@@ -207,7 +282,7 @@ def absolute_to_relative(
         a relative chord pitch. For key changes with PitchType.TPC, we adjust so that
         hc.MIN_KEY_CHANGE_INTERVAL_TPC is set to 0. For chord pitches, hc.MIN_RELATIVE_TPC
         is used instead.
-    use_extra : bool
+    pad : bool
         If True or is_key_change is True, use the exact bounds. If False, and is_key_change
         is False, add hc.RELATIVE_TPC_EXTRA to the upper and lower bounds.
 
@@ -228,7 +303,7 @@ def absolute_to_relative(
     minimum = hc.MIN_KEY_CHANGE_INTERVAL_TPC if is_key_change else hc.MIN_RELATIVE_TPC
     maximum = hc.MAX_KEY_CHANGE_INTERVAL_TPC if is_key_change else hc.MAX_RELATIVE_TPC
 
-    if use_extra and not is_key_change:
+    if pad and not is_key_change:
         minimum -= hc.RELATIVE_TPC_EXTRA
         maximum += hc.RELATIVE_TPC_EXTRA
 
@@ -262,28 +337,29 @@ def get_accidental_adjustment(string: str, in_front: bool = True) -> Tuple[int, 
     adjustment = 0
 
     if in_front:
-        while string[0] == 'b' and len(string) > 1:
+        while string[0] == "b" and len(string) > 1:
             string = string[1:]
             adjustment -= 1
 
-        while string[0] == '#':
+        while string[0] == "#":
             string = string[1:]
             adjustment += 1
 
     else:
-        while string[-1] == 'b' and len(string) > 1:
+        while string[-1] == "b" and len(string) > 1:
             string = string[:-1]
             adjustment -= 1
 
-        while string[-1] == '#':
+        while string[-1] == "#":
             string = string[:-1]
             adjustment += 1
 
     return adjustment, string
 
 
-def transpose_chord_vector(chord_vector: List[int], interval: int,
-                           pitch_type: PitchType) -> List[int]:
+def transpose_chord_vector(
+    chord_vector: List[int], interval: int, pitch_type: PitchType
+) -> List[int]:
     """
     Transpose a chord vector by a given interval.
 
@@ -387,8 +463,9 @@ def tpc_interval_to_midi_interval(tpc_interval: int) -> int:
     return (hc.TPC_INTERVAL_SEMITONES * tpc_interval) % hc.NUM_PITCHES[PitchType.MIDI]
 
 
-def get_interval_from_scale_degree(scale_degree: str, accidentals_prefixed: bool,
-                                   mode: KeyMode, pitch_type: PitchType) -> int:
+def get_interval_from_scale_degree(
+    scale_degree: str, accidentals_prefixed: bool, mode: KeyMode, pitch_type: PitchType
+) -> int:
     """
     Get an interval from the string of a scale degree, prefixed or suffixed with flats or sharps.
 
@@ -411,8 +488,9 @@ def get_interval_from_scale_degree(scale_degree: str, accidentals_prefixed: bool
     interval : int
         The interval above the root note the given numeral lies.
     """
-    accidental_adjustment, scale_degree = get_accidental_adjustment(scale_degree,
-                                                                    in_front=accidentals_prefixed)
+    accidental_adjustment, scale_degree = get_accidental_adjustment(
+        scale_degree, in_front=accidentals_prefixed
+    )
 
     interval = hc.SCALE_INTERVALS[mode][pitch_type][hc.SCALE_DEGREE_TO_NUMBER[scale_degree]]
     interval += accidental_adjustment * hc.ACCIDENTAL_ADJUSTMENT[pitch_type]
@@ -447,8 +525,9 @@ def transpose_pitch(pitch: int, interval: int, pitch_type: PitchType) -> int:
     pitch = pitch + interval
 
     if pitch < 0 or pitch >= hc.NUM_PITCHES[PitchType.TPC]:
-        raise ValueError(f"pitch_type is TPC but transposed pitch {pitch} lies outside of TPC "
-                         "range.")
+        raise ValueError(
+            f"pitch_type is TPC but transposed pitch {pitch} lies outside of TPC " "range."
+        )
 
     return pitch
 
@@ -573,7 +652,7 @@ def get_pitch_string(pitch: int, pitch_type: PitchType) -> str:
         return hc.PITCH_TO_STRING[PitchType.MIDI][pitch % hc.NUM_PITCHES[PitchType.MIDI]]
 
     accidental = 0
-    accidental_string = '#'
+    accidental_string = "#"
     while pitch < min(hc.PITCH_TO_STRING[PitchType.TPC].keys()):
         pitch += hc.TPC_NATURAL_PITCHES
         accidental -= 1
@@ -582,7 +661,7 @@ def get_pitch_string(pitch: int, pitch_type: PitchType) -> str:
         accidental += 1
 
     if accidental < 0:
-        accidental_string = 'b'
+        accidental_string = "b"
         accidental = -accidental
 
     return hc.PITCH_TO_STRING[PitchType.TPC][pitch] + (accidental_string * accidental)
