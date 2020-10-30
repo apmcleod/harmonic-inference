@@ -335,7 +335,7 @@ class HarmonicInferenceModel:
 
         # Get chord change probabilities (with CTM)
         logging.info("Getting chord change probabilities")
-        change_probs = self.get_chord_change_probs(piece)
+        change_probs = self.get_chord_change_probs()
 
         # Debug log chord change probabilities
         if logging.getLogger().isEnabledFor(logging.DEBUG):
@@ -347,7 +347,7 @@ class HarmonicInferenceModel:
 
         # Calculate chord priors for each possible chord range (batched, with CCM)
         logging.info("Classifying chords")
-        chord_classifications = self.get_chord_classifications(piece, chord_ranges)
+        chord_classifications = self.get_chord_classifications(chord_ranges)
 
         # Debug log chord classifications
         if logging.getLogger().isEnabledFor(logging.DEBUG):
@@ -355,32 +355,22 @@ class HarmonicInferenceModel:
 
         # Iterative beam search for other modules
         logging.info("Performing iterative beam search")
-        state = self.beam_search(
-            piece,
-            chord_ranges,
-            range_log_probs,
-            chord_classifications,
-        )
+        state = self.beam_search(chord_ranges, range_log_probs, chord_classifications)
 
         self.current_piece = None
 
         return state
 
-    def get_chord_change_probs(self, piece: Piece) -> List[float]:
+    def get_chord_change_probs(self) -> List[float]:
         """
-        Get the Chord Transition Model's outputs for a given piece.
-
-        Parameters
-        ----------
-        piece : Piece
-            A Piece whose CTM outputs to return.
+        Get the Chord Transition Model's outputs for the current piece.
 
         Returns
         -------
         change_probs : List[float]
             A List of the chord change probability on each input of the given Piece.
         """
-        ctm_dataset = ds.ChordTransitionDataset([piece])
+        ctm_dataset = ds.ChordTransitionDataset([self.current_piece])
         ctm_loader = DataLoader(
             ctm_dataset,
             batch_size=ds.ChordTransitionDataset.valid_batch_size,
@@ -483,18 +473,12 @@ class HarmonicInferenceModel:
 
         return chord_ranges, range_log_probs
 
-    def get_chord_classifications(
-        self,
-        piece: Piece,
-        ranges: List[Tuple[int, int]],
-    ) -> List[np.array]:
+    def get_chord_classifications(self, ranges: List[Tuple[int, int]]) -> List[np.array]:
         """
         Generate a chord type prior for each potential chord (from ranges).
 
         Parameters
         ----------
-        piece : Piece
-            The Piece for which we want to classify the chords.
         ranges : List[Tuple[int, int]]
             A List of all possible chord ranges as (start, end) for the Piece.
 
@@ -503,7 +487,11 @@ class HarmonicInferenceModel:
         classifications : List[np.array]
             The prior log-probability over all chord symbols for each given range.
         """
-        ccm_dataset = ds.ChordClassificationDataset([piece], ranges=[ranges], dummy_targets=True)
+        ccm_dataset = ds.ChordClassificationDataset(
+            [self.current_piece],
+            ranges=[ranges],
+            dummy_targets=True,
+        )
         ccm_loader = DataLoader(
             ccm_dataset,
             batch_size=ds.ChordClassificationDataset.valid_batch_size,
@@ -521,7 +509,6 @@ class HarmonicInferenceModel:
 
     def beam_search(
         self,
-        piece: Piece,
         chord_ranges: List[Tuple[int, int]],
         range_log_probs: List[float],
         chord_classifications: List[np.array],
@@ -531,8 +518,6 @@ class HarmonicInferenceModel:
 
         Parameters
         ----------
-        piece : Piece
-            The Piece to beam search over.
         chord_ranges : List[Tuple[int, int]]
             A List of possible chord ranges, as (start, end) tuples.
         range_log_probs : List[float]
@@ -581,7 +566,9 @@ class HarmonicInferenceModel:
             )
 
         beam_class = Beam if self.hash_length is None else HashedBeam
-        all_states = [beam_class(self.beam_size) for _ in range(len(piece.get_inputs()) + 1)]
+        all_states = [
+            beam_class(self.beam_size) for _ in range(len(self.current_piece.get_inputs()) + 1)
+        ]
 
         # Add initial states
         for key in range(len(hu.get_key_label_list(self.KEY_OUTPUT_TYPE))):

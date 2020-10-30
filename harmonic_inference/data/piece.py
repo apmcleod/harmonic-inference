@@ -1278,7 +1278,7 @@ class Piece:
         chord_change_indices = self.get_chord_change_indices()
 
         start_index = bisect.bisect_left(chord_change_indices, start)
-        if chord_change_indices[start_index] != start:
+        if start_index == len(chord_change_indices) or chord_change_indices[start_index] != start:
             # Subtract 1 to get end of partial chord if exact match is not found
             start_index -= 1
 
