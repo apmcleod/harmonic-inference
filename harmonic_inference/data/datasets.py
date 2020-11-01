@@ -4,12 +4,12 @@ import shutil
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Tuple, Union
 
+import h5py
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-import h5py
 from harmonic_inference.data.piece import Key, Piece, ScorePiece
 
 
@@ -231,16 +231,23 @@ class ChordClassificationDataset(HarmonicDataset):
         pieces: List[Piece],
         transform: Callable = None,
         ranges: List[List[Tuple[int, int]]] = None,
+        change_indices: List[int] = None,
         dummy_targets: bool = False,
     ):
         super().__init__(transform=transform)
 
         if ranges is None:
             ranges = np.full(len(pieces), None)
+        if change_indices is None:
+            change_indices = np.full(len(pieces), None)
 
         self.inputs = []
-        for piece, piece_ranges in zip(pieces, ranges):
-            self.inputs.extend(piece.get_chord_note_inputs(window=2, ranges=piece_ranges))
+        for piece, piece_ranges, piece_change_indices in zip(pieces, ranges, change_indices):
+            self.inputs.extend(
+                piece.get_chord_note_inputs(
+                    ranges=piece_ranges, change_indices=piece_change_indices
+                )
+            )
 
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
 

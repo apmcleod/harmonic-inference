@@ -1106,6 +1106,7 @@ def get_chord_note_input(
     chord_onset: Union[float, Tuple[int, Fraction]],
     chord_offset: Union[float, Tuple[int, Fraction]],
     chord_duration: Union[float, Fraction],
+    change_index: int,
     onset_index: int,
     offset_index: int,
     window: int,
@@ -1126,6 +1127,8 @@ def get_chord_note_input(
         The offset location of the chord.
     chord_duration : Union[float, Fraction]
         The duration of the chord.
+    change_index : int
+        The index of the note matching the onset time of the chord.
     onset_index : int
         The index of the first note of the chord.
     offset_index : int
@@ -1162,10 +1165,10 @@ def get_chord_note_input(
     else:
         note_onsets = []
         for note_index in range(first_note_index, last_note_index):
-            if note_index < onset_index:
-                note_onset = -np.sum(duration_cache[note_index:onset_index])
-            elif note_index > onset_index:
-                note_onset = np.sum(duration_cache[onset_index:note_index])
+            if note_index < change_index:
+                note_onset = -np.sum(duration_cache[note_index:change_index])
+            elif note_index > change_index:
+                note_onset = np.sum(duration_cache[change_index:note_index])
             else:
                 note_onset = Fraction(0)
             note_onsets.append(note_onset)
@@ -1327,6 +1330,7 @@ class Piece:
         self,
         window: int = 2,
         ranges: List[Tuple[int, int]] = None,
+        change_indices: List[int] = None,
     ) -> np.array:
         """
         Get a list of the note input vectors for each chord in this piece, using an optional
@@ -1341,6 +1345,8 @@ class Piece:
         ranges : List[Tuple[int, int]]
             A List of chord ranges to use to get the inputs, if not using the ground truth
             chord symbols themselves.
+        change_indices : List[int]
+            A List of the note whose onset is the onset of each chord range.
 
         Returns
         -------
@@ -1496,7 +1502,7 @@ class ScorePiece(Piece):
             # The note input ranges for each chord
             self.chord_ranges = [
                 (get_range_start(chord.onset, self.notes), end)
-                for chord, end in zip(self.chords, list(self.chord_changes) + [len(self.notes)])
+                for chord, end in zip(self.chords, list(self.chord_changes[1:]) + [len(self.notes)])
             ]
 
             key_cols = chords_df.loc[
@@ -1565,52 +1571,47 @@ class ScorePiece(Piece):
     def get_chords(self) -> List[Chord]:
         return self.chords
 
-    def get_chord_note_inputs(self, window: int = 2, ranges: List[Tuple[int, int]] = None):
+    def get_chord_note_inputs(
+        self,
+        window: int = 2,
+        ranges: List[Tuple[int, int]] = None,
+        change_indices: List[int] = None,
+    ):
         if ranges is None:
-            chord_note_inputs = [
+            ranges = self.get_chord_ranges()
+        if change_indices is None:
+            change_indices = self.get_chord_change_indices()
+
+        last_offset = self.chords[-1].offset
+        duration_cache = self.get_duration_cache()
+
+        chord_note_inputs = []
+        for (onset_index, offset_index), change_index in tqdm(
+            zip(ranges, change_indices),
+            desc="Generating chord classification inputs",
+            total=len(ranges),
+        ):
+            duration = np.sum(duration_cache[change_index:offset_index])
+            onset = self.notes[change_index].onset
+            try:
+                offset = self.notes[offset_index].onset
+            except IndexError:
+                offset = last_offset
+
+            chord_note_inputs.append(
                 get_chord_note_input(
                     self.notes,
                     self.measures_df,
-                    chord.onset,
-                    chord.offset,
-                    chord.duration,
+                    onset,
+                    offset,
+                    duration,
+                    change_index,
                     onset_index,
                     offset_index,
                     window,
-                    duration_cache=self.get_duration_cache(),
+                    duration_cache=duration_cache,
                 )
-                for chord, (onset_index, offset_index) in zip(self.chords, self.chord_ranges)
-            ]
-        else:
-            last_offset = self.chords[-1].offset
-            duration_cache = self.get_duration_cache()
-            durations = [np.sum(duration_cache[start:end]) for start, end in ranges]
-
-            chord_note_inputs = []
-            for duration, (onset_index, offset_index) in tqdm(
-                zip(durations, ranges),
-                desc="Generating chord classification inputs",
-                total=len(ranges),
-            ):
-                onset = self.notes[onset_index].onset
-                try:
-                    offset = self.notes[offset_index].onset
-                except IndexError:
-                    offset = last_offset
-
-                chord_note_inputs.append(
-                    get_chord_note_input(
-                        self.notes,
-                        self.measures_df,
-                        onset,
-                        offset,
-                        duration,
-                        onset_index,
-                        offset_index,
-                        window,
-                        duration_cache=duration_cache,
-                    )
-                )
+            )
 
         return chord_note_inputs
 

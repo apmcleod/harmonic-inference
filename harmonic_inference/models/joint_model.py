@@ -346,6 +346,7 @@ class HarmonicInferenceModel:
         chord_ranges, range_log_probs = self.get_chord_ranges(change_probs)
 
         # Convert range starting points to new starts based on the note offsets
+        chord_change_indices = [start for start, _ in chord_ranges]
         chord_ranges = [
             (get_range_start(piece.get_inputs()[start].onset, piece.get_inputs()), end)
             for start, end in chord_ranges
@@ -353,7 +354,7 @@ class HarmonicInferenceModel:
 
         # Calculate chord priors for each possible chord range (batched, with CCM)
         logging.info("Classifying chords")
-        chord_classifications = self.get_chord_classifications(chord_ranges)
+        chord_classifications = self.get_chord_classifications(chord_ranges, chord_change_indices)
 
         # Debug log chord classifications
         if logging.getLogger().isEnabledFor(logging.DEBUG):
@@ -479,7 +480,11 @@ class HarmonicInferenceModel:
 
         return chord_ranges, range_log_probs
 
-    def get_chord_classifications(self, ranges: List[Tuple[int, int]]) -> List[np.array]:
+    def get_chord_classifications(
+        self,
+        ranges: List[Tuple[int, int]],
+        change_indices: List[int],
+    ) -> List[np.array]:
         """
         Generate a chord type prior for each potential chord (from ranges).
 
@@ -487,6 +492,8 @@ class HarmonicInferenceModel:
         ----------
         ranges : List[Tuple[int, int]]
             A List of all possible chord ranges as (start, end) for the Piece.
+        change_indices : List[int]
+            The change index for each of the given ranges.
 
         Returns
         -------
@@ -496,6 +503,7 @@ class HarmonicInferenceModel:
         ccm_dataset = ds.ChordClassificationDataset(
             [self.current_piece],
             ranges=[ranges],
+            change_indices=[change_indices],
             dummy_targets=True,
         )
         ccm_loader = DataLoader(
