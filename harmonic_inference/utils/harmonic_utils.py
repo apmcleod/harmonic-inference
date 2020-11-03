@@ -498,6 +498,57 @@ def get_interval_from_scale_degree(
     return interval
 
 
+def get_scale_degree_from_interval(interval: int, mode: KeyMode, pitch_type: PitchType) -> str:
+    """
+    Get a scale degree from a TPC or MIDI interval.
+
+    Parameters
+    ----------
+    interval : int
+        The integer representation of an interval, relative to the key tonic.
+    mode : KeyMode
+        The mode of the current key.
+    pitch_type : PitchType
+        The pitch type of the given interval.
+
+    Returns
+    -------
+    scale_degree : str
+        The roman numeral of the scale degree of the given interval, pre-pended with accidentals.
+        For MIDI intervals, all accidentals will be sharps.
+    """
+    scale_intervals = hc.SCALE_INTERVALS[mode][pitch_type]
+    range_min = min(scale_intervals)
+    range_max = max(scale_intervals)
+
+    if pitch_type == PitchType.MIDI:
+        interval = interval % hc.NUM_PITCHES[PitchType.MIDI]
+
+        num_sharps = 0
+        while interval not in scale_intervals:
+            num_sharps += 1
+            interval = (interval - 1) % hc.NUM_PITCHES[PitchType.MIDI]
+
+        return "#" * num_sharps + hc.NUMBER_TO_SCALE_DEGREE[scale_intervals.index(interval)]
+
+    num_sharps = 0
+    num_flats = 0
+
+    while interval < range_min:
+        num_flats += 1
+        interval += hc.ACCIDENTAL_ADJUSTMENT[PitchType.TPC]
+
+    while interval > range_max:
+        num_sharps += 1
+        interval -= hc.ACCIDENTAL_ADJUSTMENT[PitchType.TPC]
+
+    return (
+        "#" * num_sharps
+        + "b" * num_flats
+        + hc.NUMBER_TO_SCALE_DEGREE[scale_intervals.index(interval)]
+    )
+
+
 def transpose_pitch(pitch: int, interval: int, pitch_type: PitchType) -> int:
     """
     Transpose the given pitch by the given interval.

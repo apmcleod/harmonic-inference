@@ -13,7 +13,13 @@ from tqdm import tqdm
 import harmonic_inference.utils.harmonic_constants as hc
 import harmonic_inference.utils.harmonic_utils as hu
 import harmonic_inference.utils.rhythmic_utils as ru
-from harmonic_inference.data.data_types import ChordType, KeyMode, PieceType, PitchType
+from harmonic_inference.data.data_types import (
+    NO_REDUCTION,
+    ChordType,
+    KeyMode,
+    PieceType,
+    PitchType,
+)
 
 
 class Note:
@@ -661,6 +667,9 @@ class Chord:
         chord_row: pd.Series,
         measures_df: pd.DataFrame,
         pitch_type: PitchType,
+        reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+        use_inversion: bool = True,
+        use_relative: bool = True,
         key: "Key" = None,
         levels_cache: DefaultDict[str, Dict[Fraction, int]] = None,
     ) -> "Chord":
@@ -700,6 +709,13 @@ class Chord:
                 'timesig' (str): The time signature of the measure.
         pitch_type : PitchType
             The pitch type to use for the Chord.
+        reduction : Dict[ChordType, ChordType]
+            A reduction mapping each possible ChordType to a reduced ChordType.
+        use_inversion : bool
+            True to store the chord's inversion. False to use inversion = 0 for all chords.
+        use_relative : bool
+            True to store the chord's key tonic and mode while treated relative roots as new keys.
+            Flase to only use the annotated local keys.
         key : Key
             The key during this Chord. If not given, it will be calculated from chord_row.
         levels_cache : DefaultDict[str, Dict[Fraction, int]]
@@ -730,11 +746,12 @@ class Chord:
 
             # Absolute root and bass
             root = hu.transpose_pitch(key.local_tonic, root_interval, pitch_type=pitch_type)
+            # A bug in the corpus data makes this incorrect for half-diminished chords
             # bass = hu.transpose_pitch(key.local_tonic, bass_interval, pitch_type=pitch_type)
 
             # Additional chord info
-            chord_type = hu.get_chord_type_from_string(chord_row["chord_type"])
-            inversion = hu.get_chord_inversion(chord_row["figbass"])
+            chord_type = reduction[hu.get_chord_type_from_string(chord_row["chord_type"])]
+            inversion = hu.get_chord_inversion(chord_row["figbass"]) if use_inversion else 0
             bass = hu.get_bass_note(chord_type, root, inversion, pitch_type)
             assert 0 <= bass < hc.NUM_PITCHES[pitch_type]
 
@@ -770,8 +787,8 @@ class Chord:
             return Chord(
                 root,
                 bass,
-                key.relative_tonic,
-                key.relative_mode,
+                key.relative_tonic if use_relative else key.local_tonic,
+                key.relative_mode if use_relative else key.local_mode,
                 chord_type,
                 inversion,
                 onset,
@@ -797,8 +814,10 @@ class Key:
         self,
         relative_tonic: int,
         local_tonic: int,
+        global_tonic: int,
         relative_mode: KeyMode,
         local_mode: KeyMode,
+        global_mode: KeyMode,
         tonic_type: PitchType,
     ):
         """
@@ -814,18 +833,26 @@ class Key:
         local_tonic : int
             An integer representing the pitch class of the tonic of this key without taking
             applied roots into account, in the same format as relative_tonic.
+        global_tonic : int
+            An integer representing the pitch class of the tonic of the global key.
         relative_mode : KeyMode
             The mode of this key, including applied roots.
         local_mode : KeyMode
             The mode of this key, without taking applied roots into account.
+        global_mode : KeyMode
+            The mode of the global key of this piece.
         tonic_type : PitchType
             The PitchType in which this key's tonic is stored. If this is TPC, the
             tonic can be later converted into MIDI type, but not vice versa.
         """
         self.relative_tonic = relative_tonic
         self.local_tonic = local_tonic
+        self.global_tonic = global_tonic
+
         self.relative_mode = relative_mode
         self.local_mode = local_mode
+        self.global_mode = global_mode
+
         self.tonic_type = tonic_type
 
         self.params = inspect.getfullargspec(Key.__init__).args[1:]
@@ -1027,7 +1054,7 @@ class Key:
                                       relative root is relative to the local key, and each previous
                                       one is relative to that new applied key. Each root is in the
                                       same format as 'localkey'.
-        pitch_type : PitchType
+        tonic_type : PitchType
             The pitch type to use for the Key's tonic.
 
         Returns
@@ -1065,7 +1092,15 @@ class Key:
                         relative_tonic, relative_transposition, pitch_type=tonic_type
                     )
 
-            return Key(relative_tonic, local_tonic, relative_mode, local_mode, tonic_type)
+            return Key(
+                relative_tonic,
+                local_tonic,
+                global_tonic,
+                relative_mode,
+                local_mode,
+                global_mode,
+                tonic_type,
+            )
 
         except Exception as e:
             logging.error(f"Error parsing key from row {chord_row}")
@@ -1416,6 +1451,9 @@ class ScorePiece(Piece):
         chords_df: pd.DataFrame,
         measures_df: pd.DataFrame,
         piece_dict: Dict = None,
+        chord_reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+        use_inversions: bool = True,
+        use_relative: bool = True,
         name: str = None,
     ):
         """
@@ -1432,6 +1470,14 @@ class ScorePiece(Piece):
         piece_dict : Dict
             An optional dict, to load data from instead of calculating everything from the dfs.
             If given, only measures_df must also be given. The rest can be None.
+        chord_reduction : Dict[ChordType, ChordType]
+            A mapping from every possible ChordType to a reduced ChordType: the type that chord
+            should be stored as. This can be used, for example, to store each chord as its triad.
+        use_inversions : bool
+            True to store inversions in the chord symbols. False to ignore them.
+        use_relative : bool
+            True to treat relative roots as new local keys. False to treat them as chord symbols
+            within the annotated local key.
         name : str
             A string identifier for this piece.
         """
@@ -1469,6 +1515,9 @@ class ScorePiece(Piece):
                             measures_df=measures_df,
                             pitch_type=PitchType.TPC,
                             levels_cache=levels_cache,
+                            reduction=chord_reduction,
+                            use_inversion=use_inversions,
+                            use_relative=use_relative,
                         )
                     )
                     if chord is not None
@@ -1479,7 +1528,7 @@ class ScorePiece(Piece):
             chord_ilocs = np.squeeze(chord_ilocs).astype(int)
 
             # Remove accidentally repeated chords
-            non_repeated_mask = get_reduction_mask(chords, kwargs={"use_inversion": True})
+            non_repeated_mask = get_reduction_mask(chords, kwargs={"use_inversion": use_inversions})
             self.chords = []
             for chord, mask in zip(chords, non_repeated_mask):
                 if mask:
@@ -1530,7 +1579,7 @@ class ScorePiece(Piece):
             )
 
             # Remove accidentally repeated keys
-            non_repeated_mask = get_reduction_mask(keys, kwargs={"use_relative": True})
+            non_repeated_mask = get_reduction_mask(keys, kwargs={"use_relative": use_relative})
             self.keys = keys[non_repeated_mask]
             self.key_changes = key_changes[non_repeated_mask]
 
