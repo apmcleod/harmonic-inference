@@ -1633,13 +1633,13 @@ class ScorePiece(Piece):
         ranges: List[Tuple[int, int]] = None,
         change_indices: List[int] = None,
     ):
-        use_real_chords = True
+        use_real_chords = False
 
         if ranges is None:
-            use_real_chords = False
+            use_real_chords = True
             ranges = self.get_chord_ranges()
         if change_indices is None:
-            use_real_chords = False
+            use_real_chords = True
             change_indices = self.get_chord_change_indices()
 
         chords = self.get_chords() if use_real_chords else [None] * len(ranges)
