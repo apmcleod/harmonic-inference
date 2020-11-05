@@ -57,6 +57,12 @@ if __name__ == "__main__":
         help=f"The proportions for splits {SPLITS}. These values will be normalized.",
     )
 
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="True to parse only the first 5 pieces, as a test of data creation.",
+    )
+
     ARGS = parser.parse_args()
 
     # Validate and normalize splits
@@ -78,7 +84,7 @@ if __name__ == "__main__":
         logging.info(f"Using seed {ARGS.seed}")
 
     dataset_splits, split_ids, split_pieces = ds.get_dataset_splits(
-        files_df[:5],
+        files_df[:5] if ARGS.debug else files_df,
         measures_df,
         chords_df,
         notes_df,
