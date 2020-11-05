@@ -1202,7 +1202,7 @@ def get_chord_note_input(
 
     # Get all note vectors within the window
     min_pitch = min([(note.octave, note.pitch_class) for note in chord_notes])
-    if duration_cache is None:
+    if duration_cache is None or not chord_onset_aligns:
         note_onsets = np.full(len(chord_notes), None)
     else:
         note_onsets = []
@@ -1653,7 +1653,11 @@ class ScorePiece(Piece):
             desc="Generating chord classification inputs",
             total=len(ranges),
         ):
-            duration = np.sum(duration_cache[change_index:offset_index])
+            duration = (
+                np.sum(duration_cache[change_index:offset_index])
+                if chord is None
+                else chord.duration
+            )
             onset = self.notes[change_index].onset
             try:
                 offset = self.notes[offset_index].onset
