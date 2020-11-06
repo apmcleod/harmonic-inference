@@ -347,14 +347,14 @@ class HarmonicInferenceModel:
 
         # Convert range starting points to new starts based on the note offsets
         chord_change_indices = [start for start, _ in chord_ranges]
-        chord_ranges = [
+        chord_windows = [
             (get_range_start(piece.get_inputs()[start].onset, piece.get_inputs()), end)
             for start, end in chord_ranges
         ]
 
         # Calculate chord priors for each possible chord range (batched, with CCM)
         logging.info("Classifying chords")
-        chord_classifications = self.get_chord_classifications(chord_ranges, chord_change_indices)
+        chord_classifications = self.get_chord_classifications(chord_windows, chord_change_indices)
 
         # Debug log chord classifications
         if logging.getLogger().isEnabledFor(logging.DEBUG):
@@ -608,6 +608,8 @@ class HarmonicInferenceModel:
             if len(current_states) == 0:
                 continue
 
+            logging.debug("Index = %s; num_states = %s", current_start, len(current_states))
+
             # Run CSM here to avoid running it for invalid states
             if current_start != 0:
                 self.run_csm_batched(list(current_states))
@@ -676,7 +678,9 @@ class HarmonicInferenceModel:
                 change_probs, change_log_probs, no_change_log_probs, to_check_for_key_change
             ):
                 range_length = state.change_index - state.prev_state.change_index
-                can_not_change = change_prob <= self.max_no_key_change_prob and state.is_valid()
+                can_not_change = change_prob <= self.max_no_key_change_prob and state.is_valid(
+                    check_key=True
+                )
                 can_change = change_prob >= self.min_key_change_prob
 
                 # Make a copy only if necessary
