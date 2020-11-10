@@ -30,9 +30,10 @@ def evaluate(model: HarmonicInferenceModel, pieces: List[Piece]):
         if piece.name is not None:
             logging.info(f"Running piece {piece.name}")
         state = model.get_harmony(piece)
-        print(eu.evaluate(piece, state))
-
-    print(states)
+        if state is None:
+            logging.info("Returned None")
+        else:
+            logging.info(eu.evaluate(piece, state))
 
 
 if __name__ == "__main__":
