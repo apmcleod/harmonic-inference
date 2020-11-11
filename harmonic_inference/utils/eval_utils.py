@@ -4,7 +4,7 @@ from typing import Dict
 import numpy as np
 
 import harmonic_inference.utils.harmonic_utils as hu
-from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, PitchType
+from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, KeyMode, PitchType
 from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import State
 
@@ -25,6 +25,8 @@ def evaluate_chords(
         The piece, containing the ground truth harmonic structure.
     state : State
         The state, containing the estimated harmonic structure.
+    pitch_type : PitchType
+        The pitch type used for chord roots.
     use_inversion : bool
         True to use inversion when checking the chord type. False to ignore inversion.
     reduction : Dict[ChordType, ChordType]
@@ -69,7 +71,7 @@ def evaluate_chords(
             int(est_label), pitch_type, use_inversions=True
         )
 
-        distance = get_distance(
+        distance = get_chord_distance(
             gt_root,
             gt_chord_type,
             gt_inversion,
@@ -84,7 +86,7 @@ def evaluate_chords(
     return accuracy / np.sum(piece.get_duration_cache())
 
 
-def get_distance(
+def get_chord_distance(
     gt_root: int,
     gt_chord_type: ChordType,
     gt_inversion: int,
@@ -132,6 +134,102 @@ def get_distance(
         return 0.0
 
     return 1.0
+
+
+def evaluate_keys(
+    piece: Piece,
+    state: State,
+    pitch_type: PitchType,
+    tonic_only: bool = False,
+) -> float:
+    """
+    Evaluate the piece's estimated keys.
+
+    Parameters
+    ----------
+    piece : Piece
+        The piece, containing the ground truth harmonic structure.
+    state : State
+        The state, containing the estimated harmonic structure.
+    pitch_type : PitchType
+        The pitch type used for key tonics.
+    tonic_only : bool
+        True to only evaluate the tonic pitch. False to also take mode into account.
+
+    Returns
+    -------
+    accuracy : float
+        The average accuracy of the state's key estimates for the full duration of
+        the piece.
+    """
+    gt_keys = piece.get_keys()
+    gt_changes = piece.get_key_change_input_indices()
+    gt_labels = np.zeros(len(piece.get_inputs()))
+    for key, start, end in zip(gt_keys, gt_changes, gt_changes[1:]):
+        gt_labels[start:end] = key.get_one_hot_index()
+    gt_labels[gt_changes[-1] :] = gt_keys[-1].get_one_hot_index()
+
+    keys, changes = state.get_keys()
+    estimated_labels = np.zeros(len(piece.get_inputs()))
+    for key, start, end in zip(keys, changes[:-1], changes[1:]):
+        estimated_labels[start:end] = key
+
+    accuracy = 0.0
+    for duration, est_label, gt_label in zip(
+        piece.get_duration_cache(),
+        estimated_labels,
+        gt_labels,
+    ):
+        if duration == 0:
+            continue
+
+        gt_tonic, gt_mode = hu.get_key_from_one_hot_index(int(gt_label), pitch_type)
+        est_tonic, est_mode = hu.get_key_from_one_hot_index(int(est_label), pitch_type)
+
+        distance = get_key_distance(
+            gt_tonic,
+            gt_mode,
+            est_tonic,
+            est_mode,
+            tonic_only=tonic_only,
+        )
+        accuracy += (1.0 - distance) * duration
+
+    return accuracy / np.sum(piece.get_duration_cache())
+
+
+def get_key_distance(
+    gt_tonic: int,
+    gt_mode: KeyMode,
+    est_tonic: int,
+    est_mode: KeyMode,
+    tonic_only: bool = False,
+) -> float:
+    """
+    [summary]
+
+    Parameters
+    ----------
+    gt_tonic : int
+        The tonic pitch of the ground truth key.
+    gt_mode : KeyMode
+        The mode of the ground truth key.
+    est_tonic : int
+        The tonic pitch of the estimated key.
+    est_mode : KeyMode
+        The mode of the estimated key.
+    tonic_only : bool
+        True to only evaluate the tonic pitch. False to also take mode into account.
+
+    Returns
+    -------
+    distance : float
+        The distance between the estimated and ground truth keys.
+    """
+    if tonic_only:
+        return 0.0 if gt_tonic == est_tonic else 1.0
+
+    return 0.0 if gt_tonic == est_tonic and gt_mode == est_mode else 1.0
 
 
 def log_state(state: State, piece: Piece):

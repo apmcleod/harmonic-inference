@@ -251,6 +251,46 @@ def get_key_label_list(
     ]
 
 
+def get_key_from_one_hot_index(
+    one_hot: int,
+    pitch_type: PitchType,
+    relative: bool = False,
+) -> Tuple[int, KeyMode]:
+    """
+    Get the key tonic and mode of the given one hot key label index.
+
+    Parameters
+    ----------
+    one_hot : int
+        The one hot key information to return.
+    pitch_type : PitchType
+        The pitch type of the tonic labels.
+    relative : bool
+        True to output relative key pitch. False for absolute.
+
+    Returns
+    -------
+    key_tonic : int
+        The tonic of the corresponding key.
+    key_mode : KeyMode
+        The mode of the corresponding key.
+    """
+    if relative:
+        if pitch_type == PitchType.TPC:
+            minimum = hc.MIN_KEY_CHANGE_INTERVAL_TPC
+            maximum = hc.MAX_KEY_CHANGE_INTERVAL_TPC
+
+            tonics = list(range(minimum, maximum))
+
+        else:
+            tonics = list(range(0, hc.NUM_PITCHES[pitch_type]))
+
+    else:
+        tonics = list(range(hc.NUM_PITCHES[pitch_type]))
+
+    return [(tonic, key_mode) for key_mode, tonic in itertools.product(KeyMode, tonics)][one_hot]
+
+
 def get_key_one_hot_index(key_mode: KeyMode, tonic: int, pitch_type: PitchType) -> int:
     """
     Get the one hot index of a given key.

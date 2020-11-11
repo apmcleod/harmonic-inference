@@ -38,28 +38,28 @@ def evaluate(model: HarmonicInferenceModel, pieces: List[Piece]):
         if state is None:
             logging.info("Returned None")
         else:
-            acc_full = eu.evaluate_chords(
+            chord_acc_full = eu.evaluate_chords(
                 piece,
                 state,
                 model.CHORD_OUTPUT_TYPE,
                 use_inversion=True,
                 reduction=NO_REDUCTION,
             )
-            acc_no_inv = eu.evaluate_chords(
+            chord_acc_no_inv = eu.evaluate_chords(
                 piece,
                 state,
                 model.CHORD_OUTPUT_TYPE,
                 use_inversion=False,
                 reduction=NO_REDUCTION,
             )
-            acc_triad = eu.evaluate_chords(
+            chord_acc_triad = eu.evaluate_chords(
                 piece,
                 state,
                 model.CHORD_OUTPUT_TYPE,
                 use_inversion=True,
                 reduction=TRIAD_REDUCTION,
             )
-            acc_triad_no_inv = eu.evaluate_chords(
+            chord_acc_triad_no_inv = eu.evaluate_chords(
                 piece,
                 state,
                 model.CHORD_OUTPUT_TYPE,
@@ -67,10 +67,16 @@ def evaluate(model: HarmonicInferenceModel, pieces: List[Piece]):
                 reduction=TRIAD_REDUCTION,
             )
 
-            logging.info("Accuracy = %s", acc_full)
-            logging.info("Accuracy, no inversions = %s", acc_no_inv)
-            logging.info("Accuracy, triads = %s", acc_triad)
-            logging.info("Accuracy, triad, no inversions = %s", acc_triad_no_inv)
+            logging.info("Chord accuracy = %s", chord_acc_full)
+            logging.info("Chord accuracy, no inversions = %s", chord_acc_no_inv)
+            logging.info("Chord accuracy, triads = %s", chord_acc_triad)
+            logging.info("Chord accuracy, triad, no inversions = %s", chord_acc_triad_no_inv)
+
+            key_acc_full = eu.evaluate_keys(piece, state, model.KEY_OUTPUT_TYPE, tonic_only=False)
+            key_acc_tonic = eu.evaluate_keys(piece, state, model.KEY_OUTPUT_TYPE, tonic_only=True)
+
+            logging.info("Key accuracy = %s", key_acc_full)
+            logging.info("Key accuracy, tonic only = %s", key_acc_tonic)
 
 
 if __name__ == "__main__":
