@@ -80,7 +80,6 @@ def get_chord_from_one_hot_index(
     pitch_type: PitchType,
     use_inversions: bool = True,
     relative: bool = False,
-    relative_to: int = None,
     pad: bool = False,
 ) -> Tuple[int, ChordType, int]:
     """
@@ -129,7 +128,7 @@ def get_chord_from_one_hot_index(
     return [
         (root, chord_type, inv)
         for chord_type, root in itertools.product(ChordType, roots)
-        for inv in (range(get_chord_inversion_count(chord_type)) if use_inversions else [None])
+        for inv in (range(get_chord_inversion_count(chord_type)) if use_inversions else [0])
     ][one_hot_index]
 
 

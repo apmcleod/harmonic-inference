@@ -5,7 +5,7 @@ import numpy as np
 
 import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, PitchType
-from harmonic_inference.data.piece import Chord, Piece
+from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import State
 
 
@@ -61,45 +61,21 @@ def evaluate_chords(
         if duration == 0:
             continue
 
-        root, chord_type, inversion = hu.get_chord_from_one_hot_index(
+        gt_root, gt_chord_type, gt_inversion = hu.get_chord_from_one_hot_index(
             int(gt_label), pitch_type, use_inversions=True
         )
-        gt_chord = Chord(
-            root,
-            hu.get_bass_note(chord_type, root, inversion, pitch_type),
-            None,
-            None,
-            chord_type,
-            inversion,
-            None,
-            None,
-            None,
-            None,
-            None,
-            pitch_type,
-        )
 
-        root, chord_type, inversion = hu.get_chord_from_one_hot_index(
+        est_root, est_chord_type, est_inversion = hu.get_chord_from_one_hot_index(
             int(est_label), pitch_type, use_inversions=True
-        )
-        est_chord = Chord(
-            root,
-            hu.get_bass_note(chord_type, root, inversion, pitch_type),
-            None,
-            None,
-            chord_type,
-            inversion,
-            None,
-            None,
-            None,
-            None,
-            None,
-            pitch_type,
         )
 
         distance = get_distance(
-            gt_chord,
-            est_chord,
+            gt_root,
+            gt_chord_type,
+            gt_inversion,
+            est_root,
+            est_chord_type,
+            est_inversion,
             use_inversion=use_inversion,
             reduction=reduction,
         )
@@ -109,20 +85,32 @@ def evaluate_chords(
 
 
 def get_distance(
-    target: Chord,
-    estimate: Chord,
+    gt_root: int,
+    gt_chord_type: ChordType,
+    gt_inversion: int,
+    est_root: int,
+    est_chord_type: ChordType,
+    est_inversion: int,
     use_inversion: bool = True,
     reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
 ) -> float:
     """
-    Get the distance between a target and estimated chord.
+    Get the distance from a ground truth chord to an estimated chord.
 
     Parameters
     ----------
-    target : Chord
-        The target chord.
-    estimate : Chord
-        The estimated chord.
+    gt_root : int
+        The root pitch of the ground truth chord.
+    gt_chord_type : ChordType
+        The chord type of the ground truth chord.
+    gt_inversion : int
+        The inversion of the ground truth chord.
+    est_root : int
+        The root pitch of the estimated chord.
+    est_chord_type : ChordType
+        The chord type of the estimated chord.
+    est_inversion : int
+        The inversion of the estimated chord.
     use_inversion : bool
         True to use inversion when checking the chord type. False to ignore inversion.
     reduction : Dict[ChordType, ChordType]
@@ -133,10 +121,17 @@ def get_distance(
     distance : float
         A distance between 0 (completely correct), and 1 (completely incorrect).
     """
-    for chord in [target, estimate]:
-        chord.chord_type = reduction[chord.chord_type]
+    gt_chord_type = reduction[gt_chord_type]
+    est_chord_type = reduction[est_chord_type]
 
-    return 0.0 if target.is_repeated(estimate, use_inversion=use_inversion) else 1.0
+    if not use_inversion:
+        gt_inversion = 0
+        est_inversion = 0
+
+    if gt_root == est_root and gt_chord_type == est_chord_type and gt_inversion == est_inversion:
+        return 0.0
+
+    return 1.0
 
 
 def log_state(state: State, piece: Piece):
