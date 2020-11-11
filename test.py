@@ -13,6 +13,7 @@ import h5py
 import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.utils.eval_utils as eu
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
+from harmonic_inference.data.data_types import NO_REDUCTION, TRIAD_REDUCTION
 from harmonic_inference.data.piece import Piece, ScorePiece
 from harmonic_inference.models.joint_model import (
     MODEL_CLASSES,
@@ -26,6 +27,7 @@ SPLITS = ["train", "valid", "test"]
 
 def evaluate(model: HarmonicInferenceModel, pieces: List[Piece]):
     states = []
+
     for piece in tqdm(pieces, desc="Getting harmony for pieces"):
         if piece.name is not None:
             logging.info(f"Running piece {piece.name}")
@@ -36,7 +38,39 @@ def evaluate(model: HarmonicInferenceModel, pieces: List[Piece]):
         if state is None:
             logging.info("Returned None")
         else:
-            logging.info(eu.evaluate(piece, state))
+            acc_full = eu.evaluate_chords(
+                piece,
+                state,
+                model.CHORD_OUTPUT_TYPE,
+                use_inversion=True,
+                reduction=NO_REDUCTION,
+            )
+            acc_no_inv = eu.evaluate_chords(
+                piece,
+                state,
+                model.CHORD_OUTPUT_TYPE,
+                use_inversion=False,
+                reduction=NO_REDUCTION,
+            )
+            acc_triad = eu.evaluate_chords(
+                piece,
+                state,
+                model.CHORD_OUTPUT_TYPE,
+                use_inversion=True,
+                reduction=TRIAD_REDUCTION,
+            )
+            acc_triad_no_inv = eu.evaluate_chords(
+                piece,
+                state,
+                model.CHORD_OUTPUT_TYPE,
+                use_inversion=False,
+                reduction=TRIAD_REDUCTION,
+            )
+
+            logging.info("Accuracy = %s", acc_full)
+            logging.info("Accuracy, no inversions = %s", acc_no_inv)
+            logging.info("Accuracy, triads = %s", acc_triad)
+            logging.info("Accuracy, triad, no inversions = %s", acc_triad_no_inv)
 
 
 if __name__ == "__main__":

@@ -75,6 +75,64 @@ def get_chord_label_list(
     ]
 
 
+def get_chord_from_one_hot_index(
+    one_hot_index: int,
+    pitch_type: PitchType,
+    use_inversions: bool = True,
+    relative: bool = False,
+    relative_to: int = None,
+    pad: bool = False,
+) -> Tuple[int, ChordType, int]:
+    """
+    Get a chord object from a one hot index.
+
+    Parameters
+    ----------
+    one_hot_index : int
+        The one-hot index of the chord to return.
+    pitch_type : PitchType
+        The pitch type representation being used.
+    use_inversions : bool
+        True to count the different inversions of each chord as different chords.
+    relative : bool
+        True to get relative chord labels. False otherwise.
+    relative_to : int
+        The pitch to be relative to, if any.
+    pad : bool
+        True to add padding around possible pitches, if relative is True.
+
+    Returns
+    -------
+    root : int
+        The root pitch of the chord.
+    chord_type : ChorType
+        The chord type of the corresponding chord.
+    inversion : int
+        The inversion of the corresponding chord.
+    """
+    if relative:
+        if pitch_type == PitchType.TPC:
+            minimum = hc.MIN_RELATIVE_TPC
+            maximum = hc.MAX_RELATIVE_TPC
+            if pad:
+                minimum -= hc.RELATIVE_TPC_EXTRA
+                maximum += hc.RELATIVE_TPC_EXTRA
+
+            roots = list(range(minimum, maximum))
+
+        else:
+            roots = list(range(0, hc.NUM_PITCHES[pitch_type]))
+
+    else:
+        roots = list(range(hc.NUM_PITCHES[pitch_type]))
+
+    return [
+        (root, chord_type, inv)
+        for chord_type, root in itertools.product(ChordType, roots)
+        for inv in (range(get_chord_inversion_count(chord_type)) if use_inversions else [None])
+    ][one_hot_index]
+
+
 def get_chord_one_hot_index(
     chord_type: ChordType,
     root_pitch: int,
