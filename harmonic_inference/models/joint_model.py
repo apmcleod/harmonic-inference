@@ -346,14 +346,15 @@ class HarmonicInferenceModel:
         chord_ranges, range_log_probs = self.get_chord_ranges(change_probs)
 
         # Convert range starting points to new starts based on the note offsets
-        chord_ranges = [
+        chord_change_indices = [start for start, _ in chord_ranges]
+        chord_windows = [
             (get_range_start(piece.get_inputs()[start].onset, piece.get_inputs()), end)
             for start, end in chord_ranges
         ]
 
         # Calculate chord priors for each possible chord range (batched, with CCM)
         logging.info("Classifying chords")
-        chord_classifications = self.get_chord_classifications(chord_ranges)
+        chord_classifications = self.get_chord_classifications(chord_windows, chord_change_indices)
 
         # Debug log chord classifications
         if logging.getLogger().isEnabledFor(logging.DEBUG):
@@ -479,7 +480,11 @@ class HarmonicInferenceModel:
 
         return chord_ranges, range_log_probs
 
-    def get_chord_classifications(self, ranges: List[Tuple[int, int]]) -> List[np.array]:
+    def get_chord_classifications(
+        self,
+        ranges: List[Tuple[int, int]],
+        change_indices: List[int],
+    ) -> List[np.array]:
         """
         Generate a chord type prior for each potential chord (from ranges).
 
@@ -487,6 +492,8 @@ class HarmonicInferenceModel:
         ----------
         ranges : List[Tuple[int, int]]
             A List of all possible chord ranges as (start, end) for the Piece.
+        change_indices : List[int]
+            The change index for each of the given ranges.
 
         Returns
         -------
@@ -496,6 +503,7 @@ class HarmonicInferenceModel:
         ccm_dataset = ds.ChordClassificationDataset(
             [self.current_piece],
             ranges=[ranges],
+            change_indices=[change_indices],
             dummy_targets=True,
         )
         ccm_loader = DataLoader(
@@ -600,6 +608,8 @@ class HarmonicInferenceModel:
             if len(current_states) == 0:
                 continue
 
+            logging.debug("Index = %s; num_states = %s", current_start, len(current_states))
+
             # Run CSM here to avoid running it for invalid states
             if current_start != 0:
                 self.run_csm_batched(list(current_states))
@@ -668,7 +678,9 @@ class HarmonicInferenceModel:
                 change_probs, change_log_probs, no_change_log_probs, to_check_for_key_change
             ):
                 range_length = state.change_index - state.prev_state.change_index
-                can_not_change = change_prob <= self.max_no_key_change_prob and state.is_valid()
+                can_not_change = change_prob <= self.max_no_key_change_prob and state.is_valid(
+                    check_key=True
+                )
                 can_change = change_prob >= self.min_key_change_prob
 
                 # Make a copy only if necessary

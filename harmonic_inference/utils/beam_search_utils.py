@@ -93,23 +93,29 @@ class State:
 
         self._must_key_transition = must_key_transition
 
-    def is_valid(self) -> bool:
+    def is_valid(self, check_key: bool = False) -> bool:
         """
         Return if this State is valid currently or not.
+
+        Parameters
+        ----------
+        check_key : bool
+            True to check whether this state needs to key transition. False otherwise.
 
         Returns
         -------
         is_valid : bool
             True if this state is currently valid. False otherwise.
         """
-        return self._valid and not self._must_key_transition
+        if check_key:
+            return self._valid and not self._must_key_transition
+        return self._valid
 
     def invalidate(self):
         """
         Mark this State as invalid.
         """
-        if self.prev_state is not None and self.prev_state.prev_state is not None:
-            self._valid = False
+        self._valid = False
 
     def copy(self) -> "State":
         """
@@ -543,7 +549,16 @@ class State:
         """
         if self.key_obj is None:
             tonic, mode = LABELS["key"][self.key]
-            self.key_obj = Key(tonic, tonic, mode, mode, pitch_type)
+
+            if self.prev_state is None:
+                global_tonic = tonic
+                global_mode = mode
+            else:
+                prev_key = self.prev_state.get_key(pitch_type, LABELS)
+                global_tonic = prev_key.global_tonic
+                global_mode = prev_key.global_mode
+
+            self.key_obj = Key(tonic, tonic, global_tonic, mode, mode, global_mode, pitch_type)
 
         return self.key_obj
 
@@ -815,7 +830,7 @@ class HashedBeam(Beam):
         Remove all states with valid == False from the top of the min-heap until the min
         state is valid.
         """
-        while not self.beam[0].is_valid():
+        while not self.beam[0].is_valid(check_key=False):
             heapq.heappop(self.beam)
 
     def add(self, state: State, force: bool = False) -> bool:

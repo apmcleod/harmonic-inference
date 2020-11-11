@@ -13,7 +13,13 @@ from tqdm import tqdm
 import harmonic_inference.utils.harmonic_constants as hc
 import harmonic_inference.utils.harmonic_utils as hu
 import harmonic_inference.utils.rhythmic_utils as ru
-from harmonic_inference.data.data_types import ChordType, KeyMode, PieceType, PitchType
+from harmonic_inference.data.data_types import (
+    NO_REDUCTION,
+    ChordType,
+    KeyMode,
+    PieceType,
+    PitchType,
+)
 
 
 class Note:
@@ -661,6 +667,9 @@ class Chord:
         chord_row: pd.Series,
         measures_df: pd.DataFrame,
         pitch_type: PitchType,
+        reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+        use_inversion: bool = True,
+        use_relative: bool = True,
         key: "Key" = None,
         levels_cache: DefaultDict[str, Dict[Fraction, int]] = None,
     ) -> "Chord":
@@ -700,6 +709,13 @@ class Chord:
                 'timesig' (str): The time signature of the measure.
         pitch_type : PitchType
             The pitch type to use for the Chord.
+        reduction : Dict[ChordType, ChordType]
+            A reduction mapping each possible ChordType to a reduced ChordType.
+        use_inversion : bool
+            True to store the chord's inversion. False to use inversion = 0 for all chords.
+        use_relative : bool
+            True to store the chord's key tonic and mode while treated relative roots as new keys.
+            Flase to only use the annotated local keys.
         key : Key
             The key during this Chord. If not given, it will be calculated from chord_row.
         levels_cache : DefaultDict[str, Dict[Fraction, int]]
@@ -730,11 +746,12 @@ class Chord:
 
             # Absolute root and bass
             root = hu.transpose_pitch(key.local_tonic, root_interval, pitch_type=pitch_type)
+            # A bug in the corpus data makes this incorrect for half-diminished chords
             # bass = hu.transpose_pitch(key.local_tonic, bass_interval, pitch_type=pitch_type)
 
             # Additional chord info
-            chord_type = hu.get_chord_type_from_string(chord_row["chord_type"])
-            inversion = hu.get_chord_inversion(chord_row["figbass"])
+            chord_type = reduction[hu.get_chord_type_from_string(chord_row["chord_type"])]
+            inversion = hu.get_chord_inversion(chord_row["figbass"]) if use_inversion else 0
             bass = hu.get_bass_note(chord_type, root, inversion, pitch_type)
             assert 0 <= bass < hc.NUM_PITCHES[pitch_type]
 
@@ -770,8 +787,8 @@ class Chord:
             return Chord(
                 root,
                 bass,
-                key.relative_tonic,
-                key.relative_mode,
+                key.relative_tonic if use_relative else key.local_tonic,
+                key.relative_mode if use_relative else key.local_mode,
                 chord_type,
                 inversion,
                 onset,
@@ -797,8 +814,10 @@ class Key:
         self,
         relative_tonic: int,
         local_tonic: int,
+        global_tonic: int,
         relative_mode: KeyMode,
         local_mode: KeyMode,
+        global_mode: KeyMode,
         tonic_type: PitchType,
     ):
         """
@@ -814,18 +833,26 @@ class Key:
         local_tonic : int
             An integer representing the pitch class of the tonic of this key without taking
             applied roots into account, in the same format as relative_tonic.
+        global_tonic : int
+            An integer representing the pitch class of the tonic of the global key.
         relative_mode : KeyMode
             The mode of this key, including applied roots.
         local_mode : KeyMode
             The mode of this key, without taking applied roots into account.
+        global_mode : KeyMode
+            The mode of the global key of this piece.
         tonic_type : PitchType
             The PitchType in which this key's tonic is stored. If this is TPC, the
             tonic can be later converted into MIDI type, but not vice versa.
         """
         self.relative_tonic = relative_tonic
         self.local_tonic = local_tonic
+        self.global_tonic = global_tonic
+
         self.relative_mode = relative_mode
         self.local_mode = local_mode
+        self.global_mode = global_mode
+
         self.tonic_type = tonic_type
 
         self.params = inspect.getfullargspec(Key.__init__).args[1:]
@@ -1027,7 +1054,7 @@ class Key:
                                       relative root is relative to the local key, and each previous
                                       one is relative to that new applied key. Each root is in the
                                       same format as 'localkey'.
-        pitch_type : PitchType
+        tonic_type : PitchType
             The pitch type to use for the Key's tonic.
 
         Returns
@@ -1065,7 +1092,15 @@ class Key:
                         relative_tonic, relative_transposition, pitch_type=tonic_type
                     )
 
-            return Key(relative_tonic, local_tonic, relative_mode, local_mode, tonic_type)
+            return Key(
+                relative_tonic,
+                local_tonic,
+                global_tonic,
+                relative_mode,
+                local_mode,
+                global_mode,
+                tonic_type,
+            )
 
         except Exception as e:
             logging.error(f"Error parsing key from row {chord_row}")
@@ -1106,10 +1141,12 @@ def get_chord_note_input(
     chord_onset: Union[float, Tuple[int, Fraction]],
     chord_offset: Union[float, Tuple[int, Fraction]],
     chord_duration: Union[float, Fraction],
+    change_index: int,
     onset_index: int,
     offset_index: int,
     window: int,
     duration_cache: np.array = None,
+    chord: Chord = None,
 ) -> np.array:
     """
     Get an np.array or input vectors relative to a given chord.
@@ -1126,6 +1163,8 @@ def get_chord_note_input(
         The offset location of the chord.
     chord_duration : Union[float, Fraction]
         The duration of the chord.
+    change_index : int
+        The index of the note matching the onset time of the chord.
     onset_index : int
         The index of the first note of the chord.
     offset_index : int
@@ -1136,12 +1175,18 @@ def get_chord_note_input(
     duration_cache : np.array
         The duration from each note's onset time to the next note's onset time,
         generated by get_duration_cache(...).
+    chord : Chord
+        The chord the notes belong to, if not None.
 
     Returns
     -------
     chord_input : np.array
         The input note vectors for this chord.
     """
+    # Chord aligns with duration cache
+    chord_onset_aligns = chord is None or chord.onset == chord_onset
+    chord_offset_aligns = chord is None or chord.offset == chord_offset
+
     # Add window
     window_onset_index = onset_index - window
     window_offset_index = offset_index + window
@@ -1157,15 +1202,15 @@ def get_chord_note_input(
 
     # Get all note vectors within the window
     min_pitch = min([(note.octave, note.pitch_class) for note in chord_notes])
-    if duration_cache is None:
+    if duration_cache is None or not chord_onset_aligns:
         note_onsets = np.full(len(chord_notes), None)
     else:
         note_onsets = []
         for note_index in range(first_note_index, last_note_index):
-            if note_index < onset_index:
-                note_onset = -np.sum(duration_cache[note_index:onset_index])
-            elif note_index > onset_index:
-                note_onset = np.sum(duration_cache[onset_index:note_index])
+            if note_index < change_index:
+                note_onset = -np.sum(duration_cache[note_index:change_index])
+            elif note_index > change_index:
+                note_onset = np.sum(duration_cache[change_index:note_index])
             else:
                 note_onset = Fraction(0)
             note_onsets.append(note_onset)
@@ -1173,8 +1218,8 @@ def get_chord_note_input(
     note_vectors = np.vstack(
         [
             note.to_vec(
-                chord_onset=chord_onset,
-                chord_offset=chord_offset,
+                chord_onset=chord_onset if chord_onset_aligns else chord.onset,
+                chord_offset=chord_offset if chord_offset_aligns else chord.offset,
                 chord_duration=chord_duration,
                 measures_df=measures_df,
                 min_pitch=min_pitch,
@@ -1327,6 +1372,7 @@ class Piece:
         self,
         window: int = 2,
         ranges: List[Tuple[int, int]] = None,
+        change_indices: List[int] = None,
     ) -> np.array:
         """
         Get a list of the note input vectors for each chord in this piece, using an optional
@@ -1341,6 +1387,8 @@ class Piece:
         ranges : List[Tuple[int, int]]
             A List of chord ranges to use to get the inputs, if not using the ground truth
             chord symbols themselves.
+        change_indices : List[int]
+            A List of the note whose onset is the onset of each chord range.
 
         Returns
         -------
@@ -1410,6 +1458,9 @@ class ScorePiece(Piece):
         chords_df: pd.DataFrame,
         measures_df: pd.DataFrame,
         piece_dict: Dict = None,
+        chord_reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+        use_inversions: bool = True,
+        use_relative: bool = True,
         name: str = None,
     ):
         """
@@ -1426,6 +1477,14 @@ class ScorePiece(Piece):
         piece_dict : Dict
             An optional dict, to load data from instead of calculating everything from the dfs.
             If given, only measures_df must also be given. The rest can be None.
+        chord_reduction : Dict[ChordType, ChordType]
+            A mapping from every possible ChordType to a reduced ChordType: the type that chord
+            should be stored as. This can be used, for example, to store each chord as its triad.
+        use_inversions : bool
+            True to store inversions in the chord symbols. False to ignore them.
+        use_relative : bool
+            True to treat relative roots as new local keys. False to treat them as chord symbols
+            within the annotated local key.
         name : str
             A string identifier for this piece.
         """
@@ -1463,6 +1522,9 @@ class ScorePiece(Piece):
                             measures_df=measures_df,
                             pitch_type=PitchType.TPC,
                             levels_cache=levels_cache,
+                            reduction=chord_reduction,
+                            use_inversion=use_inversions,
+                            use_relative=use_relative,
                         )
                     )
                     if chord is not None
@@ -1473,7 +1535,7 @@ class ScorePiece(Piece):
             chord_ilocs = np.squeeze(chord_ilocs).astype(int)
 
             # Remove accidentally repeated chords
-            non_repeated_mask = get_reduction_mask(chords, kwargs={"use_inversion": True})
+            non_repeated_mask = get_reduction_mask(chords, kwargs={"use_inversion": use_inversions})
             self.chords = []
             for chord, mask in zip(chords, non_repeated_mask):
                 if mask:
@@ -1496,7 +1558,7 @@ class ScorePiece(Piece):
             # The note input ranges for each chord
             self.chord_ranges = [
                 (get_range_start(chord.onset, self.notes), end)
-                for chord, end in zip(self.chords, list(self.chord_changes) + [len(self.notes)])
+                for chord, end in zip(self.chords, list(self.chord_changes[1:]) + [len(self.notes)])
             ]
 
             key_cols = chords_df.loc[
@@ -1524,7 +1586,7 @@ class ScorePiece(Piece):
             )
 
             # Remove accidentally repeated keys
-            non_repeated_mask = get_reduction_mask(keys, kwargs={"use_relative": True})
+            non_repeated_mask = get_reduction_mask(keys, kwargs={"use_relative": use_relative})
             self.keys = keys[non_repeated_mask]
             self.key_changes = key_changes[non_repeated_mask]
 
@@ -1565,52 +1627,58 @@ class ScorePiece(Piece):
     def get_chords(self) -> List[Chord]:
         return self.chords
 
-    def get_chord_note_inputs(self, window: int = 2, ranges: List[Tuple[int, int]] = None):
+    def get_chord_note_inputs(
+        self,
+        window: int = 2,
+        ranges: List[Tuple[int, int]] = None,
+        change_indices: List[int] = None,
+    ):
+        use_real_chords = False
+
         if ranges is None:
-            chord_note_inputs = [
+            use_real_chords = True
+            ranges = self.get_chord_ranges()
+        if change_indices is None:
+            use_real_chords = True
+            change_indices = self.get_chord_change_indices()
+
+        chords = self.get_chords() if use_real_chords else [None] * len(ranges)
+
+        last_offset = self.chords[-1].offset
+        duration_cache = self.get_duration_cache()
+
+        chord_note_inputs = []
+        for (onset_index, offset_index), change_index, chord in tqdm(
+            zip(ranges, change_indices, chords),
+            desc="Generating chord classification inputs",
+            total=len(ranges),
+        ):
+            duration = (
+                np.sum(duration_cache[change_index:offset_index])
+                if chord is None
+                else chord.duration
+            )
+            onset = self.notes[change_index].onset
+            try:
+                offset = self.notes[offset_index].onset
+            except IndexError:
+                offset = last_offset
+
+            chord_note_inputs.append(
                 get_chord_note_input(
                     self.notes,
                     self.measures_df,
-                    chord.onset,
-                    chord.offset,
-                    chord.duration,
+                    onset,
+                    offset,
+                    duration,
+                    change_index,
                     onset_index,
                     offset_index,
                     window,
-                    duration_cache=self.get_duration_cache(),
+                    duration_cache=duration_cache,
+                    chord=chord,
                 )
-                for chord, (onset_index, offset_index) in zip(self.chords, self.chord_ranges)
-            ]
-        else:
-            last_offset = self.chords[-1].offset
-            duration_cache = self.get_duration_cache()
-            durations = [np.sum(duration_cache[start:end]) for start, end in ranges]
-
-            chord_note_inputs = []
-            for duration, (onset_index, offset_index) in tqdm(
-                zip(durations, ranges),
-                desc="Generating chord classification inputs",
-                total=len(ranges),
-            ):
-                onset = self.notes[onset_index].onset
-                try:
-                    offset = self.notes[offset_index].onset
-                except IndexError:
-                    offset = last_offset
-
-                chord_note_inputs.append(
-                    get_chord_note_input(
-                        self.notes,
-                        self.measures_df,
-                        onset,
-                        offset,
-                        duration,
-                        onset_index,
-                        offset_index,
-                        window,
-                        duration_cache=duration_cache,
-                    )
-                )
+            )
 
         return chord_note_inputs
 

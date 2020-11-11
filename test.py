@@ -29,10 +29,14 @@ def evaluate(model: HarmonicInferenceModel, pieces: List[Piece]):
     for piece in tqdm(pieces, desc="Getting harmony for pieces"):
         if piece.name is not None:
             logging.info(f"Running piece {piece.name}")
-        state = model.get_harmony(piece)
-        print(eu.evaluate(piece, state))
 
-    print(states)
+        state = model.get_harmony(piece)
+        states.append(state)
+
+        if state is None:
+            logging.info("Returned None")
+        else:
+            logging.info(eu.evaluate(piece, state))
 
 
 if __name__ == "__main__":
