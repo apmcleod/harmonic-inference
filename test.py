@@ -78,6 +78,8 @@ def evaluate(model: HarmonicInferenceModel, pieces: List[Piece]):
             logging.info("Key accuracy = %s", key_acc_full)
             logging.info("Key accuracy, tonic only = %s", key_acc_tonic)
 
+            eu.log_state(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

@@ -1,4 +1,5 @@
 """Utility functions for evaluating model outputs."""
+import logging
 from typing import Dict
 
 import numpy as np
@@ -40,7 +41,7 @@ def evaluate_chords(
     """
     gt_chords = piece.get_chords()
     gt_changes = piece.get_chord_change_indices()
-    gt_labels = np.zeros(len(piece.get_inputs()))
+    gt_labels = np.zeros(len(piece.get_inputs()), dtype=int)
     for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
         gt_labels[start:end] = chord.get_one_hot_index(
             relative=False, use_inversion=True, pad=False
@@ -50,7 +51,7 @@ def evaluate_chords(
     )
 
     chords, changes = state.get_chords()
-    estimated_labels = np.zeros(len(piece.get_inputs()))
+    estimated_labels = np.zeros(len(piece.get_inputs()), dtype=int)
     for chord, start, end in zip(chords, changes[:-1], changes[1:]):
         estimated_labels[start:end] = chord
 
@@ -64,11 +65,11 @@ def evaluate_chords(
             continue
 
         gt_root, gt_chord_type, gt_inversion = hu.get_chord_from_one_hot_index(
-            int(gt_label), pitch_type, use_inversions=True
+            gt_label, pitch_type, use_inversions=True
         )
 
         est_root, est_chord_type, est_inversion = hu.get_chord_from_one_hot_index(
-            int(est_label), pitch_type, use_inversions=True
+            est_label, pitch_type, use_inversions=True
         )
 
         distance = get_chord_distance(
@@ -164,13 +165,13 @@ def evaluate_keys(
     """
     gt_keys = piece.get_keys()
     gt_changes = piece.get_key_change_input_indices()
-    gt_labels = np.zeros(len(piece.get_inputs()))
+    gt_labels = np.zeros(len(piece.get_inputs()), dtype=int)
     for key, start, end in zip(gt_keys, gt_changes, gt_changes[1:]):
         gt_labels[start:end] = key.get_one_hot_index()
     gt_labels[gt_changes[-1] :] = gt_keys[-1].get_one_hot_index()
 
     keys, changes = state.get_keys()
-    estimated_labels = np.zeros(len(piece.get_inputs()))
+    estimated_labels = np.zeros(len(piece.get_inputs()), dtype=int)
     for key, start, end in zip(keys, changes[:-1], changes[1:]):
         estimated_labels[start:end] = key
 
@@ -206,7 +207,7 @@ def get_key_distance(
     tonic_only: bool = False,
 ) -> float:
     """
-    [summary]
+    Get the distance from one key to another.
 
     Parameters
     ----------
@@ -232,15 +233,85 @@ def get_key_distance(
     return 0.0 if gt_tonic == est_tonic and gt_mode == est_mode else 1.0
 
 
-def log_state(state: State, piece: Piece):
+def log_state(state: State, piece: Piece, root_type: PitchType, tonic_type: PitchType):
     """
-    [summary]
+    Print the full state harmonic structure (in comparison to that of the given piece),
+    as debug logging messages.
 
     Parameters
     ----------
     state : State
-        [description]
+        The state whose harmonic structure to print.
     piece : Piece
-        [description]
+        The piece with the ground truth harmonic structure, to note where the state's
+        structure is incorrect.
+    root_type : PitchType
+        The pitch type used for the chord roots.
+    tonic_type : PitchType
+        The pitch type used for the key tonics.
     """
-    pass
+    gt_chords = piece.get_chords()
+    gt_changes = piece.get_chord_change_indices()
+    gt_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
+        gt_chord_labels[start:end] = chord.get_one_hot_index(
+            relative=False, use_inversion=True, pad=False
+        )
+    gt_chord_labels[gt_changes[-1] :] = gt_chords[-1].get_one_hot_index(
+        relative=False, use_inversion=True, pad=False
+    )
+
+    chords, changes = state.get_chords()
+    est_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    for chord, start, end in zip(chords, changes[:-1], changes[1:]):
+        est_chord_labels[start:end] = chord
+
+    gt_keys = piece.get_keys()
+    gt_changes = piece.get_key_change_input_indices()
+    gt_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    for key, start, end in zip(gt_keys, gt_changes, gt_changes[1:]):
+        gt_key_labels[start:end] = key.get_one_hot_index()
+    gt_key_labels[gt_changes[-1] :] = gt_keys[-1].get_one_hot_index()
+
+    keys, changes = state.get_keys()
+    est_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    for key, start, end in zip(keys, changes[:-1], changes[1:]):
+        est_key_labels[start:end] = key
+
+    chord_label_list = hu.get_chord_label_list(root_type, use_inversions=True)
+    key_label_list = hu.get_key_label_list(tonic_type)
+
+    structure = list(zip(gt_key_labels, gt_chord_labels, est_key_labels, est_chord_labels))
+    changes = [True] + [
+        prev_structure != next_structure
+        for prev_structure, next_structure in zip(structure, structure[1:])
+    ]
+
+    input_starts = np.array([note.onset for note in piece.get_inputs()])[changes]
+    input_ends = list(input_starts[1:]) + [piece.get_inputs()[-1].offset]
+
+    indexes = np.arange(len(changes))[changes]
+    durations = [
+        np.sum(piece.get_duration_cache()[start:end])
+        for start, end in zip(indexes, list(indexes[1:]) + [len(changes)])
+    ]
+
+    for gt_chord, est_chord, gt_key, est_key, input_start, input_end, duration in zip(
+        np.array(gt_chord_labels)[changes],
+        np.array(est_chord_labels)[changes],
+        np.array(gt_key_labels)[changes],
+        np.array(est_key_labels)[changes],
+        input_starts,
+        input_ends,
+        durations,
+    ):
+        gt_chord_label = chord_label_list[gt_chord]
+        est_chord_label = chord_label_list[est_chord]
+
+        gt_key_label = key_label_list[gt_key]
+        est_key_label = key_label_list[est_key]
+
+        logging.info("%s - %s (duration %s):", input_start, input_end, duration)
+        logging.info("    Estimated structure: %s\t%s", est_key_label, est_chord_label)
+        if gt_key_label != est_key_label or gt_chord_label != est_chord_label:
+            logging.info("      Correct structure: %s\t%s", gt_key_label, gt_chord_label)
