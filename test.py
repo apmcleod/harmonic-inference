@@ -96,6 +96,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--id",
+        type=int,
+        default=None,
+        help="Only evaluate the given file_id (which must be from the validation set).",
+    )
+
+    parser.add_argument(
         "--checkpoint",
         type=str,
         default="checkpoints",
@@ -220,6 +227,15 @@ if __name__ == "__main__":
             piece_dicts = pickle.load(pkl_file)
     else:
         piece_dicts = [None] * len(file_ids)
+
+    # Run only on a specific file
+    if ARGS.id is not None:
+        if ARGS.id not in file_ids:
+            raise ValueError("Given id not in the validation set.")
+
+        index = file_ids.index(ARGS.id)
+        file_ids = [file_ids[index]]
+        piece_dicts = [piece_dicts[index]]
 
     pieces = [
         ScorePiece(
