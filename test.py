@@ -78,6 +78,17 @@ def evaluate(model: HarmonicInferenceModel, pieces: List[Piece]):
             logging.info("Key accuracy = %s", key_acc_full)
             logging.info("Key accuracy, tonic only = %s", key_acc_tonic)
 
+            full_acc = eu.evaluate_chords_and_keys_jointly(
+                piece,
+                state,
+                root_type=model.CHORD_OUTPUT_TYPE,
+                tonic_type=model.KEY_OUTPUT_TYPE,
+                use_inversion=True,
+                chord_reduction=NO_REDUCTION,
+                tonic_only=False,
+            )
+            logging.info("Full accuracy = %s", full_acc)
+
             eu.log_state(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)
 
 
