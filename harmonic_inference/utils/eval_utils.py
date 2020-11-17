@@ -428,7 +428,7 @@ def get_label_df(
         gt_key_string = key_label_list[gt_key_label]
 
         est_chord_string = chord_label_list[est_chord_label]
-        est_key_string = chord_label_list[est_key_label]
+        est_key_string = key_label_list[est_key_label]
 
         # No change in labels
         if (
