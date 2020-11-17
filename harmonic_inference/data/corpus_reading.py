@@ -10,6 +10,8 @@ from tqdm import tqdm
 
 import harmonic_inference.utils.corpus_utils as cu
 
+MEASURES_OFFSET_COL = "offset"
+
 
 # Helper functions to be used as converters, handling empty strings
 def str2inttuple(string: str) -> Tuple[int]:
@@ -37,6 +39,7 @@ CONVERTERS = {
     "chord_tones": str2inttuple,
     "globalkey_is_minor": int2bool,
     "localkey_is_minor": int2bool,
+    "mc_offset": Fraction,
     "next": str2inttuple,
     "nominal_duration": Fraction,
     "offset": Fraction,
@@ -190,14 +193,14 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
         on=["file_id", "mc"],
     )
 
-    valid_onsets = (note_measures["offset"] <= note_measures["onset"]) & (
-        note_measures["onset"] < note_measures["act_dur"] + note_measures["offset"]
+    valid_onsets = (note_measures[MEASURES_OFFSET_COL] <= note_measures["onset"]) & (
+        note_measures["onset"] < note_measures["act_dur"] + note_measures[MEASURES_OFFSET_COL]
     )
     if not valid_onsets.all():
         with pd.option_context("display.max_rows", None, "display.max_columns", None):
             invalid_string = note_measures.loc[
                 ~valid_onsets,
-                ["file_id", "note_id", "mc", "onset", "offset", "act_dur"],
+                ["file_id", "note_id", "mc", "onset", MEASURES_OFFSET_COL, "act_dur"],
             ]
             logging.warning(
                 f"{(~valid_onsets).sum()} notes have invalid onset times:\n{invalid_string}"
@@ -212,14 +215,14 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
         on=["file_id", "mc"],
     )
 
-    valid_onsets = (chord_measures["offset"] <= chord_measures["onset"]) & (
-        chord_measures["onset"] < chord_measures["act_dur"] + chord_measures["offset"]
+    valid_onsets = (chord_measures[MEASURES_OFFSET_COL] <= chord_measures["onset"]) & (
+        chord_measures["onset"] < chord_measures["act_dur"] + chord_measures[MEASURES_OFFSET_COL]
     )
     if not valid_onsets.all():
         with pd.option_context("display.max_rows", None, "display.max_columns", None):
             invalid_string = chord_measures.loc[
                 ~valid_onsets,
-                ["file_id", "chord_id", "mc", "onset", "offset", "act_dur"],
+                ["file_id", "chord_id", "mc", "onset", MEASURES_OFFSET_COL, "act_dur"],
             ]
             logging.warning(
                 f"{(~valid_onsets).sum()} chords have invalid onset times:\n{invalid_string}"
