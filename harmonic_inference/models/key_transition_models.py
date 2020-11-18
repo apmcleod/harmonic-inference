@@ -44,7 +44,7 @@ class KeyTransitionModel(pl.LightningModule):
 
         targets = batch["targets"].float()[:, :max_length]
 
-        mask = (inputs.sum(axis=2) > 0).bool()
+        mask = (targets != -100).bool()
 
         return inputs, input_lengths, targets, mask
 

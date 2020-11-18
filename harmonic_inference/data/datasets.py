@@ -454,13 +454,13 @@ class KeyTransitionDataset(KeyHarmonicDataset):
     leading up to each key change. Essentially, this is the CSM's input up to each key change,
     plus one more symbol with the chord relative to the previous key.
 
-    The targets are 1 if the last chord in an input is on a key change, and 0 otherwise
-    (if the last chord is the last chord of a piece).
+    The targets are a list of targets for each input, where -100 means to ignore the output,
+    and 0 and 1 are "real" targets.
     """
 
-    train_batch_size = 128
-    valid_batch_size = 512
-    chunk_size = 1024
+    train_batch_size = 32
+    valid_batch_size = 64
+    chunk_size = 256
 
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
@@ -521,18 +521,18 @@ class KeySequenceDataset(KeyHarmonicDataset):
     """
     A dataset representing key changes.
 
-    The inputs are lists of relative chord vectors for
-    each sequence of chords without a key change, plus the following one chord, all relative to
-    the current chord sequence's key. The last chord sequence of each key is not used because
-    it does not end in a key change.
+    There is 1 input sequence per key change per piece.
+    In each sequence, there is one input vector per chord symbol, from the beginning of the piece
+    leading up to each key change. Essentially, this is the CSM's input up to each key change,
+    plus one more symbol with the chord relative to the previous key.
 
     There is one target per input list: a one-hot index representing the key change (transposition
     and new mode of the new key).
     """
 
-    train_batch_size = 256
-    valid_batch_size = 512
-    chunk_size = 512
+    train_batch_size = 32
+    valid_batch_size = 64
+    chunk_size = 256
 
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
