@@ -156,12 +156,16 @@ class SimpleKeySequenceModel(KeySequenceModel):
         self.save_hyperparameters()
 
         # Input and output derived from input type and use_inversions
-        self.input_dim = Chord.get_chord_vector_length(
-            input_type,
-            one_hot=False,
-            relative=True,
-            use_inversions=True,
-            pad=True,
+        self.input_dim = (
+            Chord.get_chord_vector_length(
+                input_type,
+                one_hot=False,
+                relative=True,
+                use_inversions=True,
+                pad=True,
+            )
+            + Key.get_key_change_vector_length(input_type, one_hot=False)
+            + 1
         )
         self.output_dim = Key.get_key_change_vector_length(key_type, one_hot=True)
 

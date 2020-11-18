@@ -422,9 +422,9 @@ class KeyHarmonicDataset(HarmonicDataset):
             input_length += 1
 
         data = {
-            "target": targets,
-            "input": piece_input,
-            "input_length": input_length,
+            "targets": targets,
+            "inputs": piece_input,
+            "input_lengths": input_length,
         }
 
         if hasattr(self, "hidden_states"):
@@ -514,7 +514,8 @@ class KeyTransitionDataset(KeyHarmonicDataset):
 
             self.inputs.append(np.vstack(piece_input))
 
-        self.key_change_replacements = np.vstack(self.key_change_replacements)
+        if len(self.key_change_replacements) > 0:
+            self.key_change_replacements = np.vstack(self.key_change_replacements)
 
 
 class KeySequenceDataset(KeyHarmonicDataset):
@@ -578,9 +579,12 @@ class KeySequenceDataset(KeyHarmonicDataset):
 
                 piece_input.append(np.hstack([chord_vectors, key_vectors]))
 
+            if len(keys) >= 2:
+                self.targets.append(keys[-2].get_key_change_one_hot_index(keys[-1]))
             self.inputs.append(np.vstack(piece_input))
 
-        self.key_change_replacements = np.vstack(self.key_change_replacements)
+        if len(self.key_change_replacements) > 0:
+            self.key_change_replacements = np.vstack(self.key_change_replacements)
 
 
 def h5_to_dataset(
