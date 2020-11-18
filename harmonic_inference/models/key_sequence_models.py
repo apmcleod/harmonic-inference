@@ -56,7 +56,7 @@ class KeySequenceModel(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         inputs, input_lengths, targets = self.get_data_from_batch(batch)
 
-        outputs = self(inputs, input_lengths)
+        outputs, _ = self(inputs, input_lengths)
 
         loss = F.nll_loss(outputs, targets)
 
@@ -66,7 +66,7 @@ class KeySequenceModel(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         inputs, input_lengths, targets = self.get_data_from_batch(batch)
 
-        outputs = self(inputs, input_lengths)
+        outputs, _ = self(inputs, input_lengths)
 
         loss = F.nll_loss(outputs, targets)
         acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
@@ -84,7 +84,7 @@ class KeySequenceModel(pl.LightningModule):
         for batch in tqdm(dl, desc="Evaluating KSM"):
             inputs, input_lengths, targets = self.get_data_from_batch(batch)
 
-            outputs = self(inputs, input_lengths)
+            outputs, _ = self(inputs, input_lengths)
 
             batch_count = len(batch)
             loss = F.nll_loss(outputs, targets)
@@ -213,7 +213,7 @@ class SimpleKeySequenceModel(KeySequenceModel):
         embedded = F.relu(self.embed(inputs))
 
         packed = pack_padded_sequence(embedded, lengths, enforce_sorted=False, batch_first=True)
-        lstm_out_packed, (_, _) = self.lstm(packed, (h_0, c_0))
+        lstm_out_packed, hidden_out = self.lstm(packed, (h_0, c_0))
         lstm_out_unpacked, lstm_out_lengths = pad_packed_sequence(lstm_out_packed, batch_first=True)
 
         # Reshape lstm outs
@@ -233,4 +233,4 @@ class SimpleKeySequenceModel(KeySequenceModel):
         relu2 = F.relu(fc1)
         output = self.fc2(relu2)
 
-        return F.log_softmax(output, dim=1)
+        return F.log_softmax(output, dim=1), hidden_out
