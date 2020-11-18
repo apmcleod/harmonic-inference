@@ -814,21 +814,24 @@ class HarmonicInferenceModel:
         if len(states) == 0:
             return []
 
-        # Get inputs and hidden states for all states
-        ksm_inputs = [
-            state.get_ksm_input(
+        # Get inputs and hidden states for valid states
+        ksm_hidden_states = self.key_sequence_model.init_hidden(len(states))
+        ksm_inputs = [None] * len(states)
+        for i, state in enumerate(states):
+            if state.ksm_hidden_state is not None:
+                ksm_hidden_states[0][:, i], ksm_hidden_states[1][:, i] = state.ksm_hidden_state
+            ksm_inputs[i] = state.get_ksm_input(
                 self.CHORD_OUTPUT_TYPE,
                 self.duration_cache,
                 self.onset_cache,
                 self.onset_level_cache,
                 self.LABELS,
             )
-            for state in states
-        ]
 
         # Generate KSM loader
         ksm_dataset = ds.HarmonicDataset()
         ksm_dataset.inputs = ksm_inputs
+        ksm_dataset.hidden_states = ksm_hidden_states
         ksm_dataset.input_lengths = [len(ksm_input) for ksm_input in ksm_inputs]
         ksm_dataset.targets = np.zeros(len(ksm_inputs))
         ksm_loader = DataLoader(
@@ -839,9 +842,17 @@ class HarmonicInferenceModel:
 
         # Run KSM
         key_log_priors = []
+        hidden_states = []
+        cell_states = []
         for batch in ksm_loader:
-            priors = self.key_sequence_model.get_output(batch)
-            key_log_priors.extend(priors.numpy())
+            batch_output, batch_hidden = self.key_sequence_model.get_output(batch)
+            key_log_priors.extend(batch_output.numpy().squeeze(axis=1))
+            hidden_states.extend(torch.transpose(batch_hidden[0], 0, 1))
+            cell_states.extend(torch.transpose(batch_hidden[1], 0, 1))
+
+        # Copy hidden states to valid states
+        for state, hidden, cell in zip(states, hidden_states, cell_states):
+            state.ksm_hidden_state = (hidden, cell)
 
         key_log_priors = np.array(key_log_priors)
         priors_argsort = np.argsort(-key_log_priors)  # Negative to sort descending
