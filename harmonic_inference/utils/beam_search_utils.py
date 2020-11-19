@@ -472,21 +472,54 @@ class State:
             The input for the KSM form the last key change until now, with `length` additional
             input vectors filled with 0 appended to the end.
         """
-        this_ksm_input = self.get_ktm_input(
-            pitch_type,
-            duration_cache,
-            onset_cache,
-            onset_level_cache,
-            LABELS,
+
+        def hidden_states_equal(hidden_state_1, hidden_state_2) -> bool:
+            """
+            Check if two given hidden states (None, or tuples of 2 torch.tensors) are equal.
+
+            Parameters
+            ----------
+            hidden_state_1 : torch.tensor
+                The first hidden state.
+            hidden_state_2 : torch.tensor
+                The second hidden state.
+
+            Returns
+            -------
+            equal : bool
+                True if the given hidden states are either both None, or equal to each other.
+            """
+            if hidden_state_1 is None and hidden_state_2 is None:
+                return True
+
+            if hidden_state_1 is None or hidden_state_2 is None:
+                return False
+
+            return hidden_state_1[0].equal(hidden_state_2[0]) and hidden_state_1[1].equal(
+                hidden_state_2[1]
+            )
+
+        this_ksm_input = np.squeeze(
+            self.get_ktm_input(
+                pitch_type,
+                duration_cache,
+                onset_cache,
+                onset_level_cache,
+                LABELS,
+            )
         )
 
         if (
             self.prev_state is None
-            or self.prev_state.key != self.key
-            or self.prev_state.chord is None
+            or self.prev_state.prev_state is None
+            # In this case, the previous state has already been run
+            or not hidden_states_equal(
+                self.prev_state.ksm_hidden_state,
+                self.prev_state.prev_state.ksm_hidden_state,
+            )
         ):
             # Base case - this is the first state
-            ksm_input = np.zeros((1 + length, len(this_ksm_input)))
+            ksm_input = np.zeros((length + 1, len(this_ksm_input)))
             ksm_input[0] = this_ksm_input
             return ksm_input
 

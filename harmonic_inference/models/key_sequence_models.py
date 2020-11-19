@@ -51,7 +51,12 @@ class KeySequenceModel(pl.LightningModule):
     def get_output(self, batch):
         inputs, input_lengths, _ = self.get_data_from_batch(batch)
 
-        return self(inputs, input_lengths)
+        hidden = (
+            torch.transpose(batch["hidden_states"][0], 0, 1),
+            torch.transpose(batch["hidden_states"][1], 0, 1),
+        )
+
+        return self(inputs, input_lengths, hidden=hidden)
 
     def training_step(self, batch, batch_idx):
         inputs, input_lengths, targets = self.get_data_from_batch(batch)
@@ -204,11 +209,11 @@ class SimpleKeySequenceModel(KeySequenceModel):
             Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden_dim)),
         )
 
-    def forward(self, inputs, lengths):
+    def forward(self, inputs, lengths, hidden=None):
         # pylint: disable=arguments-differ
         batch_size = inputs.shape[0]
         lengths = torch.clamp(lengths, min=1)
-        h_0, c_0 = self.init_hidden(batch_size)
+        h_0, c_0 = self.init_hidden(batch_size) if hidden is not None else hidden
 
         embedded = F.relu(self.embed(inputs))
 

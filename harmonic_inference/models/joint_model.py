@@ -703,7 +703,9 @@ class HarmonicInferenceModel:
 
             # Change keys and put resulting states into the appropriate beam
             changed_key_states = self.get_key_change_states(to_ksm_states)
-            self.get_key_change_probs(changed_key_states)  # Run the KTM once on the new input
+            # Run the KTM once, and KSM up to the current frame, to update hidden states
+            self.get_key_change_probs(changed_key_states, hidden_only=True)
+            self.get_key_change_states(changed_key_states, hidden_only=True)
             for state in changed_key_states:
                 all_states[state.change_index].add(state)
 
@@ -728,7 +730,7 @@ class HarmonicInferenceModel:
 
         return all_states[-1].get_top_state()
 
-    def get_key_change_probs(self, states: List[State]) -> np.array:
+    def get_key_change_probs(self, states: List[State], hidden_only: bool = False) -> np.array:
         """
         Get the probability of a key change for each of the given states.
 
@@ -736,6 +738,8 @@ class HarmonicInferenceModel:
         ----------
         states : List[State]
             The States to check for key changes. Some internal fields of these states may change.
+        hidden_only : bool
+            True to only update the given states' ktm_hidden_states, and return nothing.
 
         Returns
         -------
@@ -750,7 +754,7 @@ class HarmonicInferenceModel:
         # Check for states that can key transition. Only these will update output_prob
         valid_states = [state.can_key_transition() for state in states]
 
-        # Get inputs and hidden states for valid states
+        # Get inputs and hidden states for all states (even invalid states need to be run)
         ktm_hidden_states = self.key_transition_model.init_hidden(len(states))
         ktm_inputs = [None] * len(states)
         for i, state in enumerate(states):
@@ -784,9 +788,12 @@ class HarmonicInferenceModel:
             hidden_states.extend(torch.transpose(batch_hidden[0], 0, 1))
             cell_states.extend(torch.transpose(batch_hidden[1], 0, 1))
 
-        # Copy hidden states to valid states
+        # Copy hidden states to all states
         for state, hidden, cell in zip(states, hidden_states, cell_states):
             state.ktm_hidden_state = (hidden, cell)
+
+        if hidden_only:
+            return None
 
         # Copy KTM output probabilities to probs return array
         key_change_probs[valid_states] = np.array(outputs)[valid_states]
@@ -799,7 +806,7 @@ class HarmonicInferenceModel:
 
         return key_change_probs
 
-    def get_key_change_states(self, states: List[State]) -> List[State]:
+    def get_key_change_states(self, states: List[State], hidden_only: bool = False) -> List[State]:
         """
         Get all states resulting from key changes on the given states using the KSM.
 
@@ -807,6 +814,8 @@ class HarmonicInferenceModel:
         ----------
         states : List[State]
             The states which will change key.
+        hidden_only : bool
+            True to only update the given states' ktm_hidden_states, and return nothing.
 
         Returns
         -------
@@ -848,13 +857,16 @@ class HarmonicInferenceModel:
         cell_states = []
         for batch in ksm_loader:
             batch_output, batch_hidden = self.key_sequence_model.get_output(batch)
-            key_log_priors.extend(batch_output.numpy().squeeze(axis=1))
+            key_log_priors.extend(batch_output.numpy())
             hidden_states.extend(torch.transpose(batch_hidden[0], 0, 1))
             cell_states.extend(torch.transpose(batch_hidden[1], 0, 1))
 
         # Copy hidden states to valid states
         for state, hidden, cell in zip(states, hidden_states, cell_states):
             state.ksm_hidden_state = (hidden, cell)
+
+        if hidden_only:
+            return None
 
         key_log_priors = np.array(key_log_priors)
         priors_argsort = np.argsort(-key_log_priors)  # Negative to sort descending
