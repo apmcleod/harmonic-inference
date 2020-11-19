@@ -702,7 +702,9 @@ class HarmonicInferenceModel:
                         to_csm_prior_states.append(state)
 
             # Change keys and put resulting states into the appropriate beam
-            for state in self.get_key_change_states(to_ksm_states):
+            changed_key_states = self.get_key_change_states(to_ksm_states)
+            self.get_key_change_probs(changed_key_states)  # Run the KTM once on the new input
+            for state in changed_key_states:
                 all_states[state.change_index].add(state)
 
             # Debug all csm priors

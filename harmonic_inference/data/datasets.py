@@ -174,7 +174,7 @@ class HarmonicDataset(Dataset):
         ]
         for key in keys:
             if hasattr(self, key):
-                h5_file.create_dataset(key, data=getattr(self, key), compression="gzip")
+                h5_file.create_dataset(key, data=np.array(getattr(self, key)), compression="gzip")
         if file_ids is not None:
             h5_file.create_dataset("file_ids", data=np.array(file_ids), compression="gzip")
         h5_file.close()
@@ -351,8 +351,8 @@ class KeyHarmonicDataset(HarmonicDataset):
     def __len__(self) -> int:
         if not self.in_ram:
             with h5py.File(self.h5_path, "r") as h5_file:
-                return np.sum(h5_file["piece_lengths"])
-        return np.sum(self.piece_lengths)
+                return int(np.sum(h5_file["piece_lengths"]))
+        return int(np.sum(self.piece_lengths))
 
     def __getitem__(self, item) -> Dict:
         def get_piece_index(item: int) -> Tuple[int, bool]:

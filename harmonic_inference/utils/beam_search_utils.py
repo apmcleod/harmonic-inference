@@ -280,8 +280,8 @@ class State:
             prev_state=self.prev_state,
             hash_length=len(self.hash_tuple) if hasattr(self, "hash_tuple") else None,
             csm_hidden_state=self.csm_hidden_state,
-            ktm_hidden_state=self.ktm_hidden_state,
-            ksm_hidden_state=self.ksm_hidden_state,
+            ktm_hidden_state=self.prev_state.ktm_hidden_state,
+            ksm_hidden_state=self.prev_state.ksm_hidden_state,
             csm_log_prior=self.csm_log_prior,
             key_obj=None,
             must_key_transition=False,
@@ -414,6 +414,11 @@ class State:
         key_change_vector = np.zeros(
             Key.get_key_change_vector_length(pitch_type, one_hot=False) + 1
         )
+        if self.prev_state is not None and self.key != self.prev_state.key:
+            key_change_vector[:-1] = self.prev_state.get_key(
+                pitch_type, LABELS
+            ).get_key_change_vector(self.get_key(pitch_type, LABELS))
+            key_change_vector[-1] = 1
 
         return np.expand_dims(
             np.concatenate(
