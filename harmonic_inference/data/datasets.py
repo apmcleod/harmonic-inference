@@ -581,7 +581,8 @@ class KeySequenceDataset(KeyHarmonicDataset):
 
             if len(keys) >= 2:
                 self.targets.append(keys[-2].get_key_change_one_hot_index(keys[-1]))
-            self.inputs.append(np.vstack(piece_input))
+            if len(keys) >= 1:
+                self.inputs.append(np.vstack(piece_input))
 
         if len(self.key_change_replacements) > 0:
             self.key_change_replacements = np.vstack(self.key_change_replacements)
