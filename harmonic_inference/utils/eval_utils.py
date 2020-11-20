@@ -344,8 +344,8 @@ def evaluate_chords_and_keys_jointly(
             tonic_only=tonic_only,
         )
 
-        distance = chord_distance * key_distance
-        accuracy += (1.0 - distance) * duration
+        similarity = (1.0 - chord_distance) * (1.0 - key_distance)
+        accuracy += similarity * duration
 
     return accuracy / np.sum(piece.get_duration_cache())
 
