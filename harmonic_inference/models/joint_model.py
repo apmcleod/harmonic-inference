@@ -668,8 +668,9 @@ class HarmonicInferenceModel:
 
             # Check for key changes
             change_probs = self.get_key_change_probs(to_check_for_key_change)
-            no_change_log_probs = np.log(1 - change_probs)
-            change_log_probs = np.log(change_probs)
+            with np.errstate(divide="ignore"):
+                no_change_log_probs = np.log(1 - change_probs)
+                change_log_probs = np.log(change_probs)
 
             # Branch on key changes
             to_csm_prior_states = []

@@ -89,7 +89,20 @@ def evaluate(model: HarmonicInferenceModel, pieces: List[Piece]):
             )
             logging.info("Full accuracy = %s", full_acc)
 
-            eu.log_state(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)
+            if logging.getLogger().isEnabledFor(logging.DEBUG):
+                eu.log_state(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)
+
+            labels = eu.get_label_df(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)
+            if piece.name is not None:
+                piece_path = Path(piece.name.split(" ")[-1])
+                piece_path.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    labels.to_csv(piece_path, sep="\t")
+                except Exception:
+                    logging.exception("Error writing to csv %s", piece_path)
+                    logging.debug(labels)
+            else:
+                logging.debug(labels)
 
 
 if __name__ == "__main__":

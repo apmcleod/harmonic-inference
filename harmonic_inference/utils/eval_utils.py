@@ -608,7 +608,7 @@ def log_state(state: State, piece: Piece, root_type: PitchType, tonic_type: Pitc
         gt_key_label = key_label_list[gt_key]
         est_key_label = key_label_list[est_key]
 
-        logging.info("%s - %s (duration %s):", input_start, input_end, duration)
-        logging.info("    Estimated structure: %s\t%s", est_key_label, est_chord_label)
+        logging.debug("%s - %s (duration %s):", input_start, input_end, duration)
+        logging.debug("    Estimated structure: %s\t%s", est_key_label, est_chord_label)
         if gt_key_label != est_key_label or gt_chord_label != est_chord_label:
-            logging.info("      Correct structure: %s\t%s", gt_key_label, gt_chord_label)
+            logging.debug("      Correct structure: %s\t%s", gt_key_label, gt_chord_label)
