@@ -213,7 +213,7 @@ class SimpleKeySequenceModel(KeySequenceModel):
         # pylint: disable=arguments-differ
         batch_size = inputs.shape[0]
         lengths = torch.clamp(lengths, min=1)
-        h_0, c_0 = self.init_hidden(batch_size) if hidden is not None else hidden
+        h_0, c_0 = self.init_hidden(batch_size) if hidden is None else hidden
 
         embedded = F.relu(self.embed(inputs))
 
