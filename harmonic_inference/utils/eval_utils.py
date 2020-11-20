@@ -1,6 +1,8 @@
 """Utility functions for evaluating model outputs."""
 import logging
-from typing import Dict
+import re
+from pathlib import Path
+from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
@@ -15,6 +17,7 @@ from harmonic_inference.data.data_types import (
 )
 from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import State
+from ms3 import Parse
 
 
 def evaluate_chords(
@@ -439,6 +442,41 @@ def get_label_df(
         ):
             continue
 
+        if gt_key_string != prev_gt_key_string or est_key_string != prev_est_key_string:
+            gt_tonic, gt_mode = hu.get_key_from_one_hot_index(int(gt_key_label), tonic_type)
+            est_tonic, est_mode = hu.get_key_from_one_hot_index(int(est_key_label), tonic_type)
+
+            full_key_distance = get_key_distance(
+                gt_tonic,
+                gt_mode,
+                est_tonic,
+                est_mode,
+                tonic_only=False,
+            )
+
+            if full_key_distance == 0:
+                color = "green"
+
+            else:
+                partial_key_distance = get_key_distance(
+                    gt_tonic,
+                    gt_mode,
+                    est_tonic,
+                    est_mode,
+                    tonic_only=True,
+                )
+
+                color = "yellow" if partial_key_distance != 1 else "red"
+
+            labels_list.append(
+                {
+                    "label": est_key_string if est_key_string != prev_est_key_string else "--",
+                    "mc": note.onset[0],
+                    "mc_onset": note.onset[1],
+                    "color_name": color,
+                }
+            )
+
         if gt_chord_string != prev_gt_chord_string or est_chord_string != prev_est_chord_string:
             gt_root, gt_chord_type, gt_inversion = hu.get_chord_from_one_hot_index(
                 gt_chord_label, root_type, use_inversions=True
@@ -482,43 +520,8 @@ def get_label_df(
                     if est_chord_string != prev_est_chord_string
                     else "--",
                     "mc": note.onset[0],
-                    "onset": note.onset[1],
-                    "color": color,
-                }
-            )
-
-        if gt_key_string != prev_gt_key_string or est_key_string != prev_est_key_string:
-            gt_tonic, gt_mode = hu.get_key_from_one_hot_index(int(gt_key_label), tonic_type)
-            est_tonic, est_mode = hu.get_key_from_one_hot_index(int(est_key_label), tonic_type)
-
-            full_key_distance = get_key_distance(
-                gt_tonic,
-                gt_mode,
-                est_tonic,
-                est_mode,
-                tonic_only=False,
-            )
-
-            if full_key_distance == 0:
-                color = "green"
-
-            else:
-                partial_key_distance = get_key_distance(
-                    gt_tonic,
-                    gt_mode,
-                    est_tonic,
-                    est_mode,
-                    tonic_only=True,
-                )
-
-                color = "yellow" if partial_key_distance != 1 else "red"
-
-            labels_list.append(
-                {
-                    "label": est_key_string if est_key_string != prev_est_key_string else "--",
-                    "mc": note.onset[0],
-                    "onset": note.onset[1],
-                    "color": color,
+                    "mc_onset": note.onset[1],
+                    "color_name": color,
                 }
             )
 
@@ -528,6 +531,33 @@ def get_label_df(
         prev_est_chord_string = est_chord_string
 
     return pd.DataFrame(labels_list)
+
+
+def write_labels_to_score(
+    labels_dir: Union[str, Path],
+    annotations_dir: Union[str, Path],
+    basename: str,
+):
+    if isinstance(labels_dir, Path):
+        labels_dir = str(labels_dir)
+
+    if isinstance(annotations_dir, Path):
+        annotations_dir = str(annotations_dir)
+
+    # Add musescore and tsv suffixes to filename match
+    filename_regex = re.compile(basename + "\\.(mscx|tsv)")
+
+    # Parse scores and tsvs
+    parse = Parse(annotations_dir, file_re=filename_regex)
+    parse.add_dir(labels_dir, key="labels", file_re=filename_regex)
+    parse.parse()
+
+    # Write annotations to score
+    parse.add_detached_annotations("MS3", "labels")
+    parse.attach_labels(staff=2, voice=1, check_for_clashes=False)
+
+    # Write score out to file
+    parse.store_mscx(root_dir=labels_dir, suffix="_inferred", overwrite=True)
 
 
 def log_state(state: State, piece: Piece, root_type: PitchType, tonic_type: PitchType):

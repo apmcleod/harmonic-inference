@@ -5,7 +5,7 @@ import pickle
 import sys
 from glob import glob
 from pathlib import Path
-from typing import List
+from typing import List, Union
 
 from tqdm import tqdm
 
@@ -25,15 +25,23 @@ from harmonic_inference.models.joint_model import (
 SPLITS = ["train", "valid", "test"]
 
 
-def evaluate(model: HarmonicInferenceModel, pieces: List[Piece]):
-    states = []
+def evaluate(
+    model: HarmonicInferenceModel,
+    pieces: List[Piece],
+    output_tsv_dir: Union[Path, str] = None,
+    annotations_base_dir: Union[Path, str] = None,
+):
+    if output_tsv_dir is not None:
+        output_tsv_dir = Path(output_tsv_dir)
+
+    if annotations_base_dir is not None:
+        annotations_base_dir = Path(annotations_base_dir)
 
     for piece in tqdm(pieces, desc="Getting harmony for pieces"):
         if piece.name is not None:
             logging.info(f"Running piece {piece.name}")
 
         state = model.get_harmony(piece)
-        states.append(state)
 
         if state is None:
             logging.info("Returned None")
@@ -92,17 +100,35 @@ def evaluate(model: HarmonicInferenceModel, pieces: List[Piece]):
             if logging.getLogger().isEnabledFor(logging.DEBUG):
                 eu.log_state(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)
 
-            labels = eu.get_label_df(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)
-            if piece.name is not None:
-                piece_path = Path(piece.name.split(" ")[-1])
-                piece_path.parent.mkdir(parents=True, exist_ok=True)
+            labels_df = eu.get_label_df(
+                state,
+                piece,
+                model.CHORD_OUTPUT_TYPE,
+                model.KEY_OUTPUT_TYPE,
+            )
+
+            if piece.name is not None and output_tsv_dir is not None:
+                piece_name = Path(piece.name.split(" ")[-1])
+                output_tsv_path = output_tsv_dir / piece_name
+
                 try:
-                    labels.to_csv(piece_path, sep="\t")
+                    output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
+                    labels_df.to_csv(output_tsv_path, sep="\t")
+                    logging.info("Labels TSV written out to %s", output_tsv_path)
                 except Exception:
-                    logging.exception("Error writing to csv %s", piece_path)
-                    logging.debug(labels)
+                    logging.exception("Error writing to csv %s", output_tsv_path)
+                    logging.debug(labels_df)
+                else:
+                    if annotations_base_dir is not None:
+                        logging.info("Writing score out to %s", output_tsv_dir / piece_name.parent)
+                        eu.write_labels_to_score(
+                            output_tsv_dir / piece_name.parent,
+                            annotations_base_dir / piece_name.parent,
+                            piece_name.stem,
+                        )
+
             else:
-                logging.debug(labels)
+                logging.debug(labels_df)
 
 
 if __name__ == "__main__":
@@ -117,6 +143,25 @@ if __name__ == "__main__":
         type=Path,
         default=Path("corpus_data"),
         help="The directory containing the raw corpus_data tsv files.",
+    )
+
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default="output",
+        help="The directory to write label tsvs and annotated MuseScore3 scores to.",
+    )
+
+    parser.add_argument(
+        "--annotations",
+        type=Path,
+        default=Path("../corpora/annotations"),
+        help=(
+            "A directory containing corpora annotation tsvs and MuseScore3 scores, which "
+            "will be used to write out labels onto new MuseScore3 score files in the "
+            "--output directory."
+        ),
     )
 
     parser.add_argument(
@@ -279,4 +324,9 @@ if __name__ == "__main__":
         )
     ]
 
-    evaluate(from_args(models, ARGS), pieces)
+    evaluate(
+        from_args(models, ARGS),
+        pieces,
+        output_tsv_dir=ARGS.output,
+        annotations_base_dir=ARGS.annotations,
+    )
