@@ -51,12 +51,17 @@ class KeySequenceModel(pl.LightningModule):
     def get_output(self, batch):
         inputs, input_lengths, _ = self.get_data_from_batch(batch)
 
-        return self(inputs, input_lengths)
+        hidden = (
+            torch.transpose(batch["hidden_states"][0], 0, 1),
+            torch.transpose(batch["hidden_states"][1], 0, 1),
+        )
+
+        return self(inputs, input_lengths, hidden=hidden)
 
     def training_step(self, batch, batch_idx):
         inputs, input_lengths, targets = self.get_data_from_batch(batch)
 
-        outputs = self(inputs, input_lengths)
+        outputs, _ = self(inputs, input_lengths)
 
         loss = F.nll_loss(outputs, targets)
 
@@ -66,7 +71,7 @@ class KeySequenceModel(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         inputs, input_lengths, targets = self.get_data_from_batch(batch)
 
-        outputs = self(inputs, input_lengths)
+        outputs, _ = self(inputs, input_lengths)
 
         loss = F.nll_loss(outputs, targets)
         acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
@@ -84,7 +89,7 @@ class KeySequenceModel(pl.LightningModule):
         for batch in tqdm(dl, desc="Evaluating KSM"):
             inputs, input_lengths, targets = self.get_data_from_batch(batch)
 
-            outputs = self(inputs, input_lengths)
+            outputs, _ = self(inputs, input_lengths)
 
             batch_count = len(batch)
             loss = F.nll_loss(outputs, targets)
@@ -156,12 +161,16 @@ class SimpleKeySequenceModel(KeySequenceModel):
         self.save_hyperparameters()
 
         # Input and output derived from input type and use_inversions
-        self.input_dim = Chord.get_chord_vector_length(
-            input_type,
-            one_hot=False,
-            relative=True,
-            use_inversions=True,
-            pad=True,
+        self.input_dim = (
+            Chord.get_chord_vector_length(
+                input_type,
+                one_hot=False,
+                relative=True,
+                use_inversions=True,
+                pad=True,
+            )
+            + Key.get_key_change_vector_length(input_type, one_hot=False)
+            + 1
         )
         self.output_dim = Key.get_key_change_vector_length(key_type, one_hot=True)
 
@@ -200,16 +209,16 @@ class SimpleKeySequenceModel(KeySequenceModel):
             Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden_dim)),
         )
 
-    def forward(self, inputs, lengths):
+    def forward(self, inputs, lengths, hidden=None):
         # pylint: disable=arguments-differ
         batch_size = inputs.shape[0]
         lengths = torch.clamp(lengths, min=1)
-        h_0, c_0 = self.init_hidden(batch_size)
+        h_0, c_0 = self.init_hidden(batch_size) if hidden is None else hidden
 
         embedded = F.relu(self.embed(inputs))
 
         packed = pack_padded_sequence(embedded, lengths, enforce_sorted=False, batch_first=True)
-        lstm_out_packed, (_, _) = self.lstm(packed, (h_0, c_0))
+        lstm_out_packed, hidden_out = self.lstm(packed, (h_0, c_0))
         lstm_out_unpacked, lstm_out_lengths = pad_packed_sequence(lstm_out_packed, batch_first=True)
 
         # Reshape lstm outs
@@ -229,4 +238,4 @@ class SimpleKeySequenceModel(KeySequenceModel):
         relu2 = F.relu(fc1)
         output = self.fc2(relu2)
 
-        return F.log_softmax(output, dim=1)
+        return F.log_softmax(output, dim=1), hidden_out

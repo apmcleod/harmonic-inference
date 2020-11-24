@@ -30,6 +30,7 @@ class State:
         hash_length: int = None,
         csm_hidden_state: np.array = None,
         ktm_hidden_state: np.array = None,
+        ksm_hidden_state: np.array = None,
         csm_log_prior: np.array = None,
         key_obj: Key = None,
         must_key_transition: bool = False,
@@ -59,6 +60,8 @@ class State:
             The hidden state for the CSM's next step.
         ktm_hidden_state : np.array
             The hidden state for the KTM's next step.
+        ksm_hidden_state : np.array
+            The hidden state for the KSM's next run.
         csm_log_prior : np.array
             The log prior for each (relative) chord symbol, as output by the CSM.
         key_obj : Key
@@ -85,6 +88,7 @@ class State:
 
         self.csm_hidden_state = copy.deepcopy(csm_hidden_state)
         self.ktm_hidden_state = copy.deepcopy(ktm_hidden_state)
+        self.ksm_hidden_state = copy.deepcopy(ksm_hidden_state)
         self.csm_log_prior = csm_log_prior
 
         # Key/chord objects
@@ -135,6 +139,7 @@ class State:
             hash_length=len(self.hash_tuple) if hasattr(self, "hash_tuple") else None,
             csm_hidden_state=self.csm_hidden_state,
             ktm_hidden_state=self.ktm_hidden_state,
+            ksm_hidden_state=self.ksm_hidden_state,
             csm_log_prior=self.csm_log_prior,
             key_obj=self.key_obj,
             must_key_transition=self._must_key_transition,
@@ -204,6 +209,7 @@ class State:
             hash_length=len(self.hash_tuple) if hasattr(self, "hash_tuple") else None,
             csm_hidden_state=self.csm_hidden_state,
             ktm_hidden_state=self.ktm_hidden_state,
+            ksm_hidden_state=self.ksm_hidden_state,
             csm_log_prior=self.csm_log_prior,
             key_obj=self.key_obj,
             must_key_transition=must_key_transition,
@@ -274,7 +280,8 @@ class State:
             prev_state=self.prev_state,
             hash_length=len(self.hash_tuple) if hasattr(self, "hash_tuple") else None,
             csm_hidden_state=self.csm_hidden_state,
-            ktm_hidden_state=self.ktm_hidden_state,
+            ktm_hidden_state=self.prev_state.ktm_hidden_state,
+            ksm_hidden_state=self.prev_state.ksm_hidden_state,
             csm_log_prior=self.csm_log_prior,
             key_obj=None,
             must_key_transition=False,
@@ -404,14 +411,28 @@ class State:
         ktm_input : np.array
             The input for the next step of this state's KTM.
         """
+        key_change_vector = np.zeros(
+            Key.get_key_change_vector_length(pitch_type, one_hot=False) + 1
+        )
+        if self.prev_state is not None and self.key != self.prev_state.key:
+            key_change_vector[:-1] = self.prev_state.get_key(
+                pitch_type, LABELS
+            ).get_key_change_vector(self.get_key(pitch_type, LABELS))
+            key_change_vector[-1] = 1
+
         return np.expand_dims(
-            self.get_chord(
-                pitch_type,
-                duration_cache,
-                onset_cache,
-                onset_level_cache,
-                LABELS,
-            ).to_vec(pad=True),
+            np.concatenate(
+                [
+                    self.get_chord(
+                        pitch_type,
+                        duration_cache,
+                        onset_cache,
+                        onset_level_cache,
+                        LABELS,
+                    ).to_vec(pad=True),
+                    key_change_vector,
+                ]
+            ),
             axis=0,
         )
 
@@ -451,21 +472,54 @@ class State:
             The input for the KSM form the last key change until now, with `length` additional
             input vectors filled with 0 appended to the end.
         """
-        this_ksm_input = self.get_chord(
-            pitch_type,
-            duration_cache,
-            onset_cache,
-            onset_level_cache,
-            LABELS,
-        ).to_vec(pad=True)
+
+        def hidden_states_equal(hidden_state_1, hidden_state_2) -> bool:
+            """
+            Check if two given hidden states (None, or tuples of 2 torch.tensors) are equal.
+
+            Parameters
+            ----------
+            hidden_state_1 : torch.tensor
+                The first hidden state.
+            hidden_state_2 : torch.tensor
+                The second hidden state.
+
+            Returns
+            -------
+            equal : bool
+                True if the given hidden states are either both None, or equal to each other.
+            """
+            if hidden_state_1 is None and hidden_state_2 is None:
+                return True
+
+            if hidden_state_1 is None or hidden_state_2 is None:
+                return False
+
+            return hidden_state_1[0].equal(hidden_state_2[0]) and hidden_state_1[1].equal(
+                hidden_state_2[1]
+            )
+
+        this_ksm_input = np.squeeze(
+            self.get_ktm_input(
+                pitch_type,
+                duration_cache,
+                onset_cache,
+                onset_level_cache,
+                LABELS,
+            )
+        )
 
         if (
             self.prev_state is None
-            or self.prev_state.key != self.key
-            or self.prev_state.chord is None
+            or self.prev_state.prev_state is None
+            # In this case, the previous state has already been run
+            or not hidden_states_equal(
+                self.prev_state.ksm_hidden_state,
+                self.prev_state.prev_state.ksm_hidden_state,
+            )
         ):
             # Base case - this is the first state
-            ksm_input = np.zeros((1 + length, len(this_ksm_input)))
+            ksm_input = np.zeros((length + 1, len(this_ksm_input)))
             ksm_input[0] = this_ksm_input
             return ksm_input
 

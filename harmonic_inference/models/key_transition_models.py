@@ -12,7 +12,7 @@ from tqdm import tqdm
 import pytorch_lightning as pl
 from harmonic_inference.data.data_types import PitchType
 from harmonic_inference.data.datasets import KeyTransitionDataset
-from harmonic_inference.data.piece import Chord
+from harmonic_inference.data.piece import Chord, Key
 
 
 class KeyTransitionModel(pl.LightningModule):
@@ -44,7 +44,7 @@ class KeyTransitionModel(pl.LightningModule):
 
         targets = batch["targets"].float()[:, :max_length]
 
-        mask = (inputs.sum(axis=2) > 0).bool()
+        mask = (targets != -100).bool()
 
         return inputs, input_lengths, targets, mask
 
@@ -174,12 +174,16 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
         self.save_hyperparameters()
 
         # Input derived from input type
-        self.input_dim = Chord.get_chord_vector_length(
-            input_type,
-            one_hot=False,
-            relative=True,
-            use_inversions=True,
-            pad=True,
+        self.input_dim = (
+            Chord.get_chord_vector_length(
+                input_type,
+                one_hot=False,
+                relative=True,
+                use_inversions=True,
+                pad=True,
+            )
+            + Key.get_key_change_vector_length(input_type, one_hot=False)
+            + 1
         )
 
         self.embed_dim = embed_dim

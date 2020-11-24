@@ -4,12 +4,12 @@ import shutil
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Tuple, Union
 
-import h5py
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
+import h5py
 from harmonic_inference.data.piece import Key, Piece, ScorePiece
 
 
@@ -164,10 +164,17 @@ class HarmonicDataset(Dataset):
 
         h5_file = h5py.File(h5_path, "w")
 
-        keys = ["inputs", "targets", "input_lengths", "target_lengths"]
+        keys = [
+            "inputs",
+            "targets",
+            "input_lengths",
+            "target_lengths",
+            "piece_lengths",
+            "key_change_replacements",
+        ]
         for key in keys:
             if hasattr(self, key):
-                h5_file.create_dataset(key, data=getattr(self, key), compression="gzip")
+                h5_file.create_dataset(key, data=np.array(getattr(self, key)), compression="gzip")
         if file_ids is not None:
             h5_file.create_dataset("file_ids", data=np.array(file_ids), compression="gzip")
         h5_file.close()
@@ -264,6 +271,7 @@ class ChordClassificationDataset(HarmonicDataset):
 
     def pad(self):
         self.inputs, self.input_lengths = pad_array(self.inputs)
+        self.padded = True
 
 
 class ChordSequenceDataset(HarmonicDataset):
@@ -326,94 +334,259 @@ class ChordSequenceDataset(HarmonicDataset):
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
 
 
-class KeyTransitionDataset(HarmonicDataset):
+class KeyHarmonicDataset(HarmonicDataset):
+    """
+    An abstract super-class containing functionality common to the Key Transition and
+    Key Sequence Datasets. Both of these must unwrap their inputs in the __getitem__
+    method.
+    """
+
+    def __init__(self, transform: Callable = None):
+        super().__init__(transform=transform)
+
+    def pad(self):
+        self.inputs, _ = pad_array(self.inputs)
+        self.padded = True
+
+    def __len__(self) -> int:
+        if not self.in_ram:
+            with h5py.File(self.h5_path, "r") as h5_file:
+                return int(np.sum(h5_file["piece_lengths"]))
+        return int(np.sum(self.piece_lengths))
+
+    def __getitem__(self, item) -> Dict:
+        def get_piece_index(item: int) -> Tuple[int, bool]:
+            """
+            Get the index of the piece from which the given item should be drawn.
+
+            Parameters
+            ----------
+            item : int
+                The index of the input/output we are looking for.
+
+            Returns
+            -------
+            piece_idx : int
+                The index of the piece to which the item belongs.
+            prev_in_piece : bool
+                True if the previous item (item - 1) belongs to the same piece.
+                False otherwise.
+
+            Raises
+            ------
+            ValueError
+                If item is greater than the size of this dataset.
+            """
+            for piece_idx, piece_length in enumerate(self.piece_lengths):
+                if item < piece_length:
+                    return piece_idx, item > 0
+                item -= piece_length
+            raise ValueError(f"Invalid item {item} requested for dataset of length {len(self)}")
+
+        piece_idx, prev_in_piece = get_piece_index(item)
+        if not self.in_ram:
+            assert self.h5_path is not None, "Data must be either in ram or in an h5_file."
+            with h5py.File(self.h5_path, "r") as h5_file:
+                piece_input = h5_file["inputs"][piece_idx]
+                input_length = h5_file["input_lengths"][item]
+                start_index = h5_file["input_lengths"][item - 1] if prev_in_piece else 0
+                key_change_replacement = h5_file["key_change_replacements"][item]
+                target = h5_file["targets"][item]
+
+        else:
+            piece_input = self.inputs[piece_idx]
+            input_length = self.input_lengths[item]
+            start_index = self.input_lengths[item - 1] if prev_in_piece else 0
+            if not hasattr(self, "max_input_length"):
+                self.max_input_length = np.max(self.input_lengths)
+            key_change_replacement = self.key_change_replacements[item]
+            target = self.targets[item]
+
+            if len(piece_input) < self.max_input_length:
+                padded_input = np.zeros((self.max_input_length + 1, piece_input.shape[1]))
+                padded_input[: len(piece_input)] = piece_input
+                piece_input = padded_input
+
+        # Create target list (if KTD)
+        if isinstance(self, KeyTransitionDataset):
+            targets = np.full(len(piece_input), -100)
+            targets[start_index + 1 : input_length] = 0
+            if target == 1:
+                targets[input_length] = target
+        else:
+            targets = target
+
+        # Add key_replacement as last input vector
+        if target == 1 or isinstance(self, KeySequenceDataset):
+            piece_input[input_length] = key_change_replacement
+            input_length += 1
+
+        data = {
+            "targets": targets,
+            "inputs": piece_input,
+            "input_lengths": input_length,
+        }
+
+        if hasattr(self, "hidden_states"):
+            data["hidden_states"] = (
+                getattr(self, "hidden_states")[0][:, item],
+                getattr(self, "hidden_states")[1][:, item],
+            )
+
+        if self.transform:
+            data.update(
+                {
+                    key: self.transform(value)
+                    for key, value in data.items()
+                    if isinstance(value, np.ndarray)
+                }
+            )
+
+        return data
+
+
+class KeyTransitionDataset(KeyHarmonicDataset):
     """
     A dataset representing key change locations.
 
-    The inputs are lists of relative chord vectors for
-    each sequence of chords without a key change, plus the following one chord, relative to the
-    current chord sequence's key.
+    There is 1 input sequence per key change per piece.
+    In each sequence, there is one input vector per chord symbol, from the beginning of the piece
+    leading up to each key change. Essentially, this is the CSM's input up to each key change,
+    plus one more symbol with the chord relative to the previous key.
 
-    The targets are 1 if the last chord is on a chord change, and 0 otherwise
-    (if the last chord is the last chord of a piece).
+    The targets are a list of targets for each input, where -100 means to ignore the output,
+    and 0 and 1 are "real" targets.
     """
 
-    train_batch_size = 128
-    valid_batch_size = 512
-    chunk_size = 1024
+    train_batch_size = 32
+    valid_batch_size = 64
+    chunk_size = 256
 
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
         self.inputs = []
         self.targets = []
 
+        self.piece_lengths = []
+        self.key_change_replacements = []
+        self.input_lengths = []
+
         for piece in pieces:
+            piece_input = []
             chords = piece.get_chords()
             key_changes = piece.get_key_change_indices()
+            keys = piece.get_keys()
+            key_vector_length = 1 + Key.get_key_change_vector_length(
+                keys[0].tonic_type,
+                one_hot=False,
+            )
 
-            for key, start, end in zip(
-                piece.get_keys(), key_changes, list(key_changes[1:]) + [len(chords)]
+            self.piece_lengths.append(len(keys))
+
+            self.input_lengths.extend(key_changes[1:])
+            self.input_lengths.append(len(chords))
+
+            self.targets.extend([1] * (len(keys) - 1))
+            self.targets.append(0)
+
+            for prev_key, key, start, end in zip(
+                [None] + list(keys[:-1]), keys, key_changes, list(key_changes[1:]) + [len(chords)]
             ):
-                target = 0
-                # If not the last chord, extend the input vector by 1 and set target to 1
-                if end != len(chords):
-                    end += 1
-                    target = 1
-                self.targets.append(np.array([0] * (end - start - 1) + [target]))
+                chord_vectors = np.vstack([chord.to_vec(pad=True) for chord in chords[start:end]])
+                key_vectors = np.zeros((len(chord_vectors), key_vector_length))
 
-                self.inputs.append(
-                    np.vstack(
-                        [chord.to_vec(relative_to=key, pad=True) for chord in chords[start:end]]
+                if prev_key is not None:
+                    key_vectors[0, :-1] = prev_key.get_key_change_vector(key)
+                    key_vectors[0, -1] = 1
+
+                self.key_change_replacements.append(
+                    np.concatenate(
+                        (
+                            chords[end].to_vec(relative_to=key, pad=True),
+                            np.zeros(key_vector_length),
+                        )
                     )
+                    if end != len(chords)
+                    else np.zeros(chord_vectors.shape[1] + key_vector_length)
                 )
 
-        self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
+                piece_input.append(np.hstack([chord_vectors, key_vectors]))
+
+            self.inputs.append(np.vstack(piece_input))
+
+        if len(self.key_change_replacements) > 0:
+            self.key_change_replacements = np.vstack(self.key_change_replacements)
 
 
-class KeySequenceDataset(HarmonicDataset):
+class KeySequenceDataset(KeyHarmonicDataset):
     """
     A dataset representing key changes.
 
-    The inputs are lists of relative chord vectors for
-    each sequence of chords without a key change, plus the following one chord, all relative to
-    the current chord sequence's key. The last chord sequence of each key is not used because
-    it does not end in a key change.
+    There is 1 input sequence per key change per piece.
+    In each sequence, there is one input vector per chord symbol, from the beginning of the piece
+    leading up to each key change. Essentially, this is the CSM's input up to each key change,
+    plus one more symbol with the chord relative to the previous key.
 
     There is one target per input list: a one-hot index representing the key change (transposition
     and new mode of the new key).
     """
 
-    train_batch_size = 256
-    valid_batch_size = 512
-    chunk_size = 512
+    train_batch_size = 32
+    valid_batch_size = 64
+    chunk_size = 256
 
     def __init__(self, pieces: List[Piece], transform=None):
         super().__init__(transform=transform)
         self.inputs = []
         self.targets = []
 
+        self.piece_lengths = []
+        self.key_change_replacements = []
+        self.input_lengths = []
+
         for piece in pieces:
+            piece_input = []
             chords = piece.get_chords()
             key_changes = piece.get_key_change_indices()
             keys = piece.get_keys()
+            key_vector_length = 1 + Key.get_key_change_vector_length(
+                keys[0].tonic_type,
+                one_hot=False,
+            )
 
-            for key, next_key, start, end in zip(
-                keys[:-1], keys[1:], key_changes[:-1], list(key_changes[1:])
+            if len(keys) <= 1:
+                continue
+
+            self.piece_lengths.append(len(keys) - 1)
+            self.input_lengths.extend(key_changes[1:])
+
+            for prev_key, key, start, end in zip(
+                [None] + list(keys[:-2]), keys[:-1], key_changes[:-1], key_changes[1:]
             ):
-                self.inputs.append(
-                    np.vstack(
-                        [
-                            chord.to_vec(relative_to=key, pad=True)
-                            for chord in chords[start : end + 1]
-                        ]
+                chord_vectors = np.vstack([chord.to_vec(pad=True) for chord in chords[start:end]])
+                key_vectors = np.zeros((len(chord_vectors), key_vector_length))
+
+                if prev_key is not None:
+                    self.targets.append(prev_key.get_key_change_one_hot_index(key))
+                    key_vectors[0, :-1] = prev_key.get_key_change_vector(key)
+                    key_vectors[0, -1] = 1
+
+                self.key_change_replacements.append(
+                    np.concatenate(
+                        (
+                            chords[end].to_vec(relative_to=key, pad=True),
+                            np.zeros(key_vector_length),
+                        )
                     )
                 )
-                self.targets.append(key.get_key_change_one_hot_index(next_key))
 
-        self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
+                piece_input.append(np.hstack([chord_vectors, key_vectors]))
 
-    def pad(self):
-        self.inputs, self.input_lengths = pad_array(self.inputs)
+            self.targets.append(keys[-2].get_key_change_one_hot_index(keys[-1]))
+            self.inputs.append(np.vstack(piece_input))
+
+        if len(self.key_change_replacements) > 0:
+            self.key_change_replacements = np.vstack(self.key_change_replacements)
 
 
 def h5_to_dataset(
@@ -484,6 +657,11 @@ def h5_to_dataset(
                     )
             else:
                 dataset.targets = np.array(h5_file["targets"], dtype=np.float16)
+
+            for key in ["piece_lengths", "key_change_replacements"]:
+                if key in h5_file:
+                    setattr(dataset, key, np.array(h5_file[key]))
+
             dataset.in_ram = True
 
         except Exception:

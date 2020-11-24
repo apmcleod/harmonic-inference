@@ -5,7 +5,7 @@ import pickle
 import sys
 from glob import glob
 from pathlib import Path
-from typing import List
+from typing import List, Union
 
 from tqdm import tqdm
 
@@ -13,6 +13,7 @@ import h5py
 import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.utils.eval_utils as eu
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
+from harmonic_inference.data.data_types import NO_REDUCTION, TRIAD_REDUCTION
 from harmonic_inference.data.piece import Piece, ScorePiece
 from harmonic_inference.models.joint_model import (
     MODEL_CLASSES,
@@ -24,19 +25,110 @@ from harmonic_inference.models.joint_model import (
 SPLITS = ["train", "valid", "test"]
 
 
-def evaluate(model: HarmonicInferenceModel, pieces: List[Piece]):
-    states = []
+def evaluate(
+    model: HarmonicInferenceModel,
+    pieces: List[Piece],
+    output_tsv_dir: Union[Path, str] = None,
+    annotations_base_dir: Union[Path, str] = None,
+):
+    if output_tsv_dir is not None:
+        output_tsv_dir = Path(output_tsv_dir)
+
+    if annotations_base_dir is not None:
+        annotations_base_dir = Path(annotations_base_dir)
+
     for piece in tqdm(pieces, desc="Getting harmony for pieces"):
         if piece.name is not None:
             logging.info(f"Running piece {piece.name}")
 
         state = model.get_harmony(piece)
-        states.append(state)
 
         if state is None:
             logging.info("Returned None")
         else:
-            logging.info(eu.evaluate(piece, state))
+            chord_acc_full = eu.evaluate_chords(
+                piece,
+                state,
+                model.CHORD_OUTPUT_TYPE,
+                use_inversion=True,
+                reduction=NO_REDUCTION,
+            )
+            chord_acc_no_inv = eu.evaluate_chords(
+                piece,
+                state,
+                model.CHORD_OUTPUT_TYPE,
+                use_inversion=False,
+                reduction=NO_REDUCTION,
+            )
+            chord_acc_triad = eu.evaluate_chords(
+                piece,
+                state,
+                model.CHORD_OUTPUT_TYPE,
+                use_inversion=True,
+                reduction=TRIAD_REDUCTION,
+            )
+            chord_acc_triad_no_inv = eu.evaluate_chords(
+                piece,
+                state,
+                model.CHORD_OUTPUT_TYPE,
+                use_inversion=False,
+                reduction=TRIAD_REDUCTION,
+            )
+
+            logging.info("Chord accuracy = %s", chord_acc_full)
+            logging.info("Chord accuracy, no inversions = %s", chord_acc_no_inv)
+            logging.info("Chord accuracy, triads = %s", chord_acc_triad)
+            logging.info("Chord accuracy, triad, no inversions = %s", chord_acc_triad_no_inv)
+
+            key_acc_full = eu.evaluate_keys(piece, state, model.KEY_OUTPUT_TYPE, tonic_only=False)
+            key_acc_tonic = eu.evaluate_keys(piece, state, model.KEY_OUTPUT_TYPE, tonic_only=True)
+
+            logging.info("Key accuracy = %s", key_acc_full)
+            logging.info("Key accuracy, tonic only = %s", key_acc_tonic)
+
+            full_acc = eu.evaluate_chords_and_keys_jointly(
+                piece,
+                state,
+                root_type=model.CHORD_OUTPUT_TYPE,
+                tonic_type=model.KEY_OUTPUT_TYPE,
+                use_inversion=True,
+                chord_reduction=NO_REDUCTION,
+                tonic_only=False,
+            )
+            logging.info("Full accuracy = %s", full_acc)
+
+            if logging.getLogger().isEnabledFor(logging.DEBUG):
+                eu.log_state(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)
+
+            labels_df = eu.get_label_df(
+                state,
+                piece,
+                model.CHORD_OUTPUT_TYPE,
+                model.KEY_OUTPUT_TYPE,
+            )
+
+            if piece.name is not None and output_tsv_dir is not None:
+                piece_name = Path(piece.name.split(" ")[-1])
+                output_tsv_path = output_tsv_dir / piece_name
+
+                try:
+                    output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
+                    labels_df.to_csv(output_tsv_path, sep="\t")
+                    logging.info("Labels TSV written out to %s", output_tsv_path)
+                except Exception:
+                    logging.exception("Error writing to csv %s", output_tsv_path)
+                    logging.debug(labels_df)
+                else:
+                    if annotations_base_dir is not None:
+                        logging.info("Writing score out to %s", output_tsv_dir / piece_name.parent)
+                        eu.write_labels_to_score(
+                            output_tsv_dir / piece_name.parent,
+                            annotations_base_dir / piece_name.parent,
+                            piece_name.stem,
+                        )
+
+            else:
+                logging.debug(labels_df)
 
 
 if __name__ == "__main__":
@@ -51,6 +143,32 @@ if __name__ == "__main__":
         type=Path,
         default=Path("corpus_data"),
         help="The directory containing the raw corpus_data tsv files.",
+    )
+
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default="output",
+        help="The directory to write label tsvs and annotated MuseScore3 scores to.",
+    )
+
+    parser.add_argument(
+        "--annotations",
+        type=Path,
+        default=Path("../corpora/annotations"),
+        help=(
+            "A directory containing corpora annotation tsvs and MuseScore3 scores, which "
+            "will be used to write out labels onto new MuseScore3 score files in the "
+            "--output directory."
+        ),
+    )
+
+    parser.add_argument(
+        "--id",
+        type=int,
+        default=None,
+        help="Only evaluate the given file_id (which must be from the validation set).",
     )
 
     parser.add_argument(
@@ -179,6 +297,15 @@ if __name__ == "__main__":
     else:
         piece_dicts = [None] * len(file_ids)
 
+    # Run only on a specific file
+    if ARGS.id is not None:
+        if ARGS.id not in file_ids:
+            raise ValueError("Given id not in the validation set.")
+
+        index = file_ids.index(ARGS.id)
+        file_ids = [file_ids[index]]
+        piece_dicts = [piece_dicts[index]]
+
     pieces = [
         ScorePiece(
             notes_df.loc[file_id],
@@ -197,4 +324,9 @@ if __name__ == "__main__":
         )
     ]
 
-    evaluate(from_args(models, ARGS), pieces)
+    evaluate(
+        from_args(models, ARGS),
+        pieces,
+        output_tsv_dir=ARGS.output,
+        annotations_base_dir=ARGS.annotations,
+    )

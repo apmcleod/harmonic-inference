@@ -75,6 +75,63 @@ def get_chord_label_list(
     ]
 
 
+def get_chord_from_one_hot_index(
+    one_hot_index: int,
+    pitch_type: PitchType,
+    use_inversions: bool = True,
+    relative: bool = False,
+    pad: bool = False,
+) -> Tuple[int, ChordType, int]:
+    """
+    Get a chord object from a one hot index.
+
+    Parameters
+    ----------
+    one_hot_index : int
+        The one-hot index of the chord to return.
+    pitch_type : PitchType
+        The pitch type representation being used.
+    use_inversions : bool
+        True to count the different inversions of each chord as different chords.
+    relative : bool
+        True to get relative chord labels. False otherwise.
+    relative_to : int
+        The pitch to be relative to, if any.
+    pad : bool
+        True to add padding around possible pitches, if relative is True.
+
+    Returns
+    -------
+    root : int
+        The root pitch of the chord.
+    chord_type : ChorType
+        The chord type of the corresponding chord.
+    inversion : int
+        The inversion of the corresponding chord.
+    """
+    if relative:
+        if pitch_type == PitchType.TPC:
+            minimum = hc.MIN_RELATIVE_TPC
+            maximum = hc.MAX_RELATIVE_TPC
+            if pad:
+                minimum -= hc.RELATIVE_TPC_EXTRA
+                maximum += hc.RELATIVE_TPC_EXTRA
+
+            roots = list(range(minimum, maximum))
+
+        else:
+            roots = list(range(0, hc.NUM_PITCHES[pitch_type]))
+
+    else:
+        roots = list(range(hc.NUM_PITCHES[pitch_type]))
+
+    return [
+        (root, chord_type, inv)
+        for chord_type, root in itertools.product(ChordType, roots)
+        for inv in (range(get_chord_inversion_count(chord_type)) if use_inversions else [0])
+    ][one_hot_index]
+
+
 def get_chord_one_hot_index(
     chord_type: ChordType,
     root_pitch: int,
@@ -192,6 +249,46 @@ def get_key_label_list(
         f"{tonic.lower() if key_mode == KeyMode.MINOR else tonic}:{key_mode}"
         for key_mode, tonic in itertools.product(KeyMode, tonics)
     ]
+
+
+def get_key_from_one_hot_index(
+    one_hot: int,
+    pitch_type: PitchType,
+    relative: bool = False,
+) -> Tuple[int, KeyMode]:
+    """
+    Get the key tonic and mode of the given one hot key label index.
+
+    Parameters
+    ----------
+    one_hot : int
+        The one hot key information to return.
+    pitch_type : PitchType
+        The pitch type of the tonic labels.
+    relative : bool
+        True to output relative key pitch. False for absolute.
+
+    Returns
+    -------
+    key_tonic : int
+        The tonic of the corresponding key.
+    key_mode : KeyMode
+        The mode of the corresponding key.
+    """
+    if relative:
+        if pitch_type == PitchType.TPC:
+            minimum = hc.MIN_KEY_CHANGE_INTERVAL_TPC
+            maximum = hc.MAX_KEY_CHANGE_INTERVAL_TPC
+
+            tonics = list(range(minimum, maximum))
+
+        else:
+            tonics = list(range(0, hc.NUM_PITCHES[pitch_type]))
+
+    else:
+        tonics = list(range(hc.NUM_PITCHES[pitch_type]))
+
+    return [(tonic, key_mode) for key_mode, tonic in itertools.product(KeyMode, tonics)][one_hot]
 
 
 def get_key_one_hot_index(key_mode: KeyMode, tonic: int, pitch_type: PitchType) -> int:
