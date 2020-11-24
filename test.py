@@ -237,6 +237,10 @@ if __name__ == "__main__":
 
     ARGS = parser.parse_args()
 
+    if ARGS.log is not sys.stderr:
+        log_path = Path(ARGS.log)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+
     logging.basicConfig(
         filename=None if ARGS.log is sys.stderr else ARGS.log,
         level=logging.DEBUG if ARGS.verbose else logging.INFO,
