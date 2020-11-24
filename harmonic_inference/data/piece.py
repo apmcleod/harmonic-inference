@@ -333,6 +333,19 @@ class Note:
             logging.exception(e)
             return None
 
+    @staticmethod
+    def decode_note_vector(note_vector: np.array):
+        """
+        Print out information about the given note vector.
+
+        Parameters
+        ----------
+        note_vector : np.array
+            A note vector to decode.
+        """
+        # TODO
+        pass
+
 
 class Chord:
     """
@@ -804,6 +817,68 @@ class Chord:
             logging.exception(e)
             return None
 
+    @staticmethod
+    def decode_chord_vector(
+        chord_vector: np.array,
+        pitch_type: PitchType,
+        pad: bool = False,
+    ):
+        """
+        Print out information about the given chord vector.
+
+        Parameters
+        ----------
+        chord_vector : np.array
+            A chord vector to decode.
+        """
+        if pitch_type == PitchType.MIDI:
+            num_pitches = hc.NUM_PITCHES[PitchType.MIDI]
+            to_add = 0
+
+        elif pitch_type == PitchType.TPC:
+            num_pitches = hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
+            to_add = hc.MIN_RELATIVE_TPC
+            if pad:
+                num_pitches += 2 * hc.RELATIVE_TPC_EXTRA
+                to_add += hc.RELATIVE_TPC_EXTRA
+
+        else:
+            raise ValueError(f"Pitch Type {pitch_type} not recognized.")
+
+        relative_root = np.where(chord_vector == 1)[0][0]
+        if pitch_type == PitchType.TPC:
+            relative_root += to_add
+
+        chord_type_vector = chord_vector[num_pitches : num_pitches + len(ChordType)]
+        chord_type = np.array(ChordType)[chord_type_vector == 1]
+
+        bass_vector = chord_vector[num_pitches + len(ChordType) : 2 * num_pitches + len(ChordType)]
+        relative_bass = np.where(bass_vector == 1)[0][0]
+        if pitch_type == PitchType.TPC:
+            relative_bass += to_add
+
+        current_idx = 2 * num_pitches + len(ChordType)
+        inversion_vector = chord_vector[current_idx : current_idx + 4]
+        inversion = np.where(inversion_vector == 0)[0][0]
+
+        current_idx += 4
+        onset_level_vector = chord_vector[current_idx : current_idx + 4]
+        onset_level = np.where(onset_level_vector == 0)[0][0]
+
+        current_idx += 4
+        offset_level_vector = chord_vector[current_idx : current_idx + 4]
+        offset_level = np.where(offset_level_vector == 0)[0][0]
+
+        is_major = chord_vector[-1] == 1
+
+        print(f"Relative root: {relative_root}")
+        print(f"Chord type: {chord_type}")
+        print(f"Relative bass note: {relative_bass}")
+        print(f"Inversion: {inversion}")
+        print(f"Onset level: {onset_level}")
+        print(f"Offset_level: {offset_level}")
+        print(f"Key mode: {KeyMode.MAJOR if is_major else KeyMode.MINOR}")
+
 
 class Key:
     """
@@ -1106,6 +1181,66 @@ class Key:
             logging.error(f"Error parsing key from row {chord_row}")
             logging.exception(e)
             return None
+
+    @staticmethod
+    def decode_key_change_vector(key_change_vector: np.array, pitch_type: PitchType):
+        """
+        Print out information about the given key change vector.
+
+        Parameters
+        ----------
+        key_vector : np.array
+            A key vector to decode.
+        """
+        relative_tonic = np.where(key_change_vector == 1)[0][0]
+        if pitch_type == PitchType.TPC:
+            relative_tonic += hc.MIN_KEY_CHANGE_INTERVAL_TPC
+
+        # Absolute mode of next key
+        key_mode = np.array(KeyMode)[key_change_vector[-2:] == 1]
+
+        print(f"Relative tonic: {relative_tonic}, Mode: {key_mode}")
+
+
+def decode_chord_and_key_change_vector(
+    vector: np.array,
+    root_type: PitchType,
+    tonic_type: PitchType,
+    use_inversions: bool = True,
+    pad: bool = False,
+):
+    """
+    Print out information about the given relative chord (with optional key change) vector.
+
+    Parameters
+    ----------
+    vector : np.array
+        A relative chord (and optional key change) vector.
+    """
+    chord_vector_length = Chord.get_chord_vector_length(
+        root_type,
+        one_hot=False,
+        relative=True,
+        use_inversions=use_inversions,
+        pad=pad,
+    )
+
+    Chord.decode_chord_vector(
+        vector[:chord_vector_length],
+        root_type,
+        pad=pad,
+    )
+
+    is_key_change = vector[-1]
+    key_vector = vector[chord_vector_length:-1]
+
+    if is_key_change:
+        print("Key change:")
+        Key.decode_key_change_vector(key_vector, tonic_type)
+    else:
+        print("No key change")
+        if np.sum(key_vector) > 0:
+            raise ValueError("No key change, but key change vector is not empty.")
 
 
 def get_reduction_mask(inputs: List[Union[Chord, Key]], kwargs: Dict = {}) -> List[bool]:
