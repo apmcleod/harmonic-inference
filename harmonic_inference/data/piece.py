@@ -882,7 +882,7 @@ class Chord:
             to_add = hc.MIN_RELATIVE_TPC
             if pad:
                 num_pitches += 2 * hc.RELATIVE_TPC_EXTRA
-                to_add += hc.RELATIVE_TPC_EXTRA
+                to_add -= hc.RELATIVE_TPC_EXTRA
 
         else:
             raise ValueError(f"Pitch Type {pitch_type} not recognized.")
@@ -892,7 +892,7 @@ class Chord:
             relative_root += to_add
 
         chord_type_vector = chord_vector[num_pitches : num_pitches + len(ChordType)]
-        chord_type = np.array(ChordType)[chord_type_vector == 1]
+        chord_type = np.array(ChordType)[chord_type_vector == 1][0]
 
         bass_vector = chord_vector[num_pitches + len(ChordType) : 2 * num_pitches + len(ChordType)]
         relative_bass = np.where(bass_vector == 1)[0][0]
