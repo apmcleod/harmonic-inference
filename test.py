@@ -7,9 +7,9 @@ from glob import glob
 from pathlib import Path
 from typing import List, Union
 
-import h5py
 from tqdm import tqdm
 
+import h5py
 import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.utils.eval_utils as eu
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
@@ -29,6 +29,21 @@ def write_tsvs_to_scores(
     output_tsv_dir: Union[Path, str],
     annotations_base_dir: Union[Path, str],
 ):
+    """
+    Write the labels TSVs from the given output directory onto annotated scores
+    (from the annotations_base_dir) in the output directory.
+
+    Parameters
+    ----------
+    output_tsv_dir : Union[Path, str]
+        The path to TSV files containing labels to write onto annotated scores.
+        The directory should contain sub-directories for each composer (aligned
+        with sub-dirs in the annotations base directory), and a single TSV for each
+        output.
+    annotations_base_dir : Union[Path, str]
+        The path to annotations and MuseScore3 scores, whose sub-directories and file names
+        are aligned with those in the output TSV directory.
+    """
     output_tsv_dir = Path(output_tsv_dir)
     annotations_base_dir = Path(annotations_base_dir)
 
@@ -41,7 +56,6 @@ def write_tsvs_to_scores(
                 annotations_base_dir / piece_name.parent,
                 piece_name.stem,
             )
-            logging.info("Writing score out to %s", output_tsv_dir / piece_name.parent)
         except Exception:
             logging.exception("Error writing score out to %s", output_tsv_dir / piece_name.parent)
 
@@ -52,6 +66,22 @@ def evaluate(
     output_tsv_dir: Union[Path, str] = None,
     annotations_base_dir: Union[Path, str] = None,
 ):
+    """
+    Get estimated chords and keys on the given pieces using the given model.
+
+    Parameters
+    ----------
+    model : HarmonicInferenceModel
+        The model to use to estimate chords and keys.
+    pieces : List[Piece]
+        The input pieces to estimate chords and keys from.
+    output_tsv_dir : Union[Path, str]
+        A directory to output TSV labels into. Each piece's output labels will go into
+        a sub-directory according to its name field. If None, label TSVs are not generated.
+    annotations_base_dir : Union[Path, str]
+        A directory containing annotated scores, which the estimated labels can be written
+        onto and then saved into the output_tsv directory.
+    """
     if output_tsv_dir is not None:
         output_tsv_dir = Path(output_tsv_dir)
 
