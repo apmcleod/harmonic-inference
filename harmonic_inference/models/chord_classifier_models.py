@@ -1,6 +1,7 @@
 """Models that generate probability distributions over chord classifications of a given input."""
 from typing import Collection, Tuple
 
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,7 +10,6 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-import pytorch_lightning as pl
 from harmonic_inference.data.data_types import PieceType, PitchType
 from harmonic_inference.data.datasets import ChordClassificationDataset
 from harmonic_inference.data.piece import Chord, Note
@@ -119,7 +119,7 @@ class SimpleChordClassifier(ChordClassifierModel):
         self,
         input_type: PitchType,
         output_type: PitchType,
-        use_inversions: bool,
+        use_inversions: bool = True,
         lstm_layers: int = 1,
         lstm_hidden_dim: int = 128,
         hidden_dim: int = 128,
