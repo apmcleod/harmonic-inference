@@ -120,12 +120,21 @@ def evaluate(
                     logging.debug(labels_df)
                 else:
                     if annotations_base_dir is not None:
-                        logging.info("Writing score out to %s", output_tsv_dir / piece_name.parent)
-                        eu.write_labels_to_score(
-                            output_tsv_dir / piece_name.parent,
-                            annotations_base_dir / piece_name.parent,
-                            piece_name.stem,
-                        )
+                        try:
+                            eu.write_labels_to_score(
+                                output_tsv_dir / piece_name.parent,
+                                annotations_base_dir / piece_name.parent,
+                                piece_name.stem,
+                            )
+                            logging.info(
+                                "Writing score out to %s",
+                                output_tsv_dir / piece_name.parent,
+                            )
+                        except Exception:
+                            logging.exception(
+                                "Error writing score out to %s",
+                                output_tsv_dir / piece_name.parent,
+                            )
 
             else:
                 logging.debug(labels_df)
