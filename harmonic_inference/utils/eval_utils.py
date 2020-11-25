@@ -538,6 +538,8 @@ def write_labels_to_score(
     annotations_dir: Union[str, Path],
     basename: str,
 ):
+    log_level = logging.getLogger().getEffectiveLevel()
+
     if isinstance(labels_dir, Path):
         labels_dir = str(labels_dir)
 
@@ -558,6 +560,8 @@ def write_labels_to_score(
 
     # Write score out to file
     parse.store_mscx(root_dir=labels_dir, suffix="_inferred", overwrite=True)
+
+    logging.getLogger().setLevel(log_level)
 
 
 def log_state(state: State, piece: Piece, root_type: PitchType, tonic_type: PitchType):
