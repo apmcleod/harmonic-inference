@@ -121,19 +121,21 @@ def evaluate(
                 else:
                     if annotations_base_dir is not None:
                         log_level = logging.getLogger().getEffectiveLevel()
+                        log_file = logging.getLogger().handlers[-1].baseFilename
+
                         try:
                             eu.write_labels_to_score(
                                 output_tsv_dir / piece_name.parent,
                                 annotations_base_dir / piece_name.parent,
                                 piece_name.stem,
                             )
-                            logging.getLogger().setLevel(log_level)
+                            logging.basicConfig(filename=log_file, level=log_level)
                             logging.info(
                                 "Writing score out to %s",
                                 output_tsv_dir / piece_name.parent,
                             )
                         except Exception:
-                            logging.getLogger().setLevel(log_level)
+                            logging.basicConfig(filename=log_file, level=log_level)
                             logging.exception(
                                 "Error writing score out to %s",
                                 output_tsv_dir / piece_name.parent,
