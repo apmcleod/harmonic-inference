@@ -7,9 +7,9 @@ from glob import glob
 from pathlib import Path
 from typing import List, Union
 
+import h5py
 from tqdm import tqdm
 
-import h5py
 import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.utils.eval_utils as eu
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
@@ -23,6 +23,27 @@ from harmonic_inference.models.joint_model import (
 )
 
 SPLITS = ["train", "valid", "test"]
+
+
+def write_tsvs_to_scores(
+    output_tsv_dir: Union[Path, str],
+    annotations_base_dir: Union[Path, str],
+):
+    output_tsv_dir = Path(output_tsv_dir)
+    annotations_base_dir = Path(annotations_base_dir)
+
+    output_paths = sorted(glob(str(output_tsv_dir / "**" / "*.tsv"), recursive=True))
+    for piece_name in tqdm(output_paths, desc="Writing labesl to scores"):
+        piece_name = Path(piece_name).relative_to(output_tsv_dir)
+        try:
+            eu.write_labels_to_score(
+                output_tsv_dir / piece_name.parent,
+                annotations_base_dir / piece_name.parent,
+                piece_name.stem,
+            )
+            logging.info("Writing score out to %s", output_tsv_dir / piece_name.parent)
+        except Exception:
+            logging.exception("Error writing score out to %s", output_tsv_dir / piece_name.parent)
 
 
 def evaluate(
@@ -120,22 +141,17 @@ def evaluate(
                     logging.debug(labels_df)
                 else:
                     if annotations_base_dir is not None:
-                        log_level = logging.getLogger().getEffectiveLevel()
-                        log_file = logging.getLogger().handlers[-1].baseFilename
-
                         try:
                             eu.write_labels_to_score(
                                 output_tsv_dir / piece_name.parent,
                                 annotations_base_dir / piece_name.parent,
                                 piece_name.stem,
                             )
-                            logging.basicConfig(filename=log_file, level=log_level)
                             logging.info(
                                 "Writing score out to %s",
                                 output_tsv_dir / piece_name.parent,
                             )
                         except Exception:
-                            logging.basicConfig(filename=log_file, level=log_level)
                             logging.exception(
                                 "Error writing score out to %s",
                                 output_tsv_dir / piece_name.parent,
@@ -160,6 +176,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--scores",
+        action="store_true",
+        help="Write the output label TSVs onto annotated scores in the output directory.",
+    )
+
+    parser.add_argument(
         "-o",
         "--output",
         type=Path,
@@ -170,7 +192,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--annotations",
         type=Path,
-        default=Path("../corpora/annotations"),
+        default=None,
         help=(
             "A directory containing corpora annotation tsvs and MuseScore3 scores, which "
             "will be used to write out labels onto new MuseScore3 score files in the "
@@ -260,6 +282,14 @@ if __name__ == "__main__":
         level=logging.DEBUG if ARGS.verbose else logging.INFO,
         filemode="w",
     )
+
+    if ARGS.scores:
+        if ARGS.annotations is None:
+            raise ValueError("--annotations must be given with --scores option.")
+        if ARGS.output is None:
+            raise ValueError("--output must be given with --scores option.")
+        write_tsvs_to_scores(ARGS.output, ARGS.annotations)
+        sys.exit(0)
 
     # Load models
     models = {}
