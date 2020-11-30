@@ -137,6 +137,16 @@ def add_joint_model_args(parser: ArgumentParser):
         ),
     )
 
+    parser.add_argument(
+        "--ksm-exponent",
+        default=1.0,
+        type=float,
+        help=(
+            "An exponent to be applied to the KSM's probability outputs. Used to weight "
+            "the KSM and CSM equally even given their different vocabulary sizes."
+        ),
+    )
+
 
 class HarmonicInferenceModel:
     """
@@ -157,6 +167,7 @@ class HarmonicInferenceModel:
         max_key_branching_factor: int = 5,
         target_key_branch_prob: float = 0.95,
         hash_length: int = 5,
+        ksm_exponent: float = 1.0,
     ):
         """
         Create a new HarmonicInferenceModel from a set of pre-loaded models.
@@ -198,7 +209,10 @@ class HarmonicInferenceModel:
             no more keys are searched, even if the max_key_branching_factor has not yet been
             reached.
         hash_length : int
-            If not None, a hashed beam is used, where only 1 State is kept in the Beam
+            If not None, a hashed beam is used, where only 1 State is kept in the Beam.
+        ksm_exponent : float
+            An exponent to apply to the KSM's output probabilities. Used to weight the KSM
+            and CSM equally, even given their different vocabulary sizes.
         """
         for model, model_class in MODEL_CLASSES.items():
             assert model in models.keys(), f"`{model}` not in models dict."
@@ -292,6 +306,7 @@ class HarmonicInferenceModel:
         # Key branching params (KSM)
         self.max_key_branching_factor = max_key_branching_factor
         self.target_key_branch_prob = target_key_branch_prob
+        self.ksm_exponent = ksm_exponent
 
         # Beam search params
         self.beam_size = beam_size
@@ -919,7 +934,7 @@ class HarmonicInferenceModel:
                 # Calculate the new state on this key change
                 new_state = state.key_transition(
                     key_id,
-                    log_priors[relative_key_id],
+                    log_priors[relative_key_id] * self.ksm_exponent,
                     self.KEY_OUTPUT_TYPE,
                     self.LABELS,
                 )
@@ -1621,4 +1636,5 @@ def from_args(models: Dict, ARGS: Namespace) -> HarmonicInferenceModel:
         max_key_branching_factor=ARGS.max_key_branching_factor,
         target_key_branch_prob=ARGS.target_key_branch_prob,
         hash_length=ARGS.hash_length,
+        ksm_exponent=ARGS.ksm_exponent,
     )
