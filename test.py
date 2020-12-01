@@ -7,9 +7,9 @@ from glob import glob
 from pathlib import Path
 from typing import List, Union
 
+import h5py
 from tqdm import tqdm
 
-import h5py
 import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.utils.eval_utils as eu
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
@@ -231,6 +231,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--average",
+        type=Path,
+        default=False,
+        help="Average the accuracies from the given log file.",
+    )
+
+    parser.add_argument(
         "--id",
         type=int,
         default=None,
@@ -312,6 +319,11 @@ if __name__ == "__main__":
         level=logging.DEBUG if ARGS.verbose else logging.INFO,
         filemode="w",
     )
+
+    if ARGS.average:
+        for key, average in eu.average_results(ARGS.average).items():
+            print(f"Average {key} = {average}")
+        sys.exit(0)
 
     if ARGS.scores:
         if ARGS.annotations is None:

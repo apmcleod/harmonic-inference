@@ -1,11 +1,13 @@
 """Utility functions for evaluating model outputs."""
 import logging
 import re
+from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
+from ms3 import Parse
 
 import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.data.data_types import (
@@ -17,7 +19,6 @@ from harmonic_inference.data.data_types import (
 )
 from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import State
-from ms3 import Parse
 
 
 def evaluate_chords(
@@ -558,6 +559,42 @@ def write_labels_to_score(
 
     # Write score out to file
     parse.store_mscx(root_dir=labels_dir, suffix="_inferred", overwrite=True)
+
+
+def average_results(results_path: Union[Path, str], split_on: str = " = ") -> Dict[str, float]:
+    """
+    Average accuracy values from a file.
+
+    Parameters
+    ----------
+    results_path : Union[Path, str]
+        The file to read results from.
+    split_on : str
+        The symbol which separates an accuracy's key from its value.
+
+    Returns
+    -------
+    averages : Dict[str, float]
+        A dictionary mapping each accuracy key to its average value.
+    """
+    averages = defaultdict(list)
+
+    with open(results_path, "r") as results_file:
+        for line in results_file:
+            if split_on not in line:
+                continue
+
+            line_split = line.split(split_on)
+            if len(line_split) != 2:
+                continue
+
+            key, value = line_split
+            key = key.strip()
+            value = float(value.strip())
+
+            averages[key].append(value)
+
+    return {key: np.mean(value_list) for key, value_list in averages.items()}
 
 
 def log_state(state: State, piece: Piece, root_type: PitchType, tonic_type: PitchType):
