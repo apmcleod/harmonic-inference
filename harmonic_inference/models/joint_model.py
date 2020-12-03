@@ -932,9 +932,10 @@ class HarmonicInferenceModel:
                     continue
 
                 # Calculate the new state on this key change
+                range_length = state.change_index - state.prev_state.change_index
                 new_state = state.key_transition(
                     key_id,
-                    log_priors[relative_key_id] * self.ksm_exponent,
+                    log_priors[relative_key_id] * self.ksm_exponent * range_length,
                     self.KEY_OUTPUT_TYPE,
                     self.LABELS,
                 )
