@@ -314,6 +314,7 @@ class HarmonicInferenceModel:
 
         # No piece currently
         self.current_piece = None
+        self.debugger = None
 
     def get_harmony(self, piece: Piece) -> State:
         """
@@ -1481,8 +1482,8 @@ class DebugLogger:
         num_correct_ranges = 0
         num_correct_chords = 0
 
-        for range, chord_probs in zip(chord_ranges, np.exp(chord_classifications)):
-            range_start, range_end = range
+        for chord_range, chord_probs in zip(chord_ranges, np.exp(chord_classifications)):
+            range_start, range_end = chord_range
 
             correct_chords = self.piece.get_chords_within_range(range_start, range_end)
             correct_chords_one_hot = [
@@ -1516,7 +1517,9 @@ class DebugLogger:
                 "=== " if is_classification_correct else "*** " if is_range_correct else ""
             )
 
-            logging.debug("%sChord classification results for range %s:", correct_string, range)
+            logging.debug(
+                "%sChord classification results for range %s:", correct_string, chord_range
+            )
             logging.debug(
                 "    correct chords: %s",
                 "; ".join(self.chord_labels[correct_chords_one_hot]),

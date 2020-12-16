@@ -539,6 +539,18 @@ def write_labels_to_score(
     annotations_dir: Union[str, Path],
     basename: str,
 ):
+    """
+    Write the annotation labels from a given directory onto a musescore file.
+
+    Parameters
+    ----------
+    labels_dir : Union[str, Path]
+        The directory containing the tsv file containing the model's annotations.
+    annotations_dir : Union[str, Path]
+        The directory containing the ground truth annotations and MS3 score file.
+    basename : str
+        The basename of the annotation TSV and the ground truth annotations/MS3 file.
+    """
     if isinstance(labels_dir, Path):
         labels_dir = str(labels_dir)
 
