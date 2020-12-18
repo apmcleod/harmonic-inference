@@ -1,15 +1,19 @@
 import argparse
+import json
 import logging
 import os
 import pickle
 import sys
 from pathlib import Path
 
+import h5py
+import pytorch_lightning as pl
 import torch
+from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
+from pytorch_lightning.profiler import AdvancedProfiler
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-import h5py
 import harmonic_inference.data.datasets as ds
 import harmonic_inference.models.chord_classifier_models as ccm
 import harmonic_inference.models.chord_sequence_models as csm
@@ -17,13 +21,10 @@ import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
-import pytorch_lightning as pl
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 from harmonic_inference.data.data_types import PieceType, PitchType
 from harmonic_inference.data.piece import ScorePiece
 from harmonic_inference.models.joint_model import MODEL_CLASSES
-from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
-from pytorch_lightning.profiler import AdvancedProfiler
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -94,11 +95,24 @@ if __name__ == "__main__":
         help="The seed used when generating the h5_data.",
     )
 
+    parser.add_argument(
+        "--model-kwargs",
+        default=None,
+        type=Path,
+        help="A json file containing kwargs to be passed to the model initializer function.",
+    )
+
     ARGS = parser.parse_args()
 
     if ARGS.checkpoint == DEFAULT_CHECKPOINT_PATH:
         ARGS.checkpoint = os.path.join("checkpoints", ARGS.model)
         os.makedirs(ARGS.checkpoint, exist_ok=True)
+
+    if ARGS.model_kwargs is None:
+        kwargs = {}
+    else:
+        with open(ARGS.model_kwargs, "r") as json_file:
+            kwargs = json.load(json_file)
 
     if ARGS.model == "ccm":
         model = ccm.SimpleChordClassifier(
@@ -109,16 +123,21 @@ if __name__ == "__main__":
         )
         dataset = ds.ChordClassificationDataset
     elif ARGS.model == "ctm":
-        model = ctm.SimpleChordTransitionModel(PieceType.SCORE, learning_rate=ARGS.lr)
+        model = ctm.SimpleChordTransitionModel(PieceType.SCORE, learning_rate=ARGS.lr, **kwargs)
         dataset = ds.ChordTransitionDataset
     elif ARGS.model == "csm":
-        model = csm.SimpleChordSequenceModel(PitchType.TPC, learning_rate=ARGS.lr)
+        model = csm.SimpleChordSequenceModel(PitchType.TPC, learning_rate=ARGS.lr, **kwargs)
         dataset = ds.ChordSequenceDataset
     elif ARGS.model == "ktm":
-        model = ktm.SimpleKeyTransitionModel(PitchType.TPC, learning_rate=ARGS.lr)
+        model = ktm.SimpleKeyTransitionModel(PitchType.TPC, learning_rate=ARGS.lr, **kwargs)
         dataset = ds.KeyTransitionDataset
     elif ARGS.model == "ksm":
-        model = ksm.SimpleKeySequenceModel(PitchType.TPC, PitchType.TPC, learning_rate=ARGS.lr)
+        model = ksm.SimpleKeySequenceModel(
+            PitchType.TPC,
+            PitchType.TPC,
+            learning_rate=ARGS.lr,
+            **kwargs,
+        )
         dataset = ds.KeySequenceDataset
     elif ARGS.model == "icm":
         # Load training data for ctm, just to get file_ids

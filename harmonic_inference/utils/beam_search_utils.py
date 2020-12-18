@@ -276,7 +276,7 @@ class State:
             chord=self.chord,
             key=key,
             change_index=self.change_index,
-            log_prob=self.prev_state.log_prob + log_prob,
+            log_prob=self.log_prob + log_prob,
             prev_state=self.prev_state,
             hash_length=len(self.hash_tuple) if hasattr(self, "hash_tuple") else None,
             csm_hidden_state=self.csm_hidden_state,

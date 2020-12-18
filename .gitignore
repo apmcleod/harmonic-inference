@@ -11,5 +11,6 @@ debug.py
 *.log
 harmonic_inference.egg-info/**
 .coverage
+.pylintrc
 ML_course_data/**
-output/**
+output*/**
