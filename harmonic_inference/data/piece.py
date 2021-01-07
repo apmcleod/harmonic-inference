@@ -93,9 +93,9 @@ class Note:
             The length of a single note vector of the given pitch type.
         """
         return (
-            hc.NUM_PITCHES[PitchType.TPC]
-            + 127 // hc.NUM_PITCHES[PitchType.MIDI]  # Pitch class
-            + 14  # octave  # 4 onset level, 4 offset level, onset, offset, durations, is_lowest
+            hc.NUM_PITCHES[pitch_type]  # Pitch class
+            + 127 // hc.NUM_PITCHES[PitchType.MIDI]  # Octave
+            + 14  # 4 onset level, 4 offset level, onset, offset, durations, is_lowest
         )
 
     def to_vec(
@@ -328,9 +328,9 @@ class Note:
                 pitch_type,
             )
 
-        except Exception as e:
-            logging.error(f"Error parsing note from row {note_row}")
-            logging.exception(e)
+        except Exception as exception:
+            logging.error("Error parsing note from row %s", note_row)
+            logging.exception(exception)
             return None
 
     @staticmethod
@@ -458,6 +458,7 @@ class Chord:
         relative: bool = False,
         use_inversion: bool = True,
         pad: bool = True,
+        reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
     ) -> int:
         """
         Get the one-hot index of this chord.
@@ -470,7 +471,9 @@ class Chord:
             True to use inversions. False otherwise.
         pad : bool
             Only taken into account if self.pitch_type is TPC and relative is True.
-            In that case, if pad is True, an additional padding is used around the valid
+            In that case, if pad is True, an additional padding is used around the valid.
+        reduction : Dict[ChordType, ChordType]
+            A reduction for the chord type of the given chord.
 
         Returns
         -------
@@ -496,6 +499,7 @@ class Chord:
             use_inversion=use_inversion,
             relative=relative,
             pad=pad,
+            reduction=reduction,
         )
 
     @staticmethod
@@ -505,6 +509,7 @@ class Chord:
         relative: bool = True,
         use_inversions: bool = True,
         pad: bool = False,
+        reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
     ) -> int:
         """
         Get the length of a chord vector.
@@ -523,6 +528,9 @@ class Chord:
         pad : bool
             If True, pitch_type is TPC, and relative is True, pad the possible pitches with
             extra spaces.
+        reduction : Dict[ChordType, ChordType]
+            A reduction mapping each chord type to a different chord type. This will affect
+            only the one-hot chord vector lengths.
 
         Returns
         -------
@@ -539,19 +547,29 @@ class Chord:
         if one_hot:
             if use_inversions:
                 return np.sum(
-                    np.array([hu.get_chord_inversion_count(chord_type) for chord_type in ChordType])
+                    np.array(
+                        [
+                            hu.get_chord_inversion_count(chord_type)
+                            for chord_type in set(reduction.values())
+                        ]
+                    )
                     * num_pitches
                 )
-            return num_pitches * len(ChordType)
+            return num_pitches * len(set(reduction.values()))
 
         return (
             num_pitches  # Root
             + num_pitches  # Bass
             + len(ChordType)  # chord type
-            + 13  # 4 each for inversion, onset level, offset level; 1 for is_major
+            + 14  # 4 each for inversion, onset level, offset level; 1 for duration, 1 for is_major
         )
 
-    def to_vec(self, relative_to: "Key" = None, pad: bool = False) -> np.ndarray:
+    def to_vec(
+        self,
+        relative_to: "Key" = None,
+        pad: bool = False,
+        reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+    ) -> np.ndarray:
         """
         Get the vectorized representation of this chord.
 
@@ -562,6 +580,8 @@ class Chord:
         pad : bool
             If True, pitch_type is TPC, and relative is True, pad the possible pitches with
             extra spaces.
+        reduction : Dict[ChordType, ChordType]
+            A reduction mapping for this chord's chord_type.
 
         Returns
         -------
@@ -594,7 +614,7 @@ class Chord:
 
         # Chord type
         chord_type = np.zeros(len(ChordType), dtype=np.float16)
-        chord_type[self.chord_type.value] = 1
+        chord_type[reduction[self.chord_type].value] = 1
         vectors.append(chord_type)
 
         # Relative bass as one-hot
@@ -623,6 +643,9 @@ class Chord:
         offset_level = np.zeros(4, dtype=np.float16)
         offset_level[self.offset_level] = 1
         vectors.append(offset_level)
+
+        # Duration as float
+        vectors.append(float(self.duration))
 
         # Binary -- is the current key major
         vectors.append([1 if key_mode == KeyMode.MAJOR else 0])
@@ -844,9 +867,9 @@ class Chord:
                 pitch_type,
             )
 
-        except Exception as e:
-            logging.error(f"Error parsing chord from row {chord_row}")
-            logging.exception(e)
+        except Exception as exception:
+            logging.error("Error parsing chord from row %s", chord_row)
+            logging.exception(exception)
             return None
 
     @staticmethod
@@ -1235,9 +1258,9 @@ class Key:
                 tonic_type,
             )
 
-        except Exception as e:
-            logging.error(f"Error parsing key from row {chord_row}")
-            logging.exception(e)
+        except Exception as exception:
+            logging.error("Error parsing key from row %s", chord_row)
+            logging.exception(exception)
             return None
 
     @staticmethod
@@ -1325,7 +1348,7 @@ def decode_chord_and_key_change_vector(
     return chord, key
 
 
-def get_reduction_mask(inputs: List[Union[Chord, Key]], kwargs: Dict = {}) -> List[bool]:
+def get_reduction_mask(inputs: List[Union[Chord, Key]], kwargs: Dict = None) -> List[bool]:
     """
     Return a boolean mask that will remove repeated inputs when applied to the given inputs list
     as inputs[mask].
@@ -1343,10 +1366,13 @@ def get_reduction_mask(inputs: List[Union[Chord, Key]], kwargs: Dict = {}) -> Li
         A boolean mask that will remove repeated inputs when applied to the given inputs list
         as inputs = inputs[mask].
     """
+    if kwargs is None:
+        kwargs = {}
+
     mask = np.full(len(inputs), True, dtype=bool)
 
-    for prev_index, (prev, next) in enumerate(zip(inputs[:-1], inputs[1:])):
-        if next.is_repeated(prev, **kwargs):
+    for prev_index, (prev_obj, next_obj) in enumerate(zip(inputs[:-1], inputs[1:])):
+        if next_obj.is_repeated(prev_obj, **kwargs):
             mask[prev_index + 1] = False
 
     return mask
@@ -1807,6 +1833,8 @@ class ScorePiece(Piece):
             self.keys = keys[non_repeated_mask]
             self.key_changes = key_changes[non_repeated_mask]
 
+            self.duration_cache = None
+
         else:
             self.notes = np.array([Note(**note) for note in piece_dict["notes"]])
             self.chords = np.array([Chord(**chord) for chord in piece_dict["chords"]])
@@ -1816,7 +1844,7 @@ class ScorePiece(Piece):
             self.key_changes = np.array(piece_dict["key_changes"])
 
     def get_duration_cache(self):
-        if not hasattr(self, "duration_cache"):
+        if self.duration_cache is None:
             fake_last_note = Note(
                 0, 0, self.chords[-1].offset, 0, Fraction(0), (0, Fraction(0)), 0, PitchType.TPC
             )

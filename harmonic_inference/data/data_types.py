@@ -1,8 +1,8 @@
 """Data types and converters for model input and output formats."""
-from enum import Enum
+from enum import IntEnum
 
 
-class PieceType(Enum):
+class PieceType(IntEnum):
     """
     The type of input data represented by a Piece. Either score, midi, or audio.
     """
@@ -12,7 +12,7 @@ class PieceType(Enum):
     AUDIO = 2
 
 
-class PitchType(Enum):
+class PitchType(IntEnum):
     """
     An Enum representing the way pitches (or tonics, or chord roots) are represented.
     Either TPC (tonal pitch class) or MIDI.
@@ -22,7 +22,7 @@ class PitchType(Enum):
     MIDI = 1
 
 
-class KeyMode(Enum):
+class KeyMode(IntEnum):
     """
     The modes that are supported for keys.
     """
@@ -31,7 +31,7 @@ class KeyMode(Enum):
     MINOR = 1
 
 
-class ChordType(Enum):
+class ChordType(IntEnum):
     """
     The types of chords that are supported.
     """

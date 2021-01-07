@@ -1,12 +1,12 @@
 """Utility functions for getting harmonic and pitch information from the corpus DataFrames."""
 import itertools
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 
 import harmonic_inference.utils.harmonic_constants as hc
-from harmonic_inference.data.data_types import ChordType, KeyMode, PitchType
+from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, KeyMode, PitchType
 
 
 def get_chord_label_list(
@@ -15,6 +15,7 @@ def get_chord_label_list(
     relative: bool = False,
     relative_to: int = None,
     pad: bool = False,
+    reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
 ) -> List[str]:
     """
     Get the human-readable label of every chord label.
@@ -31,6 +32,8 @@ def get_chord_label_list(
         The pitch to be relative to, if any.
     pad : bool
         True to add padding around possible pitches, if relative is True.
+    reduction : Dict[ChordType, ChordType]
+        The reduction mapping of chord types.
 
     Returns
     -------
@@ -70,7 +73,7 @@ def get_chord_label_list(
 
     return [
         f"{root}:{get_chord_string(chord_type)}{'' if inv is None else f', inv:{inv}'}"
-        for chord_type, root in itertools.product(ChordType, roots)
+        for chord_type, root in itertools.product(sorted(set(reduction.values())), roots)
         for inv in (range(get_chord_inversion_count(chord_type)) if use_inversions else [None])
     ]
 
@@ -81,6 +84,7 @@ def get_chord_from_one_hot_index(
     use_inversions: bool = True,
     relative: bool = False,
     pad: bool = False,
+    reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
 ) -> Tuple[int, ChordType, int]:
     """
     Get a chord object from a one hot index.
@@ -99,6 +103,8 @@ def get_chord_from_one_hot_index(
         The pitch to be relative to, if any.
     pad : bool
         True to add padding around possible pitches, if relative is True.
+    reduction : Dict[ChordType, ChordType]
+        The reduction mapping of chord types.
 
     Returns
     -------
@@ -127,7 +133,7 @@ def get_chord_from_one_hot_index(
 
     return [
         (root, chord_type, inv)
-        for chord_type, root in itertools.product(ChordType, roots)
+        for chord_type, root in itertools.product(sorted(set(reduction.values())), roots)
         for inv in (range(get_chord_inversion_count(chord_type)) if use_inversions else [0])
     ][one_hot_index]
 
@@ -140,6 +146,7 @@ def get_chord_one_hot_index(
     use_inversion: bool = True,
     relative: bool = False,
     pad: bool = False,
+    reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
 ) -> int:
     """
     Get the one hot index of a given chord.
@@ -162,12 +169,18 @@ def get_chord_one_hot_index(
     pad : bool
         If True, pitch_type is TPC, and relative is True, add extra pitches to the number
         of possible chord roots.
+    reduction : Dict[ChordType, ChordType]
+        A reduction for the chord_type.
 
     Returns
     -------
     index : int
         The index of the given chord's label in the list of all possible chord labels.
     """
+    chord_types = sorted(set(reduction.values()))
+    chord_type = reduction[chord_type]
+    chord_type_index = chord_types.index(chord_type)
+
     if pitch_type == PitchType.MIDI or not relative:
         num_pitches = hc.NUM_PITCHES[pitch_type]
     else:
@@ -181,13 +194,13 @@ def get_chord_one_hot_index(
         if inversion < 0 or inversion >= get_chord_inversion_count(chord_type):
             raise ValueError(f"inversion {inversion} outside of valid range for chord {chord_type}")
         chord_inversions = np.array(
-            [get_chord_inversion_count(chord) for chord in ChordType], dtype=int
+            [get_chord_inversion_count(chord) for chord in chord_types], dtype=int
         )
     else:
-        chord_inversions = np.ones(len(ChordType), dtype=int)
+        chord_inversions = np.ones(len(chord_types), dtype=int)
 
-    index = np.sum(num_pitches * chord_inversions[: chord_type.value])
-    index += chord_inversions[chord_type.value] * root_pitch
+    index = np.sum(num_pitches * chord_inversions[:chord_type_index])
+    index += chord_inversions[chord_type_index] * root_pitch
 
     if use_inversion:
         index += inversion
@@ -698,8 +711,10 @@ def get_chord_inversion(figbass: str) -> int:
         return 0
     try:
         return hc.FIGBASS_INVERSIONS[figbass]
-    except Exception:
-        raise ValueError(f"{str} is not a valid figured bass symbol for detecting inversions.")
+    except Exception as exception:
+        raise ValueError(
+            f"{str} is not a valid figured bass symbol for detecting inversions."
+        ) from exception
 
 
 # Chord/Pitch string <--> object conversion functions =============================================
@@ -727,8 +742,8 @@ def get_chord_type_from_string(chord_string: str) -> ChordType:
     """
     try:
         return hc.STRING_TO_CHORD_TYPE[chord_string]
-    except Exception:
-        raise ValueError(f"String type {chord_string} not recognized.")
+    except Exception as exception:
+        raise ValueError(f"String type {chord_string} not recognized.") from exception
 
 
 def get_chord_string(chord_type: ChordType) -> str:
