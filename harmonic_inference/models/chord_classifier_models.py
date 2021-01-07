@@ -1,7 +1,6 @@
 """Models that generate probability distributions over chord classifications of a given input."""
-from typing import Collection, Tuple
+from typing import Collection, Dict, Tuple
 
-import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,7 +9,8 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from harmonic_inference.data.data_types import PieceType, PitchType
+import pytorch_lightning as pl
+from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, PieceType, PitchType
 from harmonic_inference.data.datasets import ChordClassificationDataset
 from harmonic_inference.data.piece import Chord, Note
 
@@ -119,6 +119,7 @@ class SimpleChordClassifier(ChordClassifierModel):
         self,
         input_type: PitchType,
         output_type: PitchType,
+        reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
         use_inversions: bool = True,
         lstm_layers: int = 1,
         lstm_hidden_dim: int = 128,
@@ -135,6 +136,8 @@ class SimpleChordClassifier(ChordClassifierModel):
             The pitch type to use for inputs to this model. Used to derive the input length.
         output_type : PitchType
             The pitch type to use for outputs of this model. Used to derive the output length.
+        reduction : Dict[ChordType, ChordType]
+            The reduction used for the output chord types.
         use_inversions : bool
             Whether to use different inversions as different chords in the output. Used to
             derive the output length.
@@ -160,6 +163,7 @@ class SimpleChordClassifier(ChordClassifierModel):
             relative=False,
             use_inversions=use_inversions,
             pad=False,
+            reduction=reduction,
         )
 
         # LSTM hidden layer and depth

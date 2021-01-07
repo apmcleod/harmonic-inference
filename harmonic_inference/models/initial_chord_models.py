@@ -1,11 +1,11 @@
 """An ICM outputs a prior distribution over the initial (relative) chord in a key."""
 import json
 from pathlib import Path
-from typing import List, Union
+from typing import Dict, List, Union
 
 import numpy as np
 
-from harmonic_inference.data.data_types import KeyMode, PitchType
+from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, KeyMode, PitchType
 from harmonic_inference.data.piece import Chord, Piece
 
 
@@ -89,6 +89,7 @@ class SimpleInitialChordModel:
     def train(
         chords: List[Chord],
         json_path: Union[Path, str],
+        reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
         use_inversions: bool = True,
         add_n_smoothing: float = 1.0,
     ):
@@ -101,6 +102,8 @@ class SimpleInitialChordModel:
             All of the initial chords in the dataset.
         json_path : Union[Path, str]
             The path to write the json output to.
+        reduction : Dict[ChordType, ChordType]
+            The reduction used for chord types.
         use_inversions : bool
             True to use inversions when calculating the initial priors.
         add_n_smoothing : float
@@ -115,6 +118,7 @@ class SimpleInitialChordModel:
             relative=True,
             use_inversions=use_inversions,
             pad=False,
+            reduction=reduction,
         )
 
         # Initialize with smoothing
@@ -125,7 +129,7 @@ class SimpleInitialChordModel:
         # Count chords
         for chord in chords:
             one_hot_index = chord.get_one_hot_index(
-                relative=True, use_inversion=use_inversions, pad=False
+                relative=True, use_inversion=use_inversions, pad=False, reduction=reduction
             )
 
             if chord.key_mode == KeyMode.MAJOR:

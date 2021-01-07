@@ -1,5 +1,5 @@
 """Models that generate probability distributions over the next chord in a sequence."""
-from typing import Tuple
+from typing import Dict, Tuple
 
 import torch
 import torch.nn as nn
@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import pytorch_lightning as pl
-from harmonic_inference.data.data_types import PitchType
+from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, PitchType
 from harmonic_inference.data.datasets import ChordSequenceDataset
 from harmonic_inference.data.piece import Chord, Key
 
@@ -81,13 +81,13 @@ class ChordSequenceModel(pl.LightningModule):
         self.log("val_acc", acc)
 
     def evaluate(self, dataset: ChordSequenceDataset):
-        dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
+        data_loader = DataLoader(dataset, batch_size=dataset.valid_batch_size)
 
         total = 0
         total_loss = 0
         total_acc = 0
 
-        for batch in tqdm(dl, desc="Evaluating CSM"):
+        for batch in tqdm(data_loader, desc="Evaluating CSM"):
             inputs, input_lengths, targets = self.get_data_from_batch(batch)
 
             outputs, _ = self(inputs, input_lengths)
@@ -146,7 +146,10 @@ class SimpleChordSequenceModel(ChordSequenceModel):
     def __init__(
         self,
         chord_type: PitchType,
-        use_inversions: bool = True,
+        input_reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+        output_reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+        use_input_inversions: bool = True,
+        use_output_inversions: bool = True,
         embed_dim: int = 64,
         lstm_layers: int = 1,
         lstm_hidden_dim: int = 128,
@@ -161,8 +164,15 @@ class SimpleChordSequenceModel(ChordSequenceModel):
         ----------
         chord_type : PitchType
             The type of pitch representation used for the chords, input and output.
-        use_inversions : bool
-            True to take inversions into account. False to ignore them.
+        input_reduction : Dict[ChordType, ChordType]
+            The reduction used for input vector chord types.
+        output_reduction : Dict[ChordType, ChordType]
+            The reduction used for output vector chord types.
+        use_input_inversions : bool
+            True to take inversions into account for the input. False to ignore them.
+        use_output_inversions : bool
+            True to include inversions of chords in the output of this model.
+            False to ignore them.
         embed_dim : int
             The size of the input embedding.
         lstm_layers : int
@@ -185,8 +195,9 @@ class SimpleChordSequenceModel(ChordSequenceModel):
                 chord_type,
                 one_hot=False,
                 relative=True,
-                use_inversions=use_inversions,
+                use_inversions=use_input_inversions,
                 pad=False,
+                reduction=input_reduction,
             )
             + Key.get_key_change_vector_length(chord_type, one_hot=False)  # Key change vector
             + 1  # is_key_change
@@ -195,8 +206,9 @@ class SimpleChordSequenceModel(ChordSequenceModel):
             chord_type,
             one_hot=True,
             relative=True,
-            use_inversions=use_inversions,
+            use_inversions=use_output_inversions,
             pad=False,
+            reduction=output_reduction,
         )
 
         self.embed_dim = embed_dim

@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import pytorch_lightning as pl
-from harmonic_inference.data.data_types import PitchType
+from harmonic_inference.data.data_types import NO_REDUCTION, PitchType
 from harmonic_inference.data.datasets import KeySequenceDataset
 from harmonic_inference.data.piece import Chord, Key
 
@@ -168,6 +168,7 @@ class SimpleKeySequenceModel(KeySequenceModel):
                 relative=True,
                 use_inversions=True,
                 pad=True,
+                reduction=NO_REDUCTION,
             )
             + Key.get_key_change_vector_length(input_type, one_hot=False)
             + 1
