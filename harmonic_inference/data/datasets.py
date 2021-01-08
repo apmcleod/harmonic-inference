@@ -10,6 +10,7 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 
 import h5py
+from harmonic_inference.data.data_types import NO_REDUCTION, ChordType
 from harmonic_inference.data.piece import Key, Piece, ScorePiece
 
 
@@ -156,7 +157,7 @@ class HarmonicDataset(Dataset):
             try:
                 shutil.copy(self.h5_path, h5_path)
                 self.h5_path = h5_path
-            except BaseException as e:
+            except Exception as e:
                 logging.exception(
                     f"Error copying existing h5 file {self.h5_path} to {h5_path}:\n{e}"
                 )
@@ -240,6 +241,7 @@ class ChordClassificationDataset(HarmonicDataset):
         ranges: List[List[Tuple[int, int]]] = None,
         change_indices: List[int] = None,
         dummy_targets: bool = False,
+        reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
     ):
         super().__init__(transform=transform)
 
@@ -269,6 +271,12 @@ class ChordClassificationDataset(HarmonicDataset):
                 ]
             )
 
+        self.reduction = reduction
+
+    def __getitem__(self, item) -> Dict:
+        # TODO: Implement reduction on targets
+        return super().__getitem__(item)
+
     def pad(self):
         self.inputs, self.input_lengths = pad_array(self.inputs)
         self.padded = True
@@ -294,7 +302,13 @@ class ChordSequenceDataset(HarmonicDataset):
     valid_batch_size = 64
     chunk_size = 256
 
-    def __init__(self, pieces: List[Piece], transform=None):
+    def __init__(
+        self,
+        pieces: List[Piece],
+        transform=None,
+        input_reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+        output_reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+    ):
         super().__init__(transform=transform)
         self.inputs = []
         self.targets = []
@@ -333,6 +347,13 @@ class ChordSequenceDataset(HarmonicDataset):
         self.target_lengths = np.array([len(target) for target in self.targets])
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
 
+        self.input_reduction = input_reduction
+        self.output_reduction = output_reduction
+
+    def __getitem__(self, item) -> Dict:
+        # TODO: implement reduction
+        return super().__getitem__(item)
+
 
 class KeyHarmonicDataset(HarmonicDataset):
     """
@@ -341,8 +362,13 @@ class KeyHarmonicDataset(HarmonicDataset):
     method.
     """
 
-    def __init__(self, transform: Callable = None):
+    def __init__(
+        self,
+        transform: Callable = None,
+        reduction: Dict[ChordType, ChordType] = None,
+    ):
         super().__init__(transform=transform)
+        self.reduction = reduction
 
     def pad(self):
         self.inputs, _ = pad_array(self.inputs)
@@ -420,6 +446,8 @@ class KeyHarmonicDataset(HarmonicDataset):
         if target == 1 or isinstance(self, KeySequenceDataset):
             piece_input[input_length] = key_change_replacement
             input_length += 1
+
+        # TODO: Implement reduction on piece_input
 
         data = {
             "targets": targets,
