@@ -7,13 +7,13 @@ from glob import glob
 from pathlib import Path
 from typing import List, Union
 
-import h5py
 from tqdm import tqdm
 
+import h5py
 import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.utils.eval_utils as eu
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
-from harmonic_inference.data.data_types import NO_REDUCTION, TRIAD_REDUCTION
+from harmonic_inference.data.data_types import NO_REDUCTION, TRIAD_REDUCTION, PitchType
 from harmonic_inference.data.piece import Piece, ScorePiece
 from harmonic_inference.models.joint_model import (
     MODEL_CLASSES,
@@ -90,7 +90,7 @@ def evaluate(
 
     for piece in tqdm(pieces, desc="Getting harmony for pieces"):
         if piece.name is not None:
-            logging.info(f"Running piece {piece.name}")
+            logging.info("Running piece %s", piece.name)
 
         state = model.get_harmony(piece)
 
@@ -158,9 +158,30 @@ def evaluate(
                 model.KEY_OUTPUT_TYPE,
             )
 
+            # Write MIDI outputs for SPS chord-eval testing
+            results_df = eu.get_results_df(
+                piece,
+                state,
+                model.CHORD_OUTPUT_TYPE,
+                model.KEY_OUTPUT_TYPE,
+                PitchType.MIDI,
+                PitchType.MIDI,
+            )
+
             if piece.name is not None and output_tsv_dir is not None:
                 piece_name = Path(piece.name.split(" ")[-1])
                 output_tsv_path = output_tsv_dir / piece_name
+
+                try:
+                    output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
+                    results_tsv_path = output_tsv_path.parent / (
+                        output_tsv_path.name[:-4] + "_results.tsv"
+                    )
+                    results_df.to_csv(results_tsv_path, sep="\t")
+                    logging.info("Results TSV written out to %s", output_tsv_path)
+                except Exception:
+                    logging.exception("Error writing to csv %s", output_tsv_path)
+                    logging.debug(results_df)
 
                 try:
                     output_tsv_path.parent.mkdir(parents=True, exist_ok=True)

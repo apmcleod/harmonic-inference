@@ -1,8 +1,8 @@
 """Data types and converters for model input and output formats."""
-from enum import IntEnum
+from enum import Enum
 
 
-class PieceType(IntEnum):
+class PieceType(Enum):
     """
     The type of input data represented by a Piece. Either score, midi, or audio.
     """
@@ -11,8 +11,13 @@ class PieceType(IntEnum):
     MIDI = 1
     AUDIO = 2
 
+    def __lt__(self, other):
+        if not isinstance(other, PieceType):
+            raise NotImplementedError()
+        return self.value < other.value
 
-class PitchType(IntEnum):
+
+class PitchType(Enum):
     """
     An Enum representing the way pitches (or tonics, or chord roots) are represented.
     Either TPC (tonal pitch class) or MIDI.
@@ -21,8 +26,13 @@ class PitchType(IntEnum):
     TPC = 0
     MIDI = 1
 
+    def __lt__(self, other):
+        if not isinstance(other, PitchType):
+            raise NotImplementedError()
+        return self.value < other.value
 
-class KeyMode(IntEnum):
+
+class KeyMode(Enum):
     """
     The modes that are supported for keys.
     """
@@ -30,8 +40,13 @@ class KeyMode(IntEnum):
     MAJOR = 0
     MINOR = 1
 
+    def __lt__(self, other):
+        if not isinstance(other, KeyMode):
+            raise NotImplementedError()
+        return self.value < other.value
 
-class ChordType(IntEnum):
+
+class ChordType(Enum):
     """
     The types of chords that are supported.
     """
@@ -48,6 +63,11 @@ class ChordType(IntEnum):
     HALF_DIM7 = 9
     AUG_MIN7 = 10
     AUG_MAJ7 = 11
+
+    def __lt__(self, other):
+        if not isinstance(other, ChordType):
+            raise NotImplementedError()
+        return self.value < other.value
 
 
 NO_REDUCTION = {chord_type: chord_type for chord_type in ChordType}

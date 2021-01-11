@@ -93,7 +93,7 @@ class Note:
             The length of a single note vector of the given pitch type.
         """
         return (
-            hc.NUM_PITCHES[pitch_type]  # Pitch class
+            hc.NUM_PITCHES[PitchType.TPC]  # Pitch class TODO: Change to pitch_type from input
             + 127 // hc.NUM_PITCHES[PitchType.MIDI]  # Octave
             + 14  # 4 onset level, 4 offset level, onset, offset, durations, is_lowest
         )
@@ -453,6 +453,37 @@ class Chord:
 
         self.params = inspect.getfullargspec(Chord.__init__).args[1:]
 
+    def to_pitch_type(self, pitch_type: PitchType) -> "Chord":
+        """
+        Return a new Chord with the given pitch type. Note that while the TPC -> MIDI conversion
+        is well-defined, it is also lossy: the MIDI -> TPC conversion must arbitrarily choose
+        a matching TPC pitch.
+
+        Parameters
+        ----------
+        pitch_type : PitchType
+            The desired pitch type.
+
+        Returns
+        -------
+        chord : Chord
+            The resulting chord. A copy of this chord, if the given pitch_type matches the chord's
+            PitchType already.
+        """
+        if pitch_type == self.pitch_type:
+            return Chord(**self.params)
+
+        new_params = {key: getattr(self, key) for key in self.params}
+        new_params["pitch_type"] = pitch_type
+
+        # Convert key_tonic, root, and bass
+        for key in ["key_tonic", "root", "bass"]:
+            new_params[key] = hu.get_pitch_from_string(
+                hu.get_pitch_string(new_params[key], self.pitch_type), pitch_type
+            )
+
+        return Chord(**new_params)
+
     def get_one_hot_index(
         self,
         relative: bool = False,
@@ -562,6 +593,7 @@ class Chord:
             + num_pitches  # Bass
             + len(ChordType)  # chord type
             + 14  # 4 each for inversion, onset level, offset level; 1 for duration, 1 for is_major
+            - 1  # TODO: Remove -- hack for SPS output
         )
 
     def to_vec(
@@ -645,7 +677,7 @@ class Chord:
         vectors.append(offset_level)
 
         # Duration as float
-        vectors.append(float(self.duration))
+        # vectors.append([float(self.duration)])  TODO: hack for SPS
 
         # Binary -- is the current key major
         vectors.append([1 if key_mode == KeyMode.MAJOR else 0])
@@ -1012,6 +1044,37 @@ class Key:
         self.tonic_type = tonic_type
 
         self.params = inspect.getfullargspec(Key.__init__).args[1:]
+
+    def to_pitch_type(self, pitch_type: PitchType) -> "Key":
+        """
+        Return a new Key with the given pitch type. Note that while the TPC -> MIDI conversion
+        is well-defined, it is also lossy: the MIDI -> TPC conversion must arbitrarily choose
+        a matching TPC pitch.
+
+        Parameters
+        ----------
+        pitch_type : PitchType
+            The desired pitch type.
+
+        Returns
+        -------
+        key : Key
+            The resulting key. A copy of this key, if the given pitch_type matches the key's
+            tonic PitchType already.
+        """
+        if pitch_type == self.tonic_type:
+            return Key(**self.params)
+
+        new_params = {key: getattr(self, key) for key in self.params}
+        new_params["tonic_type"] = pitch_type
+
+        # Convert relative, local, and global tonic
+        for key in ["relative_tonic", "local_tonic", "global_tonic"]:
+            new_params[key] = hu.get_pitch_from_string(
+                hu.get_pitch_string(new_params[key], self.tonic_type), pitch_type
+            )
+
+        return Key(**new_params)
 
     @staticmethod
     def get_key_change_vector_length(pitch_type: PitchType, one_hot: bool = True) -> int:
@@ -1733,6 +1796,7 @@ class ScorePiece(Piece):
         """
         super().__init__(PieceType.SCORE, name=name)
         self.measures_df = measures_df
+        self.duration_cache = None
 
         if piece_dict is None:
             levels_cache = defaultdict(dict)
@@ -1832,8 +1896,6 @@ class ScorePiece(Piece):
             non_repeated_mask = get_reduction_mask(keys, kwargs={"use_relative": use_relative})
             self.keys = keys[non_repeated_mask]
             self.key_changes = key_changes[non_repeated_mask]
-
-            self.duration_cache = None
 
         else:
             self.notes = np.array([Note(**note) for note in piece_dict["notes"]])
