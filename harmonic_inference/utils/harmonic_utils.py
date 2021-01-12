@@ -780,6 +780,9 @@ def get_pitch_from_string(pitch_string: str, pitch_type: PitchType) -> int:
     pitch : int
         An integer representing the given pitch string as the given type.
     """
+    if pitch_type == PitchType.MIDI and "/" in pitch_string:
+        pitch_string = pitch_string.split("/")[0]
+
     accidental_adjustment, pitch_string = get_accidental_adjustment(pitch_string, in_front=False)
 
     pitch = hc.STRING_TO_PITCH[pitch_type][pitch_string]
