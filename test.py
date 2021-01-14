@@ -1,3 +1,4 @@
+"""Script to test (evaluate) a joint model for harmonic inference."""
 import argparse
 import logging
 import os
@@ -370,29 +371,29 @@ if __name__ == "__main__":
 
         possible_checkpoints = sorted(glob(checkpoint_arg))
         if len(possible_checkpoints) == 0:
-            logging.error(f"No checkpoints found for {model_name} in {checkpoint_arg}")
+            logging.error("No checkpoints found for %s in %s.", model_name, checkpoint_arg)
             sys.exit(2)
 
         if len(possible_checkpoints) == 1:
             checkpoint = possible_checkpoints[0]
-            logging.info(f"Loading checkpoint {checkpoint} for {model_name}.")
+            logging.info("Loading checkpoint %s for %s.", checkpoint, model_name)
 
         else:
             checkpoint = possible_checkpoints[-1]
-            logging.info(f"Multiple checkpoints found for {model_name}. Loading {checkpoint}.")
+            logging.info("Multiple checkpoints found for %s. Loading %s.", model_name, checkpoint)
 
         models[model_name] = model_class.load_from_checkpoint(checkpoint)
         models[model_name].freeze()
 
     # Load icm json differently
-    logging.info(f"Loading checkpoint {ARGS.icm_json} for icm.")
+    logging.info("Loading checkpoint %s for icm.", ARGS.icm_json)
     models["icm"] = icm.SimpleInitialChordModel(ARGS.icm_json)
 
     # Load validation data for ctm
     h5_path = Path(ARGS.h5_dir / f"ChordTransitionDataset_valid_seed_{ARGS.seed}.h5")
     with h5py.File(h5_path, "r") as h5_file:
         if "file_ids" not in h5_file:
-            logging.error(f"file_ids not found in {h5_path}. Re-create with create_h5_data.py")
+            logging.error("file_ids not found in %s. Re-create with create_h5_data.py", h5_path)
             sys.exit(1)
 
         file_ids = list(h5_file["file_ids"])

@@ -1,3 +1,4 @@
+"""Script to train any of the different models for harmonic inference."""
 import argparse
 import json
 import logging
@@ -6,14 +7,11 @@ import pickle
 import sys
 from pathlib import Path
 
-import h5py
-import pytorch_lightning as pl
 import torch
-from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
-from pytorch_lightning.profiler import AdvancedProfiler
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+import h5py
 import harmonic_inference.data.datasets as ds
 import harmonic_inference.models.chord_classifier_models as ccm
 import harmonic_inference.models.chord_sequence_models as csm
@@ -21,10 +19,13 @@ import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
+import pytorch_lightning as pl
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 from harmonic_inference.data.data_types import PieceType, PitchType
 from harmonic_inference.data.piece import ScorePiece
 from harmonic_inference.models.joint_model import MODEL_CLASSES
+from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
+from pytorch_lightning.profiler import AdvancedProfiler
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -144,7 +145,7 @@ if __name__ == "__main__":
         h5_path = Path(ARGS.h5_dir / f"ChordTransitionDataset_train_seed_{ARGS.seed}.h5")
         with h5py.File(h5_path, "r") as h5_file:
             if "file_ids" not in h5_file:
-                logging.error(f"file_ids not found in {h5_path}. Re-create with create_h5_data.py")
+                logging.error("file_ids not found in %. Re-create with create_h5_data.py", h5_path)
                 sys.exit(1)
 
             file_ids = list(h5_file["file_ids"])
@@ -182,7 +183,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     else:
-        logging.error(f"Invalid model: {ARGS.model}")
+        logging.error("Invalid model: %", ARGS.model)
         sys.exit(1)
 
     h5_path_train = Path(ARGS.h5_dir / f"{dataset.__name__}_train_seed_{ARGS.seed}.h5")
