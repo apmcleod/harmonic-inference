@@ -11,7 +11,8 @@ from tqdm import tqdm
 
 import h5py
 from harmonic_inference.data.data_types import NO_REDUCTION, ChordType
-from harmonic_inference.data.piece import Key, Piece, ScorePiece
+from harmonic_inference.data.key import Key
+from harmonic_inference.data.piece import Piece, ScorePiece
 
 
 class HarmonicDataset(Dataset):
@@ -19,7 +20,12 @@ class HarmonicDataset(Dataset):
     The base dataset that all model-specific dataset objects will inherit from.
     """
 
-    def __init__(self, transform: Callable = None):
+    def __init__(
+        self,
+        transform: Callable = None,
+        pad_inputs: bool = True,
+        pad_targets: bool = True,
+    ):
         """
         Create a new base dataset.
 
@@ -27,11 +33,73 @@ class HarmonicDataset(Dataset):
         ----------
         transform : Callable
             A function to call on each returned data point.
+        pad_inputs : bool
+            Pad this datset's inputs (when calling self.pad()).
+        pad_targets : bool
+            Pad this dataset's targets (when calling self.pad()).
         """
         self.h5_path = None
         self.padded = False
         self.in_ram = True
         self.transform = transform
+
+        self.inputs = None
+        self.input_lengths = None
+        self.max_input_length = None
+        self.pad_inputs = pad_inputs
+
+        self.targets = None
+        self.target_lengths = None
+        self.max_target_length = None
+        self.pad_targets = pad_targets
+
+        self.hidden_states = None
+
+    def finalize_data(self, data: Dict[str, np.array], item) -> Dict:
+        """
+        Finalize the given data return dict by adding the hidden states corresponding
+        to the given index (if hidden_states are loaded), and then transforming the
+        data with the Dataset's transform Callable.
+
+        Parameters
+        ----------
+        data : Dict[str, np.array]
+            The data dictionary.
+        item : int
+            The index (or other indexer) to load the correct hidden state.
+
+        Returns
+        -------
+        data : Dict
+            The given data, finalized with hidden states and transformed.
+        """
+        if self.hidden_states is not None:
+            data["hidden_states"] = (
+                self.hidden_states[0][:, item],
+                self.hidden_states[1][:, item],
+            )
+
+        if self.transform:
+            data.update(
+                {
+                    key: self.transform(value)
+                    for key, value in data.items()
+                    if isinstance(value, np.ndarray)
+                }
+            )
+
+        return data
+
+    def set_hidden_states(self, hidden_states: np.array):
+        """
+        Load hidden states into this Dataset object.
+
+        Parameters
+        ----------
+        hidden_states : np.array
+            The hidden states to load into this Dataset.
+        """
+        self.hidden_states = hidden_states
 
     def __len__(self) -> int:
         """
@@ -72,43 +140,31 @@ class HarmonicDataset(Dataset):
                     for key in ["inputs", "targets", "input_lengths", "target_lengths"]
                     if key in h5_file
                 }
+
         else:
             data = {"inputs": self.inputs[item]}
-            if hasattr(self, "targets"):
+
+            # During inference, we have no targets
+            if self.targets is not None:
                 data["targets"] = self.targets[item]
 
-            if hasattr(self, "hidden_states"):
-                data["hidden_states"] = (
-                    getattr(self, "hidden_states")[0][:, item],
-                    getattr(self, "hidden_states")[1][:, item],
-                )
-
-            if hasattr(self, "input_lengths"):
-                if not hasattr(self, "max_input_length"):
-                    self.max_input_length = max(self.input_lengths)
+            if self.input_lengths is not None:
+                if self.max_input_length is None:
+                    self.max_input_length = np.max(self.input_lengths)
                 padded_input = np.zeros(([self.max_input_length] + list(data["inputs"][0].shape)))
                 padded_input[: len(data["inputs"])] = data["inputs"]
                 data["inputs"] = padded_input
                 data["input_lengths"] = self.input_lengths[item]
 
-            if hasattr(self, "target_lengths"):
-                if not hasattr(self, "max_target_length"):
-                    self.max_target_length = max(self.target_lengths)
+            if self.target_lengths is not None:
+                if self.max_target_length is None:
+                    self.max_target_length = np.max(self.target_lengths)
                 padded_target = np.zeros(
                     ([self.max_target_length] + list(data["targets"][0].shape))
                 )
                 padded_target[: len(data["targets"])] = data["targets"]
                 data["targets"] = padded_target
                 data["target_lengths"] = self.target_lengths[item]
-
-        if self.transform:
-            data.update(
-                {
-                    key: self.transform(value)
-                    for key, value in data.items()
-                    if isinstance(value, np.ndarray)
-                }
-            )
 
         return data
 
@@ -126,8 +182,14 @@ class HarmonicDataset(Dataset):
 
         This also sets self.padded to True.
         """
-        self.targets, self.target_lengths = pad_array(self.targets)
-        self.inputs, self.input_lengths = pad_array(self.inputs)
+        if self.padded:
+            return
+
+        if self.pad_targets:
+            self.targets, self.target_lengths = pad_array(self.targets)
+        if self.pad_inputs:
+            self.inputs, self.input_lengths = pad_array(self.inputs)
+
         self.padded = True
 
     def to_h5(self, h5_path: Union[str, Path], file_ids: Iterable[int] = None):
@@ -157,7 +219,7 @@ class HarmonicDataset(Dataset):
             try:
                 shutil.copy(self.h5_path, h5_path)
                 self.h5_path = h5_path
-            except Exception:
+            except OSError:
                 logging.exception("Error copying existing h5 file %s to %s", self.h5_path, h5_path)
             return
 
@@ -172,7 +234,7 @@ class HarmonicDataset(Dataset):
             "key_change_replacements",
         ]
         for key in keys:
-            if hasattr(self, key):
+            if hasattr(self, key) and getattr(self, key) is not None:
                 h5_file.create_dataset(key, data=np.array(getattr(self, key)), compression="gzip")
         if file_ids is not None:
             h5_file.create_dataset("file_ids", data=np.array(file_ids), compression="gzip")
@@ -217,6 +279,12 @@ class ChordTransitionDataset(HarmonicDataset):
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
         self.target_lengths = np.array([len(target) for target in self.targets])
 
+        self.pad_targets = True
+        self.pad_inputs = True
+
+    def __getitem__(self, item) -> Dict:
+        return self.finalize_data(super().__getitem__(item), item)
+
 
 class ChordClassificationDataset(HarmonicDataset):
     """
@@ -241,7 +309,7 @@ class ChordClassificationDataset(HarmonicDataset):
         dummy_targets: bool = False,
         reduction: Dict[ChordType, ChordType] = None,
     ):
-        super().__init__(transform=transform)
+        super().__init__(transform=transform, pad_targets=False)
 
         if ranges is None:
             ranges = np.full(len(pieces), None)
@@ -272,12 +340,11 @@ class ChordClassificationDataset(HarmonicDataset):
         self.reduction = NO_REDUCTION if reduction is None else reduction
 
     def __getitem__(self, item) -> Dict:
-        # TODO: Implement reduction on targets
-        return super().__getitem__(item)
+        data = super().__getitem__(item)
 
-    def pad(self):
-        self.inputs, self.input_lengths = pad_array(self.inputs)
-        self.padded = True
+        # TODO: Implement reduction on targets
+
+        return self.finalize_data(data, item)
 
 
 class ChordSequenceDataset(HarmonicDataset):
@@ -349,8 +416,11 @@ class ChordSequenceDataset(HarmonicDataset):
         self.output_reduction = NO_REDUCTION if output_reduction is None else output_reduction
 
     def __getitem__(self, item) -> Dict:
+        data = super().__getitem__(item)
+
         # TODO: implement reduction
-        return super().__getitem__(item)
+
+        return self.finalize_data(data, item)
 
 
 class KeyHarmonicDataset(HarmonicDataset):
@@ -365,12 +435,11 @@ class KeyHarmonicDataset(HarmonicDataset):
         transform: Callable = None,
         reduction: Dict[ChordType, ChordType] = None,
     ):
-        super().__init__(transform=transform)
+        super().__init__(transform=transform, pad_targets=False)
         self.reduction = NO_REDUCTION if reduction is None else reduction
 
-    def pad(self):
-        self.inputs, _ = pad_array(self.inputs)
-        self.padded = True
+        self.piece_lengths = []
+        self.key_change_replacements = []
 
     def __len__(self) -> int:
         if not self.in_ram:
@@ -408,6 +477,7 @@ class KeyHarmonicDataset(HarmonicDataset):
             raise ValueError(f"Invalid item {item} requested for dataset of length {len(self)}")
 
         piece_idx, prev_in_piece = get_piece_index(item)
+
         if not self.in_ram:
             assert self.h5_path is not None, "Data must be either in ram or in an h5_file."
             with h5py.File(self.h5_path, "r") as h5_file:
@@ -421,7 +491,7 @@ class KeyHarmonicDataset(HarmonicDataset):
             piece_input = self.inputs[piece_idx]
             input_length = self.input_lengths[item]
             start_index = self.input_lengths[item - 1] if prev_in_piece else 0
-            if not hasattr(self, "max_input_length"):
+            if self.max_input_length is None:
                 self.max_input_length = np.max(self.input_lengths)
             key_change_replacement = self.key_change_replacements[item]
             target = self.targets[item]
@@ -453,22 +523,7 @@ class KeyHarmonicDataset(HarmonicDataset):
             "input_lengths": input_length,
         }
 
-        if hasattr(self, "hidden_states"):
-            data["hidden_states"] = (
-                getattr(self, "hidden_states")[0][:, item],
-                getattr(self, "hidden_states")[1][:, item],
-            )
-
-        if self.transform:
-            data.update(
-                {
-                    key: self.transform(value)
-                    for key, value in data.items()
-                    if isinstance(value, np.ndarray)
-                }
-            )
-
-        return data
+        return self.finalize_data(data, item)
 
 
 class KeyTransitionDataset(KeyHarmonicDataset):
@@ -640,49 +695,37 @@ def h5_to_dataset(
     dataset = dataset_class([], transform=transform)
 
     with h5py.File(h5_path, "r") as h5_file:
-        assert "inputs" in h5_file
-        assert "targets" in h5_file
+        assert "inputs" in h5_file, f"{h5_file} must have a dataset called inputs"
+        assert "targets" in h5_file, f"{h5_file} must have a dataset called targets"
         dataset.h5_path = h5_path
         dataset.padded = False
         dataset.in_ram = False
         chunk_size = dataset.chunk_size
 
         try:
-            if "input_lengths" in h5_file:
-                dataset.input_lengths = np.array(h5_file["input_lengths"])
-                dataset.inputs = []
-                for chunk_start in tqdm(
-                    range(0, len(dataset.input_lengths), chunk_size),
-                    desc=f"Loading input chunks from {h5_path}",
-                ):
-                    input_chunk = h5_file["inputs"][chunk_start : chunk_start + chunk_size]
-                    chunk_lengths = dataset.input_lengths[chunk_start : chunk_start + chunk_size]
-                    dataset.inputs.extend(
-                        [
-                            np.array(item[:length], dtype=np.float16)
-                            for item, length in zip(input_chunk, chunk_lengths)
-                        ]
-                    )
-            else:
-                dataset.inputs = np.array(h5_file["inputs"], dtype=np.float16)
+            for data in ["input", "target"]:
+                if f"{data}_lengths" in h5_file:
+                    lengths = np.array(h5_file[f"{data}_lengths"])
+                    data_list = []
 
-            if "target_lengths" in h5_file:
-                dataset.target_lengths = np.array(h5_file["target_lengths"])
-                dataset.targets = []
-                for chunk_start in tqdm(
-                    range(0, len(dataset.target_lengths), chunk_size),
-                    desc=f"Loading target chunks from {h5_path}",
-                ):
-                    target_chunk = h5_file["targets"][chunk_start : chunk_start + chunk_size]
-                    chunk_lengths = dataset.target_lengths[chunk_start : chunk_start + chunk_size]
-                    dataset.targets.extend(
-                        [
-                            np.array(item[:length], dtype=np.float16)
-                            for item, length in zip(target_chunk, chunk_lengths)
-                        ]
-                    )
-            else:
-                dataset.targets = np.array(h5_file["targets"], dtype=np.float16)
+                    for chunk_start in tqdm(
+                        range(0, len(lengths), chunk_size),
+                        desc=f"Loading {data} chunks from {h5_path}",
+                    ):
+                        chunk = h5_file[f"{data}s"][chunk_start : chunk_start + chunk_size]
+                        chunk_lengths = lengths[chunk_start : chunk_start + chunk_size]
+                        data_list.extend(
+                            [
+                                np.array(item[:length], dtype=np.float16)
+                                for item, length in zip(chunk, chunk_lengths)
+                            ]
+                        )
+
+                    setattr(dataset, f"{data}_lengths", lengths)
+                    setattr(dataset, f"{data}s", data_list)
+
+                else:
+                    setattr(dataset, f"{data}s", np.array(h5_file[f"{data}s"], dtype=np.float16))
 
             for key in ["piece_lengths", "key_change_replacements"]:
                 if key in h5_file:
@@ -690,7 +733,7 @@ def h5_to_dataset(
 
             dataset.in_ram = True
 
-        except Exception:
+        except MemoryError:
             logging.exception("Dataset too large to fit into RAM. Reading from h5 file.")
             dataset.padded = True
 
