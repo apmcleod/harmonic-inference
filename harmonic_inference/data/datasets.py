@@ -157,10 +157,8 @@ class HarmonicDataset(Dataset):
             try:
                 shutil.copy(self.h5_path, h5_path)
                 self.h5_path = h5_path
-            except Exception as e:
-                logging.exception(
-                    f"Error copying existing h5 file {self.h5_path} to {h5_path}:\n{e}"
-                )
+            except Exception:
+                logging.exception("Error copying existing h5 file %s to %s", self.h5_path, h5_path)
             return
 
         h5_file = h5py.File(h5_path, "w")
@@ -241,7 +239,7 @@ class ChordClassificationDataset(HarmonicDataset):
         ranges: List[List[Tuple[int, int]]] = None,
         change_indices: List[int] = None,
         dummy_targets: bool = False,
-        reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+        reduction: Dict[ChordType, ChordType] = None,
     ):
         super().__init__(transform=transform)
 
@@ -271,7 +269,7 @@ class ChordClassificationDataset(HarmonicDataset):
                 ]
             )
 
-        self.reduction = reduction
+        self.reduction = NO_REDUCTION if reduction is None else reduction
 
     def __getitem__(self, item) -> Dict:
         # TODO: Implement reduction on targets
@@ -306,8 +304,8 @@ class ChordSequenceDataset(HarmonicDataset):
         self,
         pieces: List[Piece],
         transform=None,
-        input_reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
-        output_reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+        input_reduction: Dict[ChordType, ChordType] = None,
+        output_reduction: Dict[ChordType, ChordType] = None,
     ):
         super().__init__(transform=transform)
         self.inputs = []
@@ -347,8 +345,8 @@ class ChordSequenceDataset(HarmonicDataset):
         self.target_lengths = np.array([len(target) for target in self.targets])
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
 
-        self.input_reduction = input_reduction
-        self.output_reduction = output_reduction
+        self.input_reduction = NO_REDUCTION if input_reduction is None else input_reduction
+        self.output_reduction = NO_REDUCTION if output_reduction is None else output_reduction
 
     def __getitem__(self, item) -> Dict:
         # TODO: implement reduction
@@ -368,7 +366,7 @@ class KeyHarmonicDataset(HarmonicDataset):
         reduction: Dict[ChordType, ChordType] = None,
     ):
         super().__init__(transform=transform)
-        self.reduction = reduction
+        self.reduction = NO_REDUCTION if reduction is None else reduction
 
     def pad(self):
         self.inputs, _ = pad_array(self.inputs)
@@ -738,7 +736,7 @@ def get_split_file_ids_and_pieces(
     measures: pd.DataFrame,
     chords: pd.DataFrame,
     notes: pd.DataFrame,
-    splits: Iterable[float] = [0.8, 0.1, 0.1],
+    splits: Iterable[float] = (0.8, 0.1, 0.1),
     seed: int = None,
 ) -> Tuple[Iterable[Iterable[int]], Iterable[Piece]]:
     """
@@ -779,7 +777,7 @@ def get_split_file_ids_and_pieces(
 
     for i in tqdm(files.index):
         file_name = f"{files.loc[i].corpus_name}/{files.loc[i].file_name}"
-        logging.info(f"Parsing {file_name} (id {i})")
+        logging.info("Parsing %s (id %s)", file_name, i)
 
         dfs = [chords, measures, notes]
         names = ["chords", "measures", "notes"]
@@ -788,15 +786,15 @@ def get_split_file_ids_and_pieces(
         if not all(exists):
             for exist, name in zip(exists, names):
                 if not exist:
-                    logging.warning(f"{name}_df does not contain {file_name} data (id {i}).")
+                    logging.warning("%s_df does not contain %s data (id %s).", name, file_name, i)
             continue
 
         try:
             piece = ScorePiece(notes.loc[i], chords.loc[i], measures.loc[i])
             pieces.append(piece)
             df_indexes.append(i)
-        except Exception as e:
-            logging.exception(f"Error parsing index {i}: {e}")
+        except Exception:
+            logging.exception("Error parsing index %s", i)
             continue
 
     # Shuffle the pieces and the df_indexes the same way
@@ -833,7 +831,7 @@ def get_dataset_splits(
     chords: pd.DataFrame,
     notes: pd.DataFrame,
     datasets: Iterable[HarmonicDataset],
-    splits: Iterable[float] = [0.8, 0.1, 0.1],
+    splits: Iterable[float] = (0.8, 0.1, 0.1),
     seed: int = None,
 ) -> Tuple[List[List[HarmonicDataset]], List[List[int]], List[List[Piece]]]:
     """
@@ -882,8 +880,9 @@ def get_dataset_splits(
     for split_index, (split_prop, pieces) in enumerate(zip(splits, split_pieces)):
         if len(pieces) == 0:
             logging.warning(
-                f"Split {split_index} with prop {split_prop} contains no pieces. Returning None "
-                "for those."
+                "Split %s with prop %s contains no pieces. Returning None for those.",
+                split_index,
+                split_prop,
             )
             continue
 
