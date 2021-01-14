@@ -1,5 +1,5 @@
 """Functions for decoding data vectors."""
-from typing import Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 
@@ -109,6 +109,7 @@ def decode_key_change_vector(key_change_vector: np.array) -> Key:
 def decode_chord_vector(
     chord_vector: np.array,
     pad: bool = False,
+    pitch_type: PitchType = None,
 ) -> Chord:
     """
     Print out information about the given chord vector.
@@ -126,15 +127,8 @@ def decode_chord_vector(
     chord : Chord
         A Chord object, decoded from the given vector.
     """
-    # Infer pitch_type from vector length
-    pitch_type = None
-    for check_pitch_type in PitchType:
-        if len(chord_vector) == get_chord_vector_length(check_pitch_type, one_hot=False, pad=pad):
-            pitch_type = check_pitch_type
-            break
-
     if pitch_type is None:
-        raise ValueError("Key change vector is not a valid length for any PitchType.")
+        pitch_type = infer_chord_vector_pitch_type(len(chord_vector), pad)
 
     if pitch_type == PitchType.MIDI:
         num_pitches = NUM_PITCHES[PitchType.MIDI]
@@ -199,6 +193,174 @@ def decode_chord_vector(
         None,
         pitch_type,
     )
+
+
+def infer_chord_vector_pitch_type(vector_length: int, pad: bool) -> PitchType:
+    """
+    Infer the pitch type used in a chord vector of the given length with the given padding.
+
+    Parameters
+    ----------
+    vector_length : int
+        The length of a chord vector.
+    pad : bool
+        Whether padding is used in the chord vector.
+
+    Returns
+    -------
+    pitch_type : PitchType
+        The pitch type used in a chord vector of the given length.
+
+    Raises
+    ------
+    ValueError
+        If no known PitchType results in the given vector length.
+    """
+    for pitch_type in PitchType:
+        if vector_length == get_chord_vector_length(pitch_type, one_hot=False, pad=pad):
+            return pitch_type
+
+    raise ValueError(f"Could not find valid pitch type for vector length {vector_length}.")
+
+
+def get_chord_vector_chord_type_index(
+    vector_length: int,
+    pad: bool,
+    pitch_type: PitchType = None,
+) -> int:
+    """
+    Get the starting index of where the chord_types are stored in a chord vector of the
+    given length. A ChordType of value i will be represented by a 1 in this index + i.
+
+    Parameters
+    ----------
+    vector_length : int
+        The length of the chord vector.
+    pad : bool
+        Whether padding is used in the chord vector.
+    pitch_type : PitchType
+        The pitch type used in the chord vector. If given, this will speed up computation.
+
+    Returns
+    -------
+    index : int
+        The index at which the chord types are stored in the chord vector.
+    """
+    if pitch_type is None:
+        pitch_type = infer_chord_vector_pitch_type(vector_length, pad)
+
+    if pitch_type == PitchType.MIDI:
+        num_pitches = NUM_PITCHES[PitchType.MIDI]
+    elif pitch_type == PitchType.TPC:
+        num_pitches = MAX_RELATIVE_TPC - MIN_RELATIVE_TPC
+        if pad:
+            num_pitches += 2 * RELATIVE_TPC_EXTRA
+    else:
+        raise ValueError("No valid pitch_type found.")
+
+    return num_pitches
+
+
+def reduce_chord_one_hots(
+    one_hots: np.array,
+    reduction: Dict[ChordType, ChordType],
+    inversions_present: bool,
+    pad: bool,
+    pitch_type: PitchType,
+    relative: bool = True,
+    use_inversions: bool = True,
+):
+    # TODO: Implement
+    pass
+
+
+def remove_chord_inversions(tensor: np.array, pad: bool, pitch_type: PitchType = None):
+    # TODO: Implement
+    pass
+
+
+def reduce_chord_tensor(
+    tensor: np.array,
+    reduction: Dict[ChordType, ChordType],
+    pad: bool,
+    pitch_type: PitchType = None,
+) -> np.array:
+    """
+    Reduce the chord type of a tensor of chord vectors in place.
+
+    Parameters
+    ----------
+    tensor : np.array
+        The chord vector tensor to reduce. This tensor is changed in place.
+    reduction : Dict[ChordType, ChordType]
+        The reduction to appply.
+    pad : bool
+        Whether the tensor's pitches are padded or not.
+    pitch_type: PitchType
+        The pitch type used in the tensor. If known, this will speed up computation.
+    """
+    if reduction is None:
+        return tensor
+
+    if pitch_type is None:
+        pitch_type = infer_chord_vector_pitch_type(len(tensor[0]), pad)
+
+    chord_type_index = get_chord_vector_chord_type_index(len(tensor[0]), pad, pitch_type=pitch_type)
+
+    chord_type_vectors = tensor[:, chord_type_index : chord_type_index + len(ChordType)]
+    new_chord_type_vectors = np.zeros_like(chord_type_vectors)
+
+    for from_type, to_type in reduction.items():
+        if from_type == to_type:
+            continue
+
+        from_index = from_type.value
+        to_index = to_type.value
+
+        to_change_indexes = np.where(chord_type_vectors[:, from_index] == 1)[0]
+        new_chord_type_vectors[to_change_indexes, to_index] = 1
+
+    tensor[:, chord_type_index : chord_type_index + len(ChordType)] = new_chord_type_vectors
+
+
+def reduce_single_chord_vector(
+    vector: np.array,
+    reduction: Dict[ChordType, ChordType],
+    pad: bool,
+    pitch_type: PitchType = None,
+):
+    """
+    Reduce the chord type of a single chord vector in place.
+
+    Parameters
+    ----------
+    vector : np.array
+        The chord vector to reduce. This value is changed in place.
+    reduction : Dict[ChordType, ChordType]
+        The reduction to appply.
+    pad : bool
+        Whether the vector's pitches are padded or not.
+    pitch_type: PitchType
+        The pitch type used in the vector. If known, this will speed up computation.
+    """
+    if reduction is None:
+        return vector
+
+    if pitch_type is None:
+        pitch_type = infer_chord_vector_pitch_type(len(vector), pad)
+
+    chord_type_index = get_chord_vector_chord_type_index(len(vector), pad, pitch_type=pitch_type)
+
+    chord_type_vector = vector[chord_type_index : chord_type_index + len(ChordType)]
+    old_chord_type_index = np.where(chord_type_vector == 1)[0][0]
+
+    new_chord_type = reduction[ChordType(old_chord_type_index)]
+    new_chord_type_index = new_chord_type.value
+
+    chord_type_vector[old_chord_type_index] = 0
+    chord_type_vector[new_chord_type_index] = 1
+
+    vector[chord_type_index : chord_type_index + len(ChordType)] = chord_type_vector
 
 
 def decode_chord_and_key_change_vector(

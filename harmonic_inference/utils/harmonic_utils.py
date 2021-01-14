@@ -146,7 +146,7 @@ def get_chord_one_hot_index(
     use_inversion: bool = True,
     relative: bool = False,
     pad: bool = False,
-    reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+    reduction: Dict[ChordType, ChordType] = None,
 ) -> int:
     """
     Get the one hot index of a given chord.
@@ -177,6 +177,9 @@ def get_chord_one_hot_index(
     index : int
         The index of the given chord's label in the list of all possible chord labels.
     """
+    if reduction is None:
+        reduction = NO_REDUCTION
+
     chord_types = sorted(set(reduction.values()))
     chord_type = reduction[chord_type]
     chord_type_index = chord_types.index(chord_type)

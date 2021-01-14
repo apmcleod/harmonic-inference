@@ -5,7 +5,7 @@ from typing import Dict, List, Union
 
 import numpy as np
 
-from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, KeyMode, PitchType
+from harmonic_inference.data.data_types import ChordType, KeyMode, PitchType
 from harmonic_inference.data.piece import Chord, Piece
 
 
@@ -32,6 +32,8 @@ class SimpleInitialChordModel:
 
         self.major_prior = data["major"]
         self.minor_prior = data["minor"]
+
+        # TODO: Load reduction
 
         self.major_log_prior = np.log(self.major_prior)
         self.minor_log_prior = np.log(self.minor_prior)
@@ -89,7 +91,7 @@ class SimpleInitialChordModel:
     def train(
         chords: List[Chord],
         json_path: Union[Path, str],
-        reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+        reduction: Dict[ChordType, ChordType] = None,
         use_inversions: bool = True,
         add_n_smoothing: float = 1.0,
     ):
@@ -140,6 +142,8 @@ class SimpleInitialChordModel:
         # Normalize
         major_key_chords_one_hots /= np.sum(major_key_chords_one_hots)
         minor_key_chords_one_hots /= np.sum(minor_key_chords_one_hots)
+
+        # TODO: Save reduction
 
         # Write out result to json
         with open(json_path, "w") as json_file:

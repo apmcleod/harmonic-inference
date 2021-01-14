@@ -10,9 +10,10 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import pytorch_lightning as pl
-from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, PieceType, PitchType
+from harmonic_inference.data.chord import get_chord_vector_length
+from harmonic_inference.data.data_types import ChordType, PieceType, PitchType
 from harmonic_inference.data.datasets import ChordClassificationDataset
-from harmonic_inference.data.piece import Chord, Note
+from harmonic_inference.data.note import get_note_vector_length
 
 
 class ChordClassifierModel(pl.LightningModule):
@@ -119,7 +120,7 @@ class SimpleChordClassifier(ChordClassifierModel):
         self,
         input_type: PitchType,
         output_type: PitchType,
-        reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+        reduction: Dict[ChordType, ChordType] = None,
         use_inversions: bool = True,
         lstm_layers: int = 1,
         lstm_hidden_dim: int = 128,
@@ -155,9 +156,12 @@ class SimpleChordClassifier(ChordClassifierModel):
         super().__init__(input_type, output_type, learning_rate)
         self.save_hyperparameters()
 
+        self.use_inversions = use_inversions
+        self.reduction = reduction
+
         # Input and output derived from pitch_type and use_inversions
-        self.input_dim = Note.get_note_vector_length(input_type)
-        self.num_classes = Chord.get_chord_vector_length(
+        self.input_dim = get_note_vector_length(input_type)
+        self.num_classes = get_chord_vector_length(
             output_type,
             one_hot=True,
             relative=False,

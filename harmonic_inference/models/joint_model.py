@@ -315,6 +315,9 @@ class HarmonicInferenceModel:
         # No piece currently
         self.current_piece = None
         self.debugger = None
+        self.duration_cache = None
+        self.onset_cache = None
+        self.onset_level_cache = None
 
     def get_harmony(self, piece: Piece) -> State:
         """

@@ -10,9 +10,14 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 
 import h5py
-from harmonic_inference.data.data_types import NO_REDUCTION, ChordType
+from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.key import Key
 from harmonic_inference.data.piece import Piece, ScorePiece
+from harmonic_inference.data.vector_decoding import (
+    reduce_chord_one_hots,
+    reduce_chord_tensor,
+    remove_chord_inversions,
+)
 
 
 class HarmonicDataset(Dataset):
@@ -232,6 +237,7 @@ class HarmonicDataset(Dataset):
             "target_lengths",
             "piece_lengths",
             "key_change_replacements",
+            "target_pitch_type",
         ]
         for key in keys:
             if hasattr(self, key) and getattr(self, key) is not None:
@@ -308,8 +314,10 @@ class ChordClassificationDataset(HarmonicDataset):
         change_indices: List[int] = None,
         dummy_targets: bool = False,
         reduction: Dict[ChordType, ChordType] = None,
+        use_inversions: bool = True,
     ):
         super().__init__(transform=transform, pad_targets=False)
+        self.target_pitch_type = []
 
         if ranges is None:
             ranges = np.full(len(pieces), None)
@@ -337,12 +345,26 @@ class ChordClassificationDataset(HarmonicDataset):
                 ]
             )
 
-        self.reduction = NO_REDUCTION if reduction is None else reduction
+            if len(pieces) > 0 and len(pieces[0].get_chords()) > 0:
+                self.target_pitch_type = [pieces[0].get_chords()[0].pitch_type.value]
+
+        self.dummy_targets = dummy_targets
+        self.reduction = reduction
+        self.use_inversions = use_inversions
 
     def __getitem__(self, item) -> Dict:
         data = super().__getitem__(item)
 
-        # TODO: Implement reduction on targets
+        if not self.dummy_targets:
+            reduce_chord_one_hots(
+                data["targets"],
+                self.reduction,
+                inversions_present=True,
+                pad=False,
+                pitch_type=PitchType(self.target_pitch_type[0]),
+                relative=True,
+                use_inversions=self.use_inversions,
+            )
 
         return self.finalize_data(data, item)
 
@@ -370,13 +392,16 @@ class ChordSequenceDataset(HarmonicDataset):
     def __init__(
         self,
         pieces: List[Piece],
-        transform=None,
+        transform: Callable = None,
         input_reduction: Dict[ChordType, ChordType] = None,
         output_reduction: Dict[ChordType, ChordType] = None,
+        use_inversions_input: bool = True,
+        use_inversions_output: bool = False,
     ):
         super().__init__(transform=transform)
         self.inputs = []
         self.targets = []
+        self.target_pitch_type = []
 
         for piece in pieces:
             piece_input = []
@@ -387,6 +412,9 @@ class ChordSequenceDataset(HarmonicDataset):
                 keys[0].tonic_type,
                 one_hot=False,
             )
+
+            if len(chords) > 0:
+                self.target_pitch_type = [chords[0].pitch_type.value]
 
             for prev_key, key, start, end in zip(
                 [None] + list(keys[:-1]), keys, key_changes, list(key_changes[1:]) + [len(chords)]
@@ -412,13 +440,27 @@ class ChordSequenceDataset(HarmonicDataset):
         self.target_lengths = np.array([len(target) for target in self.targets])
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
 
-        self.input_reduction = NO_REDUCTION if input_reduction is None else input_reduction
-        self.output_reduction = NO_REDUCTION if output_reduction is None else output_reduction
+        self.input_reduction = input_reduction
+        self.output_reduction = output_reduction
+        self.use_inversions_input = use_inversions_input
+        self.use_inversions_output = use_inversions_output
 
     def __getitem__(self, item) -> Dict:
         data = super().__getitem__(item)
 
-        # TODO: implement reduction
+        reduce_chord_tensor(data["inputs"], self.input_reduction, pad=False)
+        if not self.use_inversions_input:
+            remove_chord_inversions(data["inputs"], pad=False)
+
+        reduce_chord_one_hots(
+            data["targets"],
+            self.output_reduction,
+            inversions_present=True,
+            pad=False,
+            pitch_type=PitchType(self.target_pitch_type[0]),
+            relative=True,
+            use_inversions=self.use_inversions_output,
+        )
 
         return self.finalize_data(data, item)
 
@@ -434,9 +476,11 @@ class KeyHarmonicDataset(HarmonicDataset):
         self,
         transform: Callable = None,
         reduction: Dict[ChordType, ChordType] = None,
+        use_inversions: bool = True,
     ):
         super().__init__(transform=transform, pad_targets=False)
-        self.reduction = NO_REDUCTION if reduction is None else reduction
+        self.reduction = reduction
+        self.use_inversions = use_inversions
 
         self.piece_lengths = []
         self.key_change_replacements = []
@@ -515,7 +559,9 @@ class KeyHarmonicDataset(HarmonicDataset):
             piece_input[input_length] = key_change_replacement
             input_length += 1
 
-        # TODO: Implement reduction on piece_input
+        reduce_chord_tensor(piece_input, self.reduction, pad=True)
+        if not self.use_inversions:
+            remove_chord_inversions(piece_input, pad=True)
 
         data = {
             "targets": targets,
@@ -543,8 +589,14 @@ class KeyTransitionDataset(KeyHarmonicDataset):
     valid_batch_size = 64
     chunk_size = 256
 
-    def __init__(self, pieces: List[Piece], transform=None):
-        super().__init__(transform=transform)
+    def __init__(
+        self,
+        pieces: List[Piece],
+        transform: Callable = None,
+        reduction: Dict[ChordType, ChordType] = None,
+        use_inversions: bool = True,
+    ):
+        super().__init__(transform=transform, reduction=reduction, use_inversions=use_inversions)
         self.inputs = []
         self.targets = []
 
@@ -616,8 +668,14 @@ class KeySequenceDataset(KeyHarmonicDataset):
     valid_batch_size = 64
     chunk_size = 256
 
-    def __init__(self, pieces: List[Piece], transform=None):
-        super().__init__(transform=transform)
+    def __init__(
+        self,
+        pieces: List[Piece],
+        transform: Callable = None,
+        reduction: Dict[ChordType, ChordType] = None,
+        use_inversions: bool = True,
+    ):
+        super().__init__(transform=transform, reduction=reduction, use_inversions=use_inversions)
         self.inputs = []
         self.targets = []
 
@@ -727,7 +785,7 @@ def h5_to_dataset(
                 else:
                     setattr(dataset, f"{data}s", np.array(h5_file[f"{data}s"], dtype=np.float16))
 
-            for key in ["piece_lengths", "key_change_replacements"]:
+            for key in ["piece_lengths", "key_change_replacements", "target_pitch_type"]:
                 if key in h5_file:
                     setattr(dataset, key, np.array(h5_file[key]))
 

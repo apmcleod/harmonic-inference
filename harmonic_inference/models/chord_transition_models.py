@@ -12,7 +12,7 @@ from tqdm import tqdm
 import pytorch_lightning as pl
 from harmonic_inference.data.data_types import PieceType, PitchType
 from harmonic_inference.data.datasets import ChordTransitionDataset
-from harmonic_inference.data.piece import Note
+from harmonic_inference.data.note import get_note_vector_length
 
 
 class ChordTransitionModel(pl.LightningModule):
@@ -165,7 +165,7 @@ class SimpleChordTransitionModel(ChordTransitionModel):
         self.save_hyperparameters()
 
         # Input and output derived from input type and use_inversions
-        self.input_dim = Note.get_note_vector_length(
+        self.input_dim = get_note_vector_length(
             PitchType.TPC if input_type == PieceType.SCORE else PitchType.MIDI
         )
 

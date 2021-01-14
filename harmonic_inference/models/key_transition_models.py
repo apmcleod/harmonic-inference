@@ -1,5 +1,5 @@
 """Models that output the probability of a key change occurring on a given input."""
-from typing import Tuple
+from typing import Dict, Tuple
 
 import torch
 import torch.nn as nn
@@ -10,9 +10,10 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import pytorch_lightning as pl
-from harmonic_inference.data.data_types import NO_REDUCTION, PitchType
+from harmonic_inference.data.chord import get_chord_vector_length
+from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.datasets import KeyTransitionDataset
-from harmonic_inference.data.piece import Chord, Key
+from harmonic_inference.data.key import get_key_change_vector_length
 
 
 class KeyTransitionModel(pl.LightningModule):
@@ -149,6 +150,8 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
         hidden_dim: int = 64,
         dropout: float = 0.0,
         learning_rate: float = 0.001,
+        use_inversions: bool = True,
+        reduction: Dict[ChordType, ChordType] = None,
     ):
         """
         Create a new simple key transition model.
@@ -169,21 +172,28 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
             The dropout proportion.
         learning_rate : float
             The learning rate.
+        use_inversions : bool
+            True to use inversions in the input vectors. False otherwise.
+        reduction : Dict[ChordType, ChordType]
+            The reduction to use for chord types.
         """
         super().__init__(input_type, learning_rate)
         self.save_hyperparameters()
 
+        self.use_inversions = use_inversions
+        self.reduction = reduction
+
         # Input derived from input type
         self.input_dim = (
-            Chord.get_chord_vector_length(
+            get_chord_vector_length(
                 input_type,
                 one_hot=False,
                 relative=True,
-                use_inversions=True,
+                use_inversions=use_inversions,
                 pad=True,
-                reduction=NO_REDUCTION,
+                reduction=reduction,
             )
-            + Key.get_key_change_vector_length(input_type, one_hot=False)
+            + get_key_change_vector_length(input_type, one_hot=False)
             + 1
         )
 

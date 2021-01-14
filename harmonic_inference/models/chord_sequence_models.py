@@ -10,9 +10,10 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import pytorch_lightning as pl
-from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, PitchType
+from harmonic_inference.data.chord import get_chord_vector_length
+from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.datasets import ChordSequenceDataset
-from harmonic_inference.data.piece import Chord, Key
+from harmonic_inference.data.key import get_key_change_vector_length
 
 
 class ChordSequenceModel(pl.LightningModule):
@@ -146,8 +147,8 @@ class SimpleChordSequenceModel(ChordSequenceModel):
     def __init__(
         self,
         chord_type: PitchType,
-        input_reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
-        output_reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+        input_reduction: Dict[ChordType, ChordType] = None,
+        output_reduction: Dict[ChordType, ChordType] = None,
         use_input_inversions: bool = True,
         use_output_inversions: bool = True,
         embed_dim: int = 64,
@@ -189,9 +190,14 @@ class SimpleChordSequenceModel(ChordSequenceModel):
         super().__init__(chord_type, learning_rate)
         self.save_hyperparameters()
 
+        self.use_input_inversions = use_input_inversions
+        self.use_output_inversions = use_output_inversions
+        self.input_reduction = input_reduction
+        self.output_reduction = output_reduction
+
         # Input and output derived from input type and use_inversions
         self.input_dim = (
-            Chord.get_chord_vector_length(
+            get_chord_vector_length(
                 chord_type,
                 one_hot=False,
                 relative=True,
@@ -199,10 +205,10 @@ class SimpleChordSequenceModel(ChordSequenceModel):
                 pad=False,
                 reduction=input_reduction,
             )
-            + Key.get_key_change_vector_length(chord_type, one_hot=False)  # Key change vector
+            + get_key_change_vector_length(chord_type, one_hot=False)  # Key change vector
             + 1  # is_key_change
         )
-        self.output_dim = Chord.get_chord_vector_length(
+        self.output_dim = get_chord_vector_length(
             chord_type,
             one_hot=True,
             relative=True,
