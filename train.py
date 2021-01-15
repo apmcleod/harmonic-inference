@@ -107,7 +107,8 @@ if __name__ == "__main__":
 
     if ARGS.checkpoint == DEFAULT_CHECKPOINT_PATH:
         ARGS.checkpoint = os.path.join("checkpoints", ARGS.model)
-        os.makedirs(ARGS.checkpoint, exist_ok=True)
+
+    os.makedirs(ARGS.checkpoint, exist_ok=True)
 
     if ARGS.model_kwargs is None:
         kwargs = {}
