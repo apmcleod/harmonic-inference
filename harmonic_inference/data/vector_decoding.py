@@ -1,5 +1,5 @@
 """Functions for decoding data vectors."""
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 
@@ -14,7 +14,11 @@ from harmonic_inference.utils.harmonic_constants import (
     NUM_PITCHES,
     RELATIVE_TPC_EXTRA,
 )
-from harmonic_inference.utils.harmonic_utils import get_pitch_string
+from harmonic_inference.utils.harmonic_utils import (
+    get_chord_from_one_hot_index,
+    get_chord_one_hot_index,
+    get_pitch_string,
+)
 
 
 def decode_note_vector(note_vector: np.array) -> Note:
@@ -223,7 +227,7 @@ def infer_chord_vector_pitch_type(vector_length: int, pad: bool) -> PitchType:
     raise ValueError(f"Could not find valid pitch type for vector length {vector_length}.")
 
 
-def get_chord_vector_chord_type_index(
+def get_chord_vector_inversion_index(
     vector_length: int,
     pad: bool,
     pitch_type: PitchType = None,
@@ -258,33 +262,154 @@ def get_chord_vector_chord_type_index(
     else:
         raise ValueError("No valid pitch_type found.")
 
+    return 2 * num_pitches + len(ChordType)
+
+
+def get_chord_vector_chord_type_index(
+    vector_length: int,
+    pad: bool,
+    pitch_type: PitchType = None,
+) -> int:
+    """
+    Get the starting index of where inversions are stored in a chord vector of the
+    given length. An ith inversion will be represented by a 1 in this index + i.
+
+    Parameters
+    ----------
+    vector_length : int
+        The length of the chord vector.
+    pad : bool
+        Whether padding is used in the chord vector.
+    pitch_type : PitchType
+        The pitch type used in the chord vector. If given, this will speed up computation.
+
+    Returns
+    -------
+    index : int
+        The index at which inversions are stored in the chord vector.
+    """
+    if pitch_type is None:
+        pitch_type = infer_chord_vector_pitch_type(vector_length, pad)
+
+    if pitch_type == PitchType.MIDI:
+        num_pitches = NUM_PITCHES[PitchType.MIDI]
+    elif pitch_type == PitchType.TPC:
+        num_pitches = MAX_RELATIVE_TPC - MIN_RELATIVE_TPC
+        if pad:
+            num_pitches += 2 * RELATIVE_TPC_EXTRA
+    else:
+        raise ValueError("No valid pitch_type found.")
+
     return num_pitches
 
 
 def reduce_chord_one_hots(
-    one_hots: np.array,
-    reduction: Dict[ChordType, ChordType],
-    inversions_present: bool,
+    one_hots: List[int],
     pad: bool,
     pitch_type: PitchType,
+    inversions_present: bool = True,
+    reduction_present: Dict[ChordType, ChordType] = None,
     relative: bool = True,
+    reduction: Dict[ChordType, ChordType] = None,
     use_inversions: bool = True,
-):
-    # TODO: Implement
-    pass
+) -> np.array:
+    """
+    Reduce a list of one-hot chord indexes by reducing chord types and/or removing
+    inversions.
+
+    Parameters
+    ----------
+    one_hots : List[int]
+        A list of one-hot chord indexes to reduce.
+    pad : bool
+        Whether root padding was used when creating the list of one-hots.
+    pitch_type : PitchType
+        The PitchType used when creating the list of one-hots.
+    inversions_present : bool
+        Whether inversions were present when creating the list of one-hots.
+    reduction_present: Dict[ChordType, ChordType]
+        Which reduction was used when creating the list of one-hots, if any.
+    relative : bool
+        Whether the list contains relative or absolute chord labels.
+    reduction : Dict[ChordType, ChordType]
+        The chord type reduction to apply, if any. These will be applied to the already
+        reduced types from reduction_present.
+    use_inversions : bool
+        True to include inversions in the resulting one-hots. False to ignore inversions.
+        If inversions_present is False, and this is True, all chords will be in root
+        position.
+
+    Returns
+    -------
+    one_hots : np.array
+        The chords from the given list of one-hots, reduced according to the given
+        reduction and use_inversions values.
+    """
+    one_hots = np.array(one_hots)
+    new_one_hots = np.zeros_like(one_hots)
+    unique_one_hots = np.unique(one_hots)
+
+    old_labels = np.array(
+        get_chord_from_one_hot_index(
+            slice(None, None),
+            pitch_type,
+            use_inversions=inversions_present,
+            relative=relative,
+            pad=pad,
+            reduction=reduction_present,
+        )
+    )[unique_one_hots]
+
+    for one_hot, (root, chord_type, inversion) in zip(unique_one_hots, old_labels):
+        new_one_hot = get_chord_one_hot_index(
+            chord_type,
+            root,
+            pitch_type,
+            inversion=inversion,
+            use_inversion=use_inversions,
+            relative=relative,
+            pad=pad,
+            reduction=reduction,
+        )
+
+        new_one_hots[np.where(one_hots == one_hot)[0]] = new_one_hot
+
+    return new_one_hots
 
 
 def remove_chord_inversions(tensor: np.array, pad: bool, pitch_type: PitchType = None):
-    # TODO: Implement
-    pass
+    """
+    Reduce the chord inversions of all chord vectors in the given tensor to be in
+    root position.
+
+    Parameters
+    ----------
+    tensor : np.array
+        The chord vector tensor to remove inversions from. This tensor is changed in place.
+    pad : bool
+        Whether the tensor's pitches are padded or not.
+    pitch_type: PitchType
+        The pitch type used in the tensor. If known, this will speed up computation.
+    """
+    if pitch_type is None:
+        pitch_type = infer_chord_vector_pitch_type(len(tensor[0]), pad)
+
+    inversion_index = get_chord_vector_inversion_index(len(tensor[0]), pad, pitch_type=pitch_type)
+
+    inversion_vectors = tensor[:, inversion_index : inversion_index + 4]
+    new_inversion_vectors = np.zeros_like(inversion_vectors)
+
+    new_inversion_vectors[:, 0] = np.sum(inversion_vectors, axis=1)
+
+    tensor[:, inversion_index : inversion_index + 4] = new_inversion_vectors
 
 
-def reduce_chord_tensor(
+def reduce_chord_types(
     tensor: np.array,
     reduction: Dict[ChordType, ChordType],
     pad: bool,
     pitch_type: PitchType = None,
-) -> np.array:
+):
     """
     Reduce the chord type of a tensor of chord vectors in place.
 
@@ -321,46 +446,6 @@ def reduce_chord_tensor(
         new_chord_type_vectors[to_change_indexes, to_index] = 1
 
     tensor[:, chord_type_index : chord_type_index + len(ChordType)] = new_chord_type_vectors
-
-
-def reduce_single_chord_vector(
-    vector: np.array,
-    reduction: Dict[ChordType, ChordType],
-    pad: bool,
-    pitch_type: PitchType = None,
-):
-    """
-    Reduce the chord type of a single chord vector in place.
-
-    Parameters
-    ----------
-    vector : np.array
-        The chord vector to reduce. This value is changed in place.
-    reduction : Dict[ChordType, ChordType]
-        The reduction to appply.
-    pad : bool
-        Whether the vector's pitches are padded or not.
-    pitch_type: PitchType
-        The pitch type used in the vector. If known, this will speed up computation.
-    """
-    if reduction is None:
-        return vector
-
-    if pitch_type is None:
-        pitch_type = infer_chord_vector_pitch_type(len(vector), pad)
-
-    chord_type_index = get_chord_vector_chord_type_index(len(vector), pad, pitch_type=pitch_type)
-
-    chord_type_vector = vector[chord_type_index : chord_type_index + len(ChordType)]
-    old_chord_type_index = np.where(chord_type_vector == 1)[0][0]
-
-    new_chord_type = reduction[ChordType(old_chord_type_index)]
-    new_chord_type_index = new_chord_type.value
-
-    chord_type_vector[old_chord_type_index] = 0
-    chord_type_vector[new_chord_type_index] = 1
-
-    vector[chord_type_index : chord_type_index + len(ChordType)] = chord_type_vector
 
 
 def decode_chord_and_key_change_vector(

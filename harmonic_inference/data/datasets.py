@@ -15,7 +15,7 @@ from harmonic_inference.data.key import Key
 from harmonic_inference.data.piece import Piece, ScorePiece
 from harmonic_inference.data.vector_decoding import (
     reduce_chord_one_hots,
-    reduce_chord_tensor,
+    reduce_chord_types,
     remove_chord_inversions,
 )
 
@@ -356,13 +356,14 @@ class ChordClassificationDataset(HarmonicDataset):
         data = super().__getitem__(item)
 
         if not self.dummy_targets:
-            reduce_chord_one_hots(
+            data["targets"] = reduce_chord_one_hots(
                 data["targets"],
-                self.reduction,
+                False,
+                PitchType(self.target_pitch_type[0]),
                 inversions_present=True,
-                pad=False,
-                pitch_type=PitchType(self.target_pitch_type[0]),
+                reduction_present=None,
                 relative=True,
+                reduction=self.reduction,
                 use_inversions=self.use_inversions,
             )
 
@@ -448,17 +449,18 @@ class ChordSequenceDataset(HarmonicDataset):
     def __getitem__(self, item) -> Dict:
         data = super().__getitem__(item)
 
-        reduce_chord_tensor(data["inputs"], self.input_reduction, pad=False)
+        reduce_chord_types(data["inputs"], self.input_reduction, pad=False)
         if not self.use_inversions_input:
             remove_chord_inversions(data["inputs"], pad=False)
 
-        reduce_chord_one_hots(
+        data["targets"] = reduce_chord_one_hots(
             data["targets"],
-            self.output_reduction,
+            False,
+            PitchType(self.target_pitch_type[0]),
             inversions_present=True,
-            pad=False,
-            pitch_type=PitchType(self.target_pitch_type[0]),
+            reduction_present=None,
             relative=True,
+            reduction=self.output_reduction,
             use_inversions=self.use_inversions_output,
         )
 
@@ -559,7 +561,7 @@ class KeyHarmonicDataset(HarmonicDataset):
             piece_input[input_length] = key_change_replacement
             input_length += 1
 
-        reduce_chord_tensor(piece_input, self.reduction, pad=True)
+        reduce_chord_types(piece_input, self.reduction, pad=True)
         if not self.use_inversions:
             remove_chord_inversions(piece_input, pad=True)
 

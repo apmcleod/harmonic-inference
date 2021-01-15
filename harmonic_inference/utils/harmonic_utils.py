@@ -1,6 +1,6 @@
 """Utility functions for getting harmonic and pitch information from the corpus DataFrames."""
 import itertools
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -79,13 +79,13 @@ def get_chord_label_list(
 
 
 def get_chord_from_one_hot_index(
-    one_hot_index: int,
+    one_hot_index: Union[int, slice],
     pitch_type: PitchType,
     use_inversions: bool = True,
     relative: bool = False,
     pad: bool = False,
-    reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
-) -> Tuple[int, ChordType, int]:
+    reduction: Dict[ChordType, ChordType] = None,
+) -> Union[Tuple[int, ChordType, int], List[Tuple[int, ChordType, int]]]:
     """
     Get a chord object from a one hot index.
 
@@ -115,6 +115,9 @@ def get_chord_from_one_hot_index(
     inversion : int
         The inversion of the corresponding chord.
     """
+    if reduction is None:
+        reduction = NO_REDUCTION
+
     if relative:
         if pitch_type == PitchType.TPC:
             minimum = hc.MIN_RELATIVE_TPC
