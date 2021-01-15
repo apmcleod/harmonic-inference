@@ -1,3 +1,4 @@
+"""Create blocks of h5 data to use for training, validation, and testing."""
 import argparse
 import logging
 import pickle
@@ -81,7 +82,7 @@ if __name__ == "__main__":
 
     if ARGS.seed is None:
         ARGS.seed = np.random.randint(0, 2 ** 32)
-        logging.info(f"Using seed {ARGS.seed}")
+        logging.info("Using seed %s", ARGS.seed)
 
     dataset_splits, split_ids, split_pieces = ds.get_dataset_splits(
         files_df[:5] if ARGS.debug else files_df,

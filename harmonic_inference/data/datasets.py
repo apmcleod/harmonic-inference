@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 import h5py
 from harmonic_inference.data.data_types import ChordType, PitchType
-from harmonic_inference.data.key import Key
+from harmonic_inference.data.key import get_key_change_vector_length
 from harmonic_inference.data.piece import Piece, ScorePiece
 from harmonic_inference.data.vector_decoding import (
     reduce_chord_one_hots,
@@ -409,7 +409,7 @@ class ChordSequenceDataset(HarmonicDataset):
             chords = piece.get_chords()
             key_changes = piece.get_key_change_indices()
             keys = piece.get_keys()
-            key_vector_length = 1 + Key.get_key_change_vector_length(
+            key_vector_length = 1 + get_key_change_vector_length(
                 keys[0].tonic_type,
                 one_hot=False,
             )
@@ -611,7 +611,7 @@ class KeyTransitionDataset(KeyHarmonicDataset):
             chords = piece.get_chords()
             key_changes = piece.get_key_change_indices()
             keys = piece.get_keys()
-            key_vector_length = 1 + Key.get_key_change_vector_length(
+            key_vector_length = 1 + get_key_change_vector_length(
                 keys[0].tonic_type,
                 one_hot=False,
             )
@@ -690,7 +690,7 @@ class KeySequenceDataset(KeyHarmonicDataset):
             chords = piece.get_chords()
             key_changes = piece.get_key_change_indices()
             keys = piece.get_keys()
-            key_vector_length = 1 + Key.get_key_change_vector_length(
+            key_vector_length = 1 + get_key_change_vector_length(
                 keys[0].tonic_type,
                 one_hot=False,
             )
