@@ -5,8 +5,9 @@ from typing import Dict, List, Union
 
 import numpy as np
 
-from harmonic_inference.data.data_types import ChordType, KeyMode, PitchType
-from harmonic_inference.data.piece import Chord, Piece
+from harmonic_inference.data.chord import Chord, get_chord_vector_length
+from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, KeyMode, PitchType
+from harmonic_inference.data.piece import Piece
 
 
 class SimpleInitialChordModel:
@@ -15,7 +16,12 @@ class SimpleInitialChordModel:
     whether the key is major or minor.
     """
 
-    def __init__(self, json_path: Union[Path, str]):
+    def __init__(
+        self,
+        json_path: Union[Path, str],
+        use_inversions: bool = True,
+        reduction: Dict[ChordType, ChordType] = None,
+    ):
         """
         Create a new InitialChordModel by loading it from a json file.
 
@@ -23,17 +29,25 @@ class SimpleInitialChordModel:
         ----------
         json_path : Union[Path, str]
             The path of a json config file written using the InitialChordModel.train method.
+        use_inversion : bool
+            True to use inversions. False to collaps all inversions of a chord to root position.
+        reduction : Dict[ChordType, ChordType]
+            A reduction mapping for chord types.
         """
+        if reduction is None:
+            reduction = NO_REDUCTION
+
         with open(json_path, "r") as json_file:
             data = json.load(json_file)
 
-        self.CHORD_TYPE = PitchType[data["pitch_type"]]
-        self.use_inversions = data["use_inversions"]
+        self.PITCH_TYPE = PitchType[data["pitch_type"]]
 
         self.major_prior = data["major"]
         self.minor_prior = data["minor"]
 
-        # TODO: Load reduction
+        # TODO: Load reduction and inversion prior
+        self.use_inversions = use_inversions
+        self.reduction = reduction
 
         self.major_log_prior = np.log(self.major_prior)
         self.minor_log_prior = np.log(self.minor_prior)
@@ -91,8 +105,6 @@ class SimpleInitialChordModel:
     def train(
         chords: List[Chord],
         json_path: Union[Path, str],
-        reduction: Dict[ChordType, ChordType] = None,
-        use_inversions: bool = True,
         add_n_smoothing: float = 1.0,
     ):
         """
@@ -104,23 +116,19 @@ class SimpleInitialChordModel:
             All of the initial chords in the dataset.
         json_path : Union[Path, str]
             The path to write the json output to.
-        reduction : Dict[ChordType, ChordType]
-            The reduction used for chord types.
-        use_inversions : bool
-            True to use inversions when calculating the initial priors.
         add_n_smoothing : float
             Add a total of this amount of probability mass, uniformly over all chords.
             For example, 1 (default), will add `1 / num_chords` to each prior bin before
             counting.
         """
         pitch_type = chords[0].pitch_type
-        one_hot_length = Chord.get_chord_vector_length(
+        one_hot_length = get_chord_vector_length(
             pitch_type,
             one_hot=True,
             relative=True,
-            use_inversions=use_inversions,
+            use_inversions=True,
             pad=False,
-            reduction=reduction,
+            reduction=None,
         )
 
         # Initialize with smoothing
@@ -131,7 +139,7 @@ class SimpleInitialChordModel:
         # Count chords
         for chord in chords:
             one_hot_index = chord.get_one_hot_index(
-                relative=True, use_inversion=use_inversions, pad=False, reduction=reduction
+                relative=True, use_inversion=True, pad=False, reduction=None
             )
 
             if chord.key_mode == KeyMode.MAJOR:
@@ -143,14 +151,11 @@ class SimpleInitialChordModel:
         major_key_chords_one_hots /= np.sum(major_key_chords_one_hots)
         minor_key_chords_one_hots /= np.sum(minor_key_chords_one_hots)
 
-        # TODO: Save reduction
-
         # Write out result to json
         with open(json_path, "w") as json_file:
             json.dump(
                 {
                     "pitch_type": str(pitch_type).split(".")[1],
-                    "use_inversions": use_inversions,
                     "major": list(major_key_chords_one_hots),
                     "minor": list(minor_key_chords_one_hots),
                 },

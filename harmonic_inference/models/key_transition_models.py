@@ -21,20 +21,27 @@ class KeyTransitionModel(pl.LightningModule):
     The base class for all Key Transition Models which model when a key change will occur.
     """
 
-    def __init__(self, input_type: PitchType, learning_rate: float):
+    def __init__(
+        self,
+        input_chord_pitch_type: PitchType,
+        input_key_pitch_type: PitchType,
+        learning_rate: float,
+    ):
         """
-        Create a new base model.
+        Create a new base KeySequenceModel with the given output and input data types.
 
         Parameters
         ----------
-        input_type : PitchType
-            What type of input the model is expecting in get_change_prob(input_data).
+        input_chord_pitch_type : PitchType
+            The pitch representation used in the input chord data.
+        input_key_pitch_type : PitchType
+            The pitch representation used in the input key data.
         learning_rate : float
             The learning rate.
         """
         super().__init__()
-        # pylint: disable=invalid-name
-        self.INPUT_TYPE = input_type
+        self.INPUT_CHORD_PITCH_TYPE = input_chord_pitch_type
+        self.INPUT_KEY_PITCH_TYPE = input_key_pitch_type
         self.lr = learning_rate
 
     def get_data_from_batch(self, batch):
@@ -143,7 +150,8 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
 
     def __init__(
         self,
-        input_type: PitchType,
+        input_chord_pitch_type: PitchType,
+        input_key_pitch_type: PitchType,
         embed_dim: int = 128,
         lstm_layers: int = 1,
         lstm_hidden_dim: int = 128,
@@ -158,8 +166,10 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
 
         Parameters
         ----------
-        input_type : PitchType
-            The type of input data for this model.
+        input_chord_pitch_type : PitchType
+            The pitch representation used in the input chord data.
+        input_key_pitch_type : PitchType
+            The pitch representation used in the input key data.
         embed_dim : int
             The size of the input embedding.
         lstm_layers : int
@@ -177,7 +187,7 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
         reduction : Dict[ChordType, ChordType]
             The reduction to use for chord types.
         """
-        super().__init__(input_type, learning_rate)
+        super().__init__(input_chord_pitch_type, input_key_pitch_type, learning_rate)
         self.save_hyperparameters()
 
         self.use_inversions = use_inversions
@@ -186,14 +196,14 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
         # Input derived from input type
         self.input_dim = (
             get_chord_vector_length(
-                input_type,
+                input_chord_pitch_type,
                 one_hot=False,
                 relative=True,
                 use_inversions=use_inversions,
                 pad=True,
                 reduction=reduction,
             )
-            + get_key_change_vector_length(input_type, one_hot=False)
+            + get_key_change_vector_length(input_key_pitch_type, one_hot=False)
             + 1
         )
 

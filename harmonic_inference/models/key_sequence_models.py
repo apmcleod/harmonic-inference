@@ -21,22 +21,31 @@ class KeySequenceModel(pl.LightningModule):
     The base class for all Key Sequence Models, which model the sequence of keys of a Piece.
     """
 
-    def __init__(self, key_type: PitchType, input_type: PitchType, learning_rate: float):
+    def __init__(
+        self,
+        input_chord_pitch_type: PitchType,
+        input_key_pitch_type: PitchType,
+        output_pitch_type: PitchType,
+        learning_rate: float,
+    ):
         """
         Create a new base KeySequenceModel with the given output and input data types.
 
         Parameters
         ----------
-        key_type : PitchType
-            The way a given model will output its key tonics.
-        input_type : PitchType, optional
-            If a model will take input data, the format of that data.
+        input_chord_pitch_type : PitchType
+            The pitch representation used in the input chord data.
+        input_key_pitch_type : PitchType
+            The pitch representation used in the input key data.
+        output_pitch_type : PitchType
+            The pitch representation used for the output data.
         learning_rate : float
             The learning rate.
         """
         super().__init__()
-        self.INPUT_TYPE = input_type
-        self.KEY_TYPE = key_type
+        self.INPUT_CHORD_PITCH_TYPE = input_chord_pitch_type
+        self.INPUT_KEY_PITCH_TYPE = input_key_pitch_type
+        self.OUTPUT_PITCH_TYPE = output_pitch_type
         self.lr = learning_rate
 
     def get_data_from_batch(self, batch):
@@ -127,8 +136,9 @@ class SimpleKeySequenceModel(KeySequenceModel):
 
     def __init__(
         self,
-        input_type: PitchType,
-        key_type: PitchType,
+        input_chord_pitch_type: PitchType,
+        input_key_pitch_type: PitchType,
+        output_pitch_type: PitchType,
         embed_dim: int = 64,
         lstm_layers: int = 1,
         lstm_hidden_dim: int = 128,
@@ -143,9 +153,11 @@ class SimpleKeySequenceModel(KeySequenceModel):
 
         Parameters
         ----------
-        input_type : PitchType
-            The pitch representation used in the input data.
-        key_type : PitchType
+        input_chord_pitch_type : PitchType
+            The pitch representation used in the input chord data.
+        input_key_pitch_type : PitchType
+            The pitch representation used in the input key data.
+        output_pitch_type : PitchType
             The pitch representation used for the output data.
         embed_dim : int
             The size of the linear embedding layer.
@@ -164,7 +176,12 @@ class SimpleKeySequenceModel(KeySequenceModel):
         reduction : Dict[ChordType, ChordType]
             The reduction to use for chord types.
         """
-        super().__init__(key_type, input_type, learning_rate)
+        super().__init__(
+            input_chord_pitch_type,
+            input_key_pitch_type,
+            output_pitch_type,
+            learning_rate,
+        )
         self.save_hyperparameters()
 
         self.use_inversions = use_inversions
@@ -173,17 +190,17 @@ class SimpleKeySequenceModel(KeySequenceModel):
         # Input and output derived from input type and use_inversions
         self.input_dim = (
             get_chord_vector_length(
-                input_type,
+                input_chord_pitch_type,
                 one_hot=False,
                 relative=True,
                 use_inversions=use_inversions,
                 pad=True,
                 reduction=reduction,
             )
-            + get_key_change_vector_length(input_type, one_hot=False)
+            + get_key_change_vector_length(input_key_pitch_type, one_hot=False)
             + 1
         )
-        self.output_dim = get_key_change_vector_length(key_type, one_hot=True)
+        self.output_dim = get_key_change_vector_length(output_pitch_type, one_hot=True)
 
         self.embed_dim = embed_dim
         self.embed = nn.Linear(self.input_dim, self.embed_dim)

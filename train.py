@@ -124,25 +124,45 @@ if __name__ == "__main__":
             learning_rate=ARGS.lr,
         )
         dataset = ds.ChordClassificationDataset
+
     elif ARGS.model == "ctm":
         model = ctm.SimpleChordTransitionModel(
-            PieceType.SCORE, PitchType.TPC, learning_rate=ARGS.lr, **kwargs
+            PieceType.SCORE,
+            PitchType.TPC,
+            learning_rate=ARGS.lr,
+            **kwargs,
         )
         dataset = ds.ChordTransitionDataset
+
     elif ARGS.model == "csm":
-        model = csm.SimpleChordSequenceModel(PitchType.TPC, learning_rate=ARGS.lr, **kwargs)
+        model = csm.SimpleChordSequenceModel(
+            PitchType.TPC,
+            PitchType.TPC,
+            PitchType.TPC,
+            learning_rate=ARGS.lr,
+            **kwargs,
+        )
         dataset = ds.ChordSequenceDataset
+
     elif ARGS.model == "ktm":
-        model = ktm.SimpleKeyTransitionModel(PitchType.TPC, learning_rate=ARGS.lr, **kwargs)
+        model = ktm.SimpleKeyTransitionModel(
+            PitchType.TPC,
+            PitchType.TPC,
+            learning_rate=ARGS.lr,
+            **kwargs,
+        )
         dataset = ds.KeyTransitionDataset
+
     elif ARGS.model == "ksm":
         model = ksm.SimpleKeySequenceModel(
+            PitchType.TPC,
             PitchType.TPC,
             PitchType.TPC,
             learning_rate=ARGS.lr,
             **kwargs,
         )
         dataset = ds.KeySequenceDataset
+
     elif ARGS.model == "icm":
         # Load training data for ctm, just to get file_ids
         h5_path = Path(ARGS.h5_dir / f"ChordTransitionDataset_train_seed_{ARGS.seed}.h5")
@@ -180,7 +200,6 @@ if __name__ == "__main__":
         icm.SimpleInitialChordModel.train(
             chords,
             os.path.join(ARGS.checkpoint, "initial_chord_prior.json"),
-            use_inversions=True,
             add_n_smoothing=1.0,
         )
         sys.exit(0)

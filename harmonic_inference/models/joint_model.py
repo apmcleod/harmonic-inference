@@ -220,34 +220,18 @@ class HarmonicInferenceModel:
                 models[model], model_class
             ), f"`{model}` in models dict is not of type {model_class.__name__}."
 
-        self.chord_classifier = models["ccm"]
-        self.chord_sequence_model = models["csm"]
-        self.chord_transition_model = models["ctm"]
-        self.key_sequence_model = models["ksm"]
-        self.key_transition_model = models["ktm"]
-        self.initial_chord_model = models["icm"]
-
-        # Ensure all types match
-        assert (
-            self.chord_classifier.INPUT_TYPE == self.chord_transition_model.INPUT_TYPE
-        ), "Chord Classifier input type does not match Chord Transition Model input type"
-        assert (
-            self.chord_classifier.OUTPUT_TYPE == self.chord_sequence_model.CHORD_TYPE
-        ), "Chord Classifier output type does not match Chord Sequence Model chord type"
-        assert (
-            self.chord_sequence_model.CHORD_TYPE == self.key_transition_model.INPUT_TYPE
-        ), "Chord Sequence Model chord type does not match Key Transition Model input type"
-        assert (
-            self.chord_sequence_model.CHORD_TYPE == self.key_sequence_model.INPUT_TYPE
-        ), "Chord Sequence Model chord type does not match Key Transition Model input type"
-        assert (
-            self.initial_chord_model.CHORD_TYPE == self.chord_sequence_model.CHORD_TYPE
-        ), "Initial Chord Model chord type does not match Chord Sequence Model chord type"
+        self.chord_classifier: ccm.ChordClassifierModel = models["ccm"]
+        self.chord_sequence_model: csm.ChordSequenceModel = models["csm"]
+        self.chord_transition_model: ctm.ChordTransitionModel = models["ctm"]
+        self.key_sequence_model: ksm.KeySequenceModel = models["ksm"]
+        self.key_transition_model: ktm.KeyTransitionModel = models["ktm"]
+        self.initial_chord_model: icm.SimpleInitialChordModel = models["icm"]
+        self.check_input_output_types()
 
         # Set joint model types
         self.INPUT_TYPE = self.chord_classifier.INPUT_TYPE
-        self.CHORD_OUTPUT_TYPE = self.chord_sequence_model.CHORD_TYPE
-        self.KEY_OUTPUT_TYPE = self.key_sequence_model.KEY_TYPE
+        self.CHORD_OUTPUT_TYPE = self.chord_sequence_model.OUTPUT_PITCH_TYPE
+        self.KEY_OUTPUT_TYPE = self.key_sequence_model.OUTPUT_PITCH_TYPE
 
         # Load labels
         self.LABELS = {
@@ -318,6 +302,56 @@ class HarmonicInferenceModel:
         self.duration_cache = None
         self.onset_cache = None
         self.onset_level_cache = None
+
+    def check_input_output_types(self):
+        """
+        Check input and output types of all models to be sure they are compatible.
+        """
+        # Input vectors
+        assert (
+            self.chord_classifier.INPUT_TYPE == self.chord_transition_model.INPUT_TYPE
+        ), "CCM input type does not match CTM input type"
+        assert (
+            self.chord_classifier.INPUT_PITCH == self.chord_transition_model.PITCH_TYPE
+        ), "CCM input pitch type does not match CTM pitch type"
+
+        # Output from CCM
+        assert (
+            self.chord_classifier.OUTPUT_PITCH == self.chord_sequence_model.INPUT_CHORD_PITCH_TYPE
+        ), "CCM output pitch type does not match CSM chord pitch type"
+
+        # Output from CSM
+        assert (
+            self.chord_sequence_model.OUTPUT_PITCH_TYPE
+            == self.key_sequence_model.INPUT_CHORD_PITCH_TYPE
+        ), "CSM output pitch type does not match KSM input chord pitch type"
+        assert (
+            self.chord_sequence_model.OUTPUT_PITCH_TYPE
+            == self.key_sequence_model.INPUT_CHORD_PITCH_TYPE
+        ), "CSM output pitch type does not match KSM input chord pitch type"
+        assert (
+            self.chord_sequence_model.OUTPUT_PITCH_TYPE
+            == self.chord_sequence_model.INPUT_CHORD_PITCH_TYPE
+        ), "CSM output pitch type does not match its own input chord pitch type"
+
+        # Output from KSM
+        assert (
+            self.chord_sequence_model.INPUT_KEY_PITCH_TYPE
+            == self.key_sequence_model.OUTPUT_PITCH_TYPE
+        ), "CSM input key pitch type does not match KSM output pitch type"
+        assert (
+            self.key_transition_model.INPUT_KEY_PITCH_TYPE
+            == self.key_sequence_model.OUTPUT_PITCH_TYPE
+        ), "KTM input key pitch type does not match KSM output pitch type"
+        assert (
+            self.key_sequence_model.INPUT_KEY_PITCH_TYPE
+            == self.key_sequence_model.OUTPUT_PITCH_TYPE
+        ), "KSM input key pitch type does not match its own input pitch type"
+
+        # Output from ICM
+        assert (
+            self.initial_chord_model.PITCH_TYPE == self.chord_sequence_model.OUTPUT_PITCH_TYPE
+        ), "ICM pitch type does not match CSM output pitch type"
 
     def get_harmony(self, piece: Piece) -> State:
         """
