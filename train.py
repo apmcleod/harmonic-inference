@@ -197,7 +197,7 @@ if __name__ == "__main__":
                 )
 
         chords = [piece.get_chords()[0] for piece in pieces]
-        icm.SimpleInitialChordModel.train(
+        icm.train_icm(
             chords,
             os.path.join(ARGS.checkpoint, "initial_chord_prior.json"),
             add_n_smoothing=1.0,
