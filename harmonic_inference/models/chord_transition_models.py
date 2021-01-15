@@ -20,7 +20,7 @@ class ChordTransitionModel(pl.LightningModule):
     The base class for all Chord Transition Models which model when a chord change will occur.
     """
 
-    def __init__(self, input_type: PieceType, learning_rate: float):
+    def __init__(self, input_type: PieceType, pitch_type: PitchType, learning_rate: float):
         """
         Create a new base model.
 
@@ -28,11 +28,14 @@ class ChordTransitionModel(pl.LightningModule):
         ----------
         input_type : PieceType
             What type of input the model is expecting.
+        pitch_type : PitchType
+            What pitch type the model is expecting for notes.
         learning_rate : float
             The learning rate.
         """
         super().__init__()
         self.INPUT_TYPE = input_type
+        self.PITCH_TYPE = pitch_type
         self.lr = learning_rate
 
     def get_data_from_batch(self, batch):
@@ -134,6 +137,7 @@ class SimpleChordTransitionModel(ChordTransitionModel):
     def __init__(
         self,
         input_type: PieceType,
+        pitch_type: PitchType,
         embed_dim: int = 64,
         lstm_layers: int = 1,
         lstm_hidden_dim: int = 128,
@@ -148,6 +152,8 @@ class SimpleChordTransitionModel(ChordTransitionModel):
         ----------
         input_type : PieceType
             The type of piece that the input data is coming from.
+        pitch_type : PitchType
+            What pitch type the model is expecting for notes.
         embed_dim : int
             The size of the input embedding.
         lstm_layers : int
@@ -161,13 +167,11 @@ class SimpleChordTransitionModel(ChordTransitionModel):
         learning_rate : float
             The learning rate.
         """
-        super().__init__(input_type, learning_rate)
+        super().__init__(input_type, pitch_type, learning_rate)
         self.save_hyperparameters()
 
         # Input and output derived from input type and use_inversions
-        self.input_dim = get_note_vector_length(
-            PitchType.TPC if input_type == PieceType.SCORE else PitchType.MIDI
-        )
+        self.input_dim = get_note_vector_length(pitch_type)
 
         self.embed_dim = embed_dim
         self.embed = nn.Linear(self.input_dim, self.embed_dim)

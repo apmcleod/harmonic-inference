@@ -119,12 +119,15 @@ if __name__ == "__main__":
         model = ccm.SimpleChordClassifier(
             PieceType.SCORE,
             PitchType.TPC,
+            PitchType.TPC,
             use_inversions=True,
             learning_rate=ARGS.lr,
         )
         dataset = ds.ChordClassificationDataset
     elif ARGS.model == "ctm":
-        model = ctm.SimpleChordTransitionModel(PieceType.SCORE, learning_rate=ARGS.lr, **kwargs)
+        model = ctm.SimpleChordTransitionModel(
+            PieceType.SCORE, PitchType.TPC, learning_rate=ARGS.lr, **kwargs
+        )
         dataset = ds.ChordTransitionDataset
     elif ARGS.model == "csm":
         model = csm.SimpleChordSequenceModel(PitchType.TPC, learning_rate=ARGS.lr, **kwargs)

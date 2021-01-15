@@ -22,22 +22,31 @@ class ChordClassifierModel(pl.LightningModule):
     and output chord probabilities for them.
     """
 
-    def __init__(self, input_type: PieceType, output_type: PitchType, learning_rate: float):
+    def __init__(
+        self,
+        input_type: PieceType,
+        input_pitch: PitchType,
+        output_pitch: PitchType,
+        learning_rate: float,
+    ):
         """
         Create a new base ChordClassifierModel with the given input and output formats.
 
         Parameters
         ----------
         input_type : PieceType
-            The input type this model is expecting.
-        output_type : PitchType
-            The type of chord this model will output.
+            The type of piece that the input data is coming from.
+        input_pitch : PitchType
+            What pitch type the model is expecting for notes.
+        output_pitch : PitchType
+            The pitch type to use for outputs of this model.
         learning_rate : float
             The learning rate.
         """
         super().__init__()
         self.INPUT_TYPE = input_type
-        self.OUTPUT_TYPE = output_type
+        self.INPUT_PITCH = input_pitch
+        self.OUTPUT_PITCH = output_pitch
         self.lr = learning_rate
 
     def get_output(self, batch):
@@ -118,8 +127,9 @@ class SimpleChordClassifier(ChordClassifierModel):
 
     def __init__(
         self,
-        input_type: PitchType,
-        output_type: PitchType,
+        input_type: PieceType,
+        input_pitch: PitchType,
+        output_pitch: PitchType,
         reduction: Dict[ChordType, ChordType] = None,
         use_inversions: bool = True,
         lstm_layers: int = 1,
@@ -133,9 +143,11 @@ class SimpleChordClassifier(ChordClassifierModel):
 
         Parameters
         ----------
-        input_type : PitchType
-            The pitch type to use for inputs to this model. Used to derive the input length.
-        output_type : PitchType
+        input_type : PieceType
+            The type of piece that the input data is coming from.
+        input_pitch : PitchType
+            What pitch type the model is expecting for notes.
+        output_pitch : PitchType
             The pitch type to use for outputs of this model. Used to derive the output length.
         reduction : Dict[ChordType, ChordType]
             The reduction used for the output chord types.
@@ -153,16 +165,16 @@ class SimpleChordClassifier(ChordClassifierModel):
         learning_rate : float
             The learning rate.
         """
-        super().__init__(input_type, output_type, learning_rate)
+        super().__init__(input_type, input_pitch, output_pitch, learning_rate)
         self.save_hyperparameters()
 
         self.use_inversions = use_inversions
         self.reduction = reduction
 
         # Input and output derived from pitch_type and use_inversions
-        self.input_dim = get_note_vector_length(input_type)
+        self.input_dim = get_note_vector_length(input_pitch)
         self.num_classes = get_chord_vector_length(
-            output_type,
+            output_pitch,
             one_hot=True,
             relative=False,
             use_inversions=use_inversions,
