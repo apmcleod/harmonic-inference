@@ -1,4 +1,5 @@
 """Models that generate probability distributions over chord classifications of a given input."""
+from abc import ABC, abstractmethod
 from typing import Collection, Dict, Tuple
 
 import torch
@@ -16,7 +17,7 @@ from harmonic_inference.data.datasets import ChordClassificationDataset
 from harmonic_inference.data.note import get_note_vector_length
 
 
-class ChordClassifierModel(pl.LightningModule):
+class ChordClassifierModel(pl.LightningModule, ABC):
     """
     The base type for all Chord Classifier Models, which take as input sets of frames from Pieces,
     and output chord probabilities for them.
@@ -105,6 +106,23 @@ class ChordClassifierModel(pl.LightningModule):
             "acc": (total_acc / total).item(),
             "loss": (total_loss / total).item(),
         }
+
+    @abstractmethod
+    def init_hidden(self, batch_size: int) -> Tuple[Variable, ...]:
+        """
+        Get initial hidden layers for this model.
+
+        Parameters
+        ----------
+        batch_size : int
+            The batch size to initialize hidden layers for.
+
+        Returns
+        -------
+        hidden : Tuple[Variable, ...]
+            A tuple of initialized hidden layers.
+        """
+        raise NotImplementedError()
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(

@@ -1,4 +1,5 @@
 """Models that output the probability of a key change occurring on a given input."""
+from abc import ABC, abstractmethod
 from typing import Dict, Tuple
 
 import torch
@@ -16,7 +17,7 @@ from harmonic_inference.data.datasets import KeyTransitionDataset
 from harmonic_inference.data.key import get_key_change_vector_length
 
 
-class KeyTransitionModel(pl.LightningModule):
+class KeyTransitionModel(pl.LightningModule, ABC):
     """
     The base class for all Key Transition Models which model when a key change will occur.
     """
@@ -115,8 +116,21 @@ class KeyTransitionModel(pl.LightningModule):
             "loss": (total_loss / total).item(),
         }
 
-    def init_hidden(self, batch_size: int):
-        # Subclasses should implement this
+    @abstractmethod
+    def init_hidden(self, batch_size: int) -> Tuple[Variable, ...]:
+        """
+        Get initial hidden layers for this model.
+
+        Parameters
+        ----------
+        batch_size : int
+            The batch size to initialize hidden layers for.
+
+        Returns
+        -------
+        hidden : Tuple[Variable, ...]
+            A tuple of initialized hidden layers.
+        """
         raise NotImplementedError()
 
     def run_one_step(self, batch):

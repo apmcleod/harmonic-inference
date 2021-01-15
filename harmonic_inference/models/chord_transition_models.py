@@ -1,4 +1,5 @@
 """Models that output the probability of a chord change occurring on a given input."""
+from abc import ABC, abstractmethod
 from typing import Tuple
 
 import torch
@@ -15,7 +16,7 @@ from harmonic_inference.data.datasets import ChordTransitionDataset
 from harmonic_inference.data.note import get_note_vector_length
 
 
-class ChordTransitionModel(pl.LightningModule):
+class ChordTransitionModel(pl.LightningModule, ABC):
     """
     The base class for all Chord Transition Models which model when a chord change will occur.
     """
@@ -113,6 +114,23 @@ class ChordTransitionModel(pl.LightningModule):
             "acc": (total_acc / total).item(),
             "loss": (total_loss / total).item(),
         }
+
+    @abstractmethod
+    def init_hidden(self, batch_size: int) -> Tuple[Variable, ...]:
+        """
+        Get initial hidden layers for this model.
+
+        Parameters
+        ----------
+        batch_size : int
+            The batch size to initialize hidden layers for.
+
+        Returns
+        -------
+        hidden : Tuple[Variable, ...]
+            A tuple of initialized hidden layers.
+        """
+        raise NotImplementedError()
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(

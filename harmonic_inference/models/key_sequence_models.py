@@ -1,4 +1,5 @@
 """Models that generate probability distributions over the next key in a sequence."""
+from abc import ABC, abstractmethod
 from typing import Dict, Tuple
 
 import torch
@@ -16,7 +17,7 @@ from harmonic_inference.data.datasets import KeySequenceDataset
 from harmonic_inference.data.key import get_key_change_vector_length
 
 
-class KeySequenceModel(pl.LightningModule):
+class KeySequenceModel(pl.LightningModule, ABC):
     """
     The base class for all Key Sequence Models, which model the sequence of keys of a Piece.
     """
@@ -113,6 +114,23 @@ class KeySequenceModel(pl.LightningModule):
             "acc": (total_acc / total).item(),
             "loss": (total_loss / total).item(),
         }
+
+    @abstractmethod
+    def init_hidden(self, batch_size: int) -> Tuple[Variable, ...]:
+        """
+        Get initial hidden layers for this model.
+
+        Parameters
+        ----------
+        batch_size : int
+            The batch size to initialize hidden layers for.
+
+        Returns
+        -------
+        hidden : Tuple[Variable, ...]
+            A tuple of initialized hidden layers.
+        """
+        raise NotImplementedError()
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(

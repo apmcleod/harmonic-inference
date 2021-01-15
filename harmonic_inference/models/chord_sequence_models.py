@@ -1,4 +1,5 @@
 """Models that generate probability distributions over the next chord in a sequence."""
+from abc import ABC, abstractmethod
 from typing import Dict, Tuple
 
 import torch
@@ -16,7 +17,7 @@ from harmonic_inference.data.datasets import ChordSequenceDataset
 from harmonic_inference.data.key import get_key_change_vector_length
 
 
-class ChordSequenceModel(pl.LightningModule):
+class ChordSequenceModel(pl.LightningModule, ABC):
     """
     The base class for all Chord Sequence Models, which model the sequence of chords of a Piece.
     """
@@ -123,9 +124,22 @@ class ChordSequenceModel(pl.LightningModule):
             "loss": (total_loss / total).item(),
         }
 
-    def init_hidden(self, batch_size: int):
-        # Subclasses should implement this
-        raise NotImplementedError
+    @abstractmethod
+    def init_hidden(self, batch_size: int) -> Tuple[Variable, ...]:
+        """
+        Get initial hidden layers for this model.
+
+        Parameters
+        ----------
+        batch_size : int
+            The batch size to initialize hidden layers for.
+
+        Returns
+        -------
+        hidden : Tuple[Variable, ...]
+            A tuple of initialized hidden layers.
+        """
+        raise NotImplementedError()
 
     def run_one_step(self, batch):
         inputs = batch["inputs"].float()
