@@ -148,7 +148,7 @@ if __name__ == "__main__":
         h5_path = Path(ARGS.h5_dir / f"ChordTransitionDataset_train_seed_{ARGS.seed}.h5")
         with h5py.File(h5_path, "r") as h5_file:
             if "file_ids" not in h5_file:
-                logging.error("file_ids not found in %. Re-create with create_h5_data.py", h5_path)
+                logging.error("file_ids not found in %s. Re-create with create_h5_data.py", h5_path)
                 sys.exit(1)
 
             file_ids = list(h5_file["file_ids"])
