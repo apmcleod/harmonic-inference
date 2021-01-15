@@ -15,7 +15,7 @@ def get_chord_label_list(
     relative: bool = False,
     relative_to: int = None,
     pad: bool = False,
-    reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+    reduction: Dict[ChordType, ChordType] = None,
 ) -> List[str]:
     """
     Get the human-readable label of every chord label.
@@ -40,6 +40,9 @@ def get_chord_label_list(
     labels : List[String]
         A List, where labels[0] is the String interpretation of the one-hot chord label 0, etc.
     """
+    if reduction is None:
+        reduction = NO_REDUCTION
+
     if relative:
         if pitch_type == PitchType.TPC:
             minimum = hc.MIN_RELATIVE_TPC
@@ -271,16 +274,16 @@ def get_key_label_list(
 
 
 def get_key_from_one_hot_index(
-    one_hot: int,
+    one_hot: Union[int, slice],
     pitch_type: PitchType,
     relative: bool = False,
-) -> Tuple[int, KeyMode]:
+) -> Union[Tuple[int, KeyMode], List[Tuple[int, KeyMode]]]:
     """
     Get the key tonic and mode of the given one hot key label index.
 
     Parameters
     ----------
-    one_hot : int
+    one_hot : Union[int, slice]
         The one hot key information to return.
     pitch_type : PitchType
         The pitch type of the tonic labels.

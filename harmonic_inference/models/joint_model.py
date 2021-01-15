@@ -235,25 +235,8 @@ class HarmonicInferenceModel:
 
         # Load labels
         self.LABELS = {
-            "chord": [
-                (
-                    hu.get_pitch_from_string(root, self.CHORD_OUTPUT_TYPE),
-                    hu.get_chord_type_from_string(description.split(",")[0]),
-                    int(inv),
-                )
-                for root, description, inv in [
-                    chord.split(":")
-                    for chord in hu.get_chord_label_list(
-                        self.CHORD_OUTPUT_TYPE, use_inversions=True
-                    )
-                ]
-            ],
-            "key": [
-                (hu.get_pitch_from_string(tonic, self.KEY_OUTPUT_TYPE), KeyMode[mode.split(".")[1]])
-                for tonic, mode in [
-                    key.split(":") for key in hu.get_key_label_list(self.KEY_OUTPUT_TYPE)
-                ]
-            ],
+            "chord": hu.get_chord_from_one_hot_index(slice(None, None), self.CHORD_OUTPUT_TYPE),
+            "key": hu.get_key_from_one_hot_index(slice(None, None), self.KEY_OUTPUT_TYPE),
             "relative_key": list(
                 itertools.product(
                     KeyMode,
@@ -368,6 +351,7 @@ class HarmonicInferenceModel:
             The top estimated state.
         """
         self.current_piece = piece
+        assert piece.DATA_TYPE == self.INPUT_TYPE, "Piece type doesn't match expected input type"
 
         self.debugger = DebugLogger(
             self.current_piece,
