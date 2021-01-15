@@ -183,7 +183,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     else:
-        logging.error("Invalid model: %", ARGS.model)
+        logging.error("Invalid model: %s", ARGS.model)
         sys.exit(1)
 
     h5_path_train = Path(ARGS.h5_dir / f"{dataset.__name__}_train_seed_{ARGS.seed}.h5")
