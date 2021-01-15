@@ -248,6 +248,7 @@ if __name__ == "__main__":
     h5_path_train = Path(ARGS.h5_dir / f"{dataset.__name__}_train_seed_{ARGS.seed}.h5")
     h5_path_valid = Path(ARGS.h5_dir / f"{dataset.__name__}_valid_seed_{ARGS.seed}.h5")
 
+    # TODO: Add dataset kwargs as well
     dataset_train = ds.h5_to_dataset(h5_path_train, dataset, transform=torch.from_numpy)
     dataset_valid = ds.h5_to_dataset(h5_path_valid, dataset, transform=torch.from_numpy)
 
