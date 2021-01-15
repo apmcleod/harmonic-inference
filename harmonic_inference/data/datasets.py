@@ -2,7 +2,7 @@
 import logging
 import shutil
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -731,7 +731,10 @@ class KeySequenceDataset(KeyHarmonicDataset):
 
 
 def h5_to_dataset(
-    h5_path: Union[str, Path], dataset_class: HarmonicDataset, transform: Callable = None
+    h5_path: Union[str, Path],
+    dataset_class: HarmonicDataset,
+    transform: Callable = None,
+    dataset_kwargs: Dict[str, Any] = None,
 ) -> HarmonicDataset:
     """
     Load a harmonic dataset object from an h5 file into the given HarmonicDataset subclass.
@@ -745,6 +748,8 @@ def h5_to_dataset(
     transform : Callable
         A function to pass each element of the dataset's returned data dicts to. For example,
         torch.from_numpy().
+    dataset_kwargs : Dict[str, Any]
+        Keyword arguments to pass to the dataset.init() call.
 
     Returns
     -------
@@ -752,7 +757,10 @@ def h5_to_dataset(
         A HarmonicDataset of the given class, loaded with inputs and targets from the given
         h5 file.
     """
-    dataset = dataset_class([], transform=transform)
+    if dataset_kwargs is None:
+        dataset_kwargs = {}
+
+    dataset = dataset_class([], transform=transform, **dataset_kwargs)
 
     with h5py.File(h5_path, "r") as h5_file:
         assert "inputs" in h5_file, f"{h5_file} must have a dataset called inputs"

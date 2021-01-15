@@ -1,6 +1,6 @@
 """Models that generate probability distributions over chord classifications of a given input."""
 from abc import ABC, abstractmethod
-from typing import Collection, Dict, Tuple
+from typing import Any, Collection, Dict, Tuple
 
 import torch
 import torch.nn as nn
@@ -28,6 +28,8 @@ class ChordClassifierModel(pl.LightningModule, ABC):
         input_type: PieceType,
         input_pitch: PitchType,
         output_pitch: PitchType,
+        reduction: Dict[ChordType, ChordType],
+        use_inversions: bool,
         learning_rate: float,
     ):
         """
@@ -41,6 +43,10 @@ class ChordClassifierModel(pl.LightningModule, ABC):
             What pitch type the model is expecting for notes.
         output_pitch : PitchType
             The pitch type to use for outputs of this model.
+        reduction : Dict[ChordType, ChordType]
+            The reduction used for the output chord types.
+        use_inversions : bool
+            Whether to use different inversions as different chords in the output.
         learning_rate : float
             The learning rate.
         """
@@ -48,7 +54,24 @@ class ChordClassifierModel(pl.LightningModule, ABC):
         self.INPUT_TYPE = input_type
         self.INPUT_PITCH = input_pitch
         self.OUTPUT_PITCH = output_pitch
+
+        self.reduction = reduction
+        self.use_inversions = use_inversions
+
         self.lr = learning_rate
+
+    def get_dataset_kwargs(self) -> Dict[str, Any]:
+        """
+        Get a kwargs dict that can be used to create a dataset for this model with
+        the correct parameters.
+
+        Returns
+        -------
+        dataset_kwargs : Dict[str, Any]
+            A keyword args dict that can be used to create a dataset for this model with
+            the correct parameters.
+        """
+        # TODO: Implement
 
     def get_output(self, batch):
         notes = batch["inputs"].float()
@@ -183,11 +206,15 @@ class SimpleChordClassifier(ChordClassifierModel):
         learning_rate : float
             The learning rate.
         """
-        super().__init__(input_type, input_pitch, output_pitch, learning_rate)
+        super().__init__(
+            input_type,
+            input_pitch,
+            output_pitch,
+            reduction,
+            use_inversions,
+            learning_rate,
+        )
         self.save_hyperparameters()
-
-        self.use_inversions = use_inversions
-        self.reduction = reduction
 
         # Input and output derived from pitch_type and use_inversions
         self.input_dim = get_note_vector_length(input_pitch)

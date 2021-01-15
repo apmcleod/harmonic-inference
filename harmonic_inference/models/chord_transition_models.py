@@ -1,6 +1,6 @@
 """Models that output the probability of a chord change occurring on a given input."""
 from abc import ABC, abstractmethod
-from typing import Tuple
+from typing import Any, Dict, Tuple
 
 import torch
 import torch.nn as nn
@@ -38,6 +38,19 @@ class ChordTransitionModel(pl.LightningModule, ABC):
         self.INPUT_TYPE = input_type
         self.PITCH_TYPE = pitch_type
         self.lr = learning_rate
+
+    def get_dataset_kwargs(self) -> Dict[str, Any]:
+        """
+        Get a kwargs dict that can be used to create a dataset for this model with
+        the correct parameters.
+
+        Returns
+        -------
+        dataset_kwargs : Dict[str, Any]
+            A keyword args dict that can be used to create a dataset for this model with
+            the correct parameters.
+        """
+        # TODO: Implement
 
     def get_data_from_batch(self, batch):
         inputs = batch["inputs"].float()

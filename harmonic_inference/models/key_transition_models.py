@@ -1,6 +1,6 @@
 """Models that output the probability of a key change occurring on a given input."""
 from abc import ABC, abstractmethod
-from typing import Dict, Tuple
+from typing import Any, Dict, Tuple
 
 import torch
 import torch.nn as nn
@@ -44,6 +44,19 @@ class KeyTransitionModel(pl.LightningModule, ABC):
         self.INPUT_CHORD_PITCH_TYPE = input_chord_pitch_type
         self.INPUT_KEY_PITCH_TYPE = input_key_pitch_type
         self.lr = learning_rate
+
+    def get_dataset_kwargs(self) -> Dict[str, Any]:
+        """
+        Get a kwargs dict that can be used to create a dataset for this model with
+        the correct parameters.
+
+        Returns
+        -------
+        dataset_kwargs : Dict[str, Any]
+            A keyword args dict that can be used to create a dataset for this model with
+            the correct parameters.
+        """
+        # TODO: Implement
 
     def get_data_from_batch(self, batch):
         inputs = batch["inputs"].float()
