@@ -27,6 +27,8 @@ class KeySequenceModel(pl.LightningModule, ABC):
         input_chord_pitch_type: PitchType,
         input_key_pitch_type: PitchType,
         output_pitch_type: PitchType,
+        use_inversions: bool,
+        reduction: Dict[ChordType, ChordType],
         learning_rate: float,
     ):
         """
@@ -40,6 +42,10 @@ class KeySequenceModel(pl.LightningModule, ABC):
             The pitch representation used in the input key data.
         output_pitch_type : PitchType
             The pitch representation used for the output data.
+        use_inversions : bool
+            True to use inversions in the input vectors. False otherwise.
+        reduction : Dict[ChordType, ChordType]
+            The reduction to use for chord types.
         learning_rate : float
             The learning rate.
         """
@@ -47,6 +53,10 @@ class KeySequenceModel(pl.LightningModule, ABC):
         self.INPUT_CHORD_PITCH_TYPE = input_chord_pitch_type
         self.INPUT_KEY_PITCH_TYPE = input_key_pitch_type
         self.OUTPUT_PITCH_TYPE = output_pitch_type
+
+        self.use_inversions = use_inversions
+        self.reduction = reduction
+
         self.lr = learning_rate
 
     def get_dataset_kwargs(self) -> Dict[str, Any]:
@@ -60,7 +70,10 @@ class KeySequenceModel(pl.LightningModule, ABC):
             A keyword args dict that can be used to create a dataset for this model with
             the correct parameters.
         """
-        # TODO: Implement
+        return {
+            "reduction": self.reduction,
+            "use_inversions": self.use_inversions,
+        }
 
     def get_data_from_batch(self, batch):
         inputs = batch["inputs"].float()
@@ -211,12 +224,11 @@ class SimpleKeySequenceModel(KeySequenceModel):
             input_chord_pitch_type,
             input_key_pitch_type,
             output_pitch_type,
+            use_inversions,
+            reduction,
             learning_rate,
         )
         self.save_hyperparameters()
-
-        self.use_inversions = use_inversions
-        self.reduction = reduction
 
         # Input and output derived from input type and use_inversions
         self.input_dim = (

@@ -21,7 +21,12 @@ class ChordTransitionModel(pl.LightningModule, ABC):
     The base class for all Chord Transition Models which model when a chord change will occur.
     """
 
-    def __init__(self, input_type: PieceType, pitch_type: PitchType, learning_rate: float):
+    def __init__(
+        self,
+        input_type: PieceType,
+        pitch_type: PitchType,
+        learning_rate: float,
+    ):
         """
         Create a new base model.
 
@@ -50,7 +55,7 @@ class ChordTransitionModel(pl.LightningModule, ABC):
             A keyword args dict that can be used to create a dataset for this model with
             the correct parameters.
         """
-        # TODO: Implement
+        return {}
 
     def get_data_from_batch(self, batch):
         inputs = batch["inputs"].float()

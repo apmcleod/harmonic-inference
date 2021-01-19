@@ -27,6 +27,10 @@ class ChordSequenceModel(pl.LightningModule, ABC):
         input_chord_pitch_type: PitchType,
         input_key_pitch_type: PitchType,
         output_pitch_type: PitchType,
+        input_reduction: Dict[ChordType, ChordType],
+        output_reduction: Dict[ChordType, ChordType],
+        use_input_inversions: bool,
+        use_output_inversions: bool,
         learning_rate: float,
     ):
         """
@@ -40,6 +44,15 @@ class ChordSequenceModel(pl.LightningModule, ABC):
             The type of pitch representation for the input key change vectors.
         output_pitch_type : PitchType
             The type of pitch representation for the target chord root pitches.
+        input_reduction : Dict[ChordType, ChordType]
+            The reduction used for input vector chord types.
+        output_reduction : Dict[ChordType, ChordType]
+            The reduction used for output vector chord types.
+        use_input_inversions : bool
+            True to take inversions into account for the input. False to ignore them.
+        use_output_inversions : bool
+            True to include inversions of chords in the output of this model.
+            False to ignore them.
         learning_rate : float
             The learning rate.
         """
@@ -48,6 +61,12 @@ class ChordSequenceModel(pl.LightningModule, ABC):
         self.INPUT_CHORD_PITCH_TYPE = input_chord_pitch_type
         self.INPUT_KEY_PITCH_TYPE = input_key_pitch_type
         self.OUTPUT_PITCH_TYPE = output_pitch_type
+
+        self.input_reduction = input_reduction
+        self.output_reduction = output_reduction
+        self.use_input_inversions = use_input_inversions
+        self.use_output_inversions = use_output_inversions
+
         self.lr = learning_rate
 
     def get_dataset_kwargs(self) -> Dict[str, Any]:
@@ -61,7 +80,12 @@ class ChordSequenceModel(pl.LightningModule, ABC):
             A keyword args dict that can be used to create a dataset for this model with
             the correct parameters.
         """
-        # TODO: Implement
+        return {
+            "input_reduction": self.input_reduction,
+            "output_reduction": self.output_reduction,
+            "use_inversions_input": self.use_input_inversions,
+            "use_inversions_output": self.use_output_inversions,
+        }
 
     def get_data_from_batch(self, batch):
         inputs = batch["inputs"].float()
@@ -233,14 +257,16 @@ class SimpleChordSequenceModel(ChordSequenceModel):
             The learning rate.
         """
         super().__init__(
-            input_chord_pitch_type, input_key_pitch_type, output_pitch_type, learning_rate
+            input_chord_pitch_type,
+            input_key_pitch_type,
+            output_pitch_type,
+            input_reduction,
+            output_reduction,
+            use_input_inversions,
+            use_output_inversions,
+            learning_rate,
         )
         self.save_hyperparameters()
-
-        self.use_input_inversions = use_input_inversions
-        self.use_output_inversions = use_output_inversions
-        self.input_reduction = input_reduction
-        self.output_reduction = output_reduction
 
         # Input and output derived from input type and use_inversions
         self.input_dim = (

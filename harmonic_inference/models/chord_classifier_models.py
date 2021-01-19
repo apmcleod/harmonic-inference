@@ -71,7 +71,10 @@ class ChordClassifierModel(pl.LightningModule, ABC):
             A keyword args dict that can be used to create a dataset for this model with
             the correct parameters.
         """
-        # TODO: Implement
+        return {
+            "reduction": self.reduction,
+            "use_inversions": self.use_inversions,
+        }
 
     def get_output(self, batch):
         notes = batch["inputs"].float()
