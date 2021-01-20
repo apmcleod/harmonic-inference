@@ -345,7 +345,7 @@ def reduce_chord_one_hots(
         The chords from the given list of one-hots, reduced according to the given
         reduction and use_inversions values.
     """
-    one_hots = np.array(one_hots)
+    one_hots = np.array(one_hots, dtype=int)
     new_one_hots = np.zeros_like(one_hots)
     unique_one_hots = np.unique(one_hots)
 

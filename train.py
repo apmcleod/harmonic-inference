@@ -157,8 +157,8 @@ if __name__ == "__main__":
             PieceType.SCORE,
             PitchType.TPC,
             PitchType.TPC,
-            use_inversions=True,
             learning_rate=ARGS.lr,
+            **kwargs,
         )
         dataset = ds.ChordClassificationDataset
 

@@ -397,7 +397,7 @@ class ChordSequenceDataset(HarmonicDataset):
         input_reduction: Dict[ChordType, ChordType] = None,
         output_reduction: Dict[ChordType, ChordType] = None,
         use_inversions_input: bool = True,
-        use_inversions_output: bool = False,
+        use_inversions_output: bool = True,
     ):
         super().__init__(transform=transform)
         self.inputs = []
