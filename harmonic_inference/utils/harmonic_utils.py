@@ -198,7 +198,7 @@ def get_chord_one_hot_index(
             num_pitches += 2 * hc.RELATIVE_TPC_EXTRA
 
     if root_pitch < 0 or root_pitch >= num_pitches:
-        raise ValueError("Given root is outside of valid range")
+        raise ValueError(f"Given root ({root_pitch}) is outside of valid range")
     if use_inversion:
         if inversion < 0 or inversion >= get_chord_inversion_count(chord_type):
             raise ValueError(f"inversion {inversion} outside of valid range for chord {chord_type}")

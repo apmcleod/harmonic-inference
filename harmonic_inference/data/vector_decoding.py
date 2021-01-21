@@ -15,6 +15,7 @@ from harmonic_inference.utils.harmonic_constants import (
     RELATIVE_TPC_EXTRA,
 )
 from harmonic_inference.utils.harmonic_utils import (
+    absolute_to_relative,
     get_chord_from_one_hot_index,
     get_chord_one_hot_index,
     get_pitch_string,
@@ -345,6 +346,7 @@ def reduce_chord_one_hots(
         The chords from the given list of one-hots, reduced according to the given
         reduction and use_inversions values.
     """
+    original_dtype = None if not isinstance(one_hots, np.ndarray) else one_hots.dtype
     one_hots = np.array(one_hots, dtype=int)
     new_one_hots = np.zeros_like(one_hots)
     unique_one_hots = np.unique(one_hots)
@@ -363,7 +365,7 @@ def reduce_chord_one_hots(
     for one_hot, (root, chord_type, inversion) in zip(unique_one_hots, old_labels):
         new_one_hot = get_chord_one_hot_index(
             chord_type,
-            root,
+            absolute_to_relative(root, 0, pitch_type, False, pad=pad),
             pitch_type,
             inversion=inversion,
             use_inversion=use_inversions,
@@ -374,7 +376,7 @@ def reduce_chord_one_hots(
 
         new_one_hots[np.where(one_hots == one_hot)[0]] = new_one_hot
 
-    return new_one_hots
+    return new_one_hots if original_dtype is None else np.array(new_one_hots, dtype=original_dtype)
 
 
 def remove_chord_inversions(tensor: np.array, pad: bool, pitch_type: PitchType = None):
