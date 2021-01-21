@@ -30,6 +30,8 @@ class HarmonicDataset(Dataset):
         transform: Callable = None,
         pad_inputs: bool = True,
         pad_targets: bool = True,
+        save_padded_input_lengths: bool = True,
+        save_padded_target_lengths: bool = True,
     ):
         """
         Create a new base dataset.
@@ -42,6 +44,10 @@ class HarmonicDataset(Dataset):
             Pad this datset's inputs (when calling self.pad()).
         pad_targets : bool
             Pad this dataset's targets (when calling self.pad()).
+        save_padded_input_lengths : bool
+            Save the returned lengths when padding inputs (when calling self.pad()).
+        save_padded_target_lengths : bool
+            Save the returned lengths when padding targets (when calling self.pad()).
         """
         self.h5_path = None
         self.padded = False
@@ -52,11 +58,13 @@ class HarmonicDataset(Dataset):
         self.input_lengths = None
         self.max_input_length = None
         self.pad_inputs = pad_inputs
+        self.save_padded_input_lengths = save_padded_input_lengths
 
         self.targets = None
         self.target_lengths = None
         self.max_target_length = None
         self.pad_targets = pad_targets
+        self.save_padded_target_lengths = save_padded_target_lengths
 
         self.hidden_states = None
 
@@ -191,9 +199,14 @@ class HarmonicDataset(Dataset):
             return
 
         if self.pad_targets:
-            self.targets, self.target_lengths = pad_array(self.targets)
+            self.targets, target_lengths = pad_array(self.targets)
+            if self.save_padded_target_lengths:
+                self.target_lengths = target_lengths
+
         if self.pad_inputs:
-            self.inputs, self.input_lengths = pad_array(self.inputs)
+            self.inputs, input_lengths = pad_array(self.inputs)
+            if self.save_padded_input_lengths:
+                self.input_lengths = input_lengths
 
         self.padded = True
 
@@ -480,7 +493,7 @@ class KeyHarmonicDataset(HarmonicDataset):
         reduction: Dict[ChordType, ChordType] = None,
         use_inversions: bool = True,
     ):
-        super().__init__(transform=transform, pad_targets=False)
+        super().__init__(transform=transform, pad_targets=False, save_padded_input_lengths=False)
         self.reduction = reduction
         self.use_inversions = use_inversions
 
