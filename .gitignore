@@ -1,6 +1,7 @@
 **/__pycache__
 **/.ipynb_checkpoints
 checkpoints/**
+model_jsons/**
 .idea/**
 data/**
 h5_data/**
