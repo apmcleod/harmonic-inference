@@ -357,15 +357,15 @@ class ChordClassificationDataset(HarmonicDataset):
 
         if not self.dummy_targets:
             data["targets"] = reduce_chord_one_hots(
-                data["targets"],
+                np.array([data["targets"]]),
                 False,
                 PitchType(self.target_pitch_type[0]),
                 inversions_present=True,
                 reduction_present=None,
-                relative=True,
+                relative=False,
                 reduction=self.reduction,
                 use_inversions=self.use_inversions,
-            )
+            )[0]
 
         return self.finalize_data(data, item)
 

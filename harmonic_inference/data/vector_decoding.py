@@ -1,5 +1,5 @@
 """Functions for decoding data vectors."""
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 import numpy as np
 
@@ -305,7 +305,7 @@ def get_chord_vector_chord_type_index(
 
 
 def reduce_chord_one_hots(
-    one_hots: List[int],
+    one_hots: Union[np.ndarray, List[int], List[float]],
     pad: bool,
     pitch_type: PitchType,
     inversions_present: bool = True,
@@ -320,7 +320,7 @@ def reduce_chord_one_hots(
 
     Parameters
     ----------
-    one_hots : List[int]
+    one_hots : Union[np.ndarray, List[int], List[float]]
         A list of one-hot chord indexes to reduce.
     pad : bool
         Whether root padding was used when creating the list of one-hots.
@@ -342,7 +342,7 @@ def reduce_chord_one_hots(
 
     Returns
     -------
-    one_hots : np.array
+    one_hots : np.ndarray
         The chords from the given list of one-hots, reduced according to the given
         reduction and use_inversions values.
     """
@@ -363,9 +363,15 @@ def reduce_chord_one_hots(
     )[unique_one_hots]
 
     for one_hot, (root, chord_type, inversion) in zip(unique_one_hots, old_labels):
+        if relative:
+            # If relatived, returned root is on the range [MIN_RELATIVE_TPC, MAX_RELATIVE_TPC]
+            # However, it is expected to be [0, ...]
+            # This absolute to relative call with key=0 converts this correctly.
+            root = absolute_to_relative(root, 0, pitch_type, False, pad=pad)
+
         new_one_hot = get_chord_one_hot_index(
             chord_type,
-            absolute_to_relative(root, 0, pitch_type, False, pad=pad),
+            root,
             pitch_type,
             inversion=inversion,
             use_inversion=use_inversions,
