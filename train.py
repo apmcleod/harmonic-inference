@@ -115,6 +115,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "-threads",
+        default=None,
+        type=int,
+        help="The number of pytorch cpu threads to create.",
+    )
+
+    parser.add_argument(
         "--profile",
         action="store_true",
         help="Run a profiler during training. The results are saved to "
@@ -244,6 +251,9 @@ if __name__ == "__main__":
     else:
         logging.error("Invalid model: %s", ARGS.model)
         sys.exit(1)
+
+    if ARGS.threads is not None:
+        torch.set_num_threads(ARGS.threads)
 
     h5_path_train = Path(ARGS.h5_dir / f"{dataset.__name__}_train_seed_{ARGS.seed}.h5")
     h5_path_valid = Path(ARGS.h5_dir / f"{dataset.__name__}_valid_seed_{ARGS.seed}.h5")
