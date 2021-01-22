@@ -115,7 +115,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "-threads",
+        "--threads",
         default=None,
         type=int,
         help="The number of pytorch cpu threads to create.",
