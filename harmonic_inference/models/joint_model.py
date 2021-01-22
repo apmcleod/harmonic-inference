@@ -542,6 +542,7 @@ class HarmonicInferenceModel:
             ranges=[ranges],
             change_indices=[change_indices],
             dummy_targets=True,
+            **self.chord_classifier.get_dataset_kwargs(),
         )
         ccm_loader = DataLoader(
             ccm_dataset,
@@ -807,7 +808,7 @@ class HarmonicInferenceModel:
             )
 
         # Generate KTM loader
-        ktm_dataset = ds.HarmonicDataset()
+        ktm_dataset = ds.KeyTransitionDataset([], self.key_transition_model.get_dataset_kwargs())
         ktm_dataset.inputs = ktm_inputs
         ktm_dataset.set_hidden_states(ktm_hidden_states)
         ktm_loader = DataLoader(
@@ -878,7 +879,7 @@ class HarmonicInferenceModel:
             )
 
         # Generate KSM loader
-        ksm_dataset = ds.HarmonicDataset()
+        ksm_dataset = ds.KeySequenceDataset([], self.key_sequence_model.get_dataset_kwargs())
         ksm_dataset.inputs = ksm_inputs
         ksm_dataset.set_hidden_states(ksm_hidden_states)
         ksm_dataset.input_lengths = [len(ksm_input) for ksm_input in ksm_inputs]
@@ -993,7 +994,7 @@ class HarmonicInferenceModel:
             )
 
         # Generate CSM loader
-        csm_dataset = ds.HarmonicDataset()
+        csm_dataset = ds.ChordSequenceDataset([], self.chord_sequence_model.get_dataset_kwargs())
         csm_dataset.inputs = csm_inputs
         csm_dataset.set_hidden_states(csm_hidden_states)
         csm_loader = DataLoader(
