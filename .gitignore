@@ -2,6 +2,7 @@
 **/.ipynb_checkpoints
 checkpoints/**
 model_jsons/**
+*.old/**
 .idea/**
 data/**
 h5_data/**
