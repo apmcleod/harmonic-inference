@@ -8,8 +8,9 @@ import numpy as np
 
 import harmonic_inference.utils.harmonic_constants as hc
 import harmonic_inference.utils.harmonic_utils as hu
+from harmonic_inference.data.chord import Chord
 from harmonic_inference.data.data_types import PitchType
-from harmonic_inference.data.piece import Chord, Key
+from harmonic_inference.data.key import Key, get_key_change_vector_length
 
 
 class State:
@@ -357,7 +358,7 @@ class State:
         csm_input : np.array
             The input for the next step of this state's CSM.
         """
-        key_change_vector = np.zeros(Key.get_key_change_vector_length(pitch_type, one_hot=False))
+        key_change_vector = np.zeros(get_key_change_vector_length(pitch_type, one_hot=False))
         is_key_change = 0
         if self.prev_state is not None and self.prev_state.key != self.key:
             # Key change
@@ -411,9 +412,7 @@ class State:
         ktm_input : np.array
             The input for the next step of this state's KTM.
         """
-        key_change_vector = np.zeros(
-            Key.get_key_change_vector_length(pitch_type, one_hot=False) + 1
-        )
+        key_change_vector = np.zeros(get_key_change_vector_length(pitch_type, one_hot=False) + 1)
         if self.prev_state is not None and self.key != self.prev_state.key:
             key_change_vector[:-1] = self.prev_state.get_key(
                 pitch_type, LABELS

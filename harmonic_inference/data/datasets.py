@@ -92,6 +92,8 @@ class HarmonicDataset(Dataset):
                 self.hidden_states[1][:, item],
             )
 
+        self.reduce(data)
+
         if self.transform:
             data.update(
                 {
@@ -102,6 +104,17 @@ class HarmonicDataset(Dataset):
             )
 
         return data
+
+    def reduce(self, data: Dict):
+        """
+        Reduce the given data in place.
+
+        Parameters
+        ----------
+        data : Dict
+            The data, created by the __getitem__(item) function, to be reduced with chord
+            type and inversion reductions. This default implementation does nothing.
+        """
 
     def set_hidden_states(self, hidden_states: np.array):
         """
@@ -179,7 +192,7 @@ class HarmonicDataset(Dataset):
                 data["targets"] = padded_target
                 data["target_lengths"] = self.target_lengths[item]
 
-        return data
+        return self.finalize_data(data, item)
 
     def pad(self):
         """
@@ -301,9 +314,6 @@ class ChordTransitionDataset(HarmonicDataset):
         self.pad_targets = True
         self.pad_inputs = True
 
-    def __getitem__(self, item) -> Dict:
-        return self.finalize_data(super().__getitem__(item), item)
-
 
 class ChordClassificationDataset(HarmonicDataset):
     """
@@ -365,12 +375,10 @@ class ChordClassificationDataset(HarmonicDataset):
         self.reduction = reduction
         self.use_inversions = use_inversions
 
-    def __getitem__(self, item) -> Dict:
-        data = super().__getitem__(item)
-
+    def reduce(self, data: Dict):
         if not self.dummy_targets:
             data["targets"] = reduce_chord_one_hots(
-                np.array([data["targets"]]),
+                data["targets"],
                 False,
                 PitchType(self.target_pitch_type[0]),
                 inversions_present=True,
@@ -379,8 +387,6 @@ class ChordClassificationDataset(HarmonicDataset):
                 reduction=self.reduction,
                 use_inversions=self.use_inversions,
             )[0]
-
-        return self.finalize_data(data, item)
 
 
 class ChordSequenceDataset(HarmonicDataset):
@@ -459,9 +465,7 @@ class ChordSequenceDataset(HarmonicDataset):
         self.use_inversions_input = use_inversions_input
         self.use_inversions_output = use_inversions_output
 
-    def __getitem__(self, item) -> Dict:
-        data = super().__getitem__(item)
-
+    def reduce(self, data: Dict):
         reduce_chord_types(data["inputs"], self.input_reduction, pad=False)
         if not self.use_inversions_input:
             remove_chord_inversions(data["inputs"], pad=False)
@@ -476,8 +480,6 @@ class ChordSequenceDataset(HarmonicDataset):
             reduction=self.output_reduction,
             use_inversions=self.use_inversions_output,
         )
-
-        return self.finalize_data(data, item)
 
 
 class KeyHarmonicDataset(HarmonicDataset):
@@ -574,10 +576,6 @@ class KeyHarmonicDataset(HarmonicDataset):
             piece_input[input_length] = key_change_replacement
             input_length += 1
 
-        reduce_chord_types(piece_input, self.reduction, pad=True)
-        if not self.use_inversions:
-            remove_chord_inversions(piece_input, pad=True)
-
         data = {
             "targets": targets,
             "inputs": piece_input,
@@ -585,6 +583,11 @@ class KeyHarmonicDataset(HarmonicDataset):
         }
 
         return self.finalize_data(data, item)
+
+    def reduce(self, data: Dict):
+        reduce_chord_types(data["inputs"], self.reduction, pad=True)
+        if not self.use_inversions:
+            remove_chord_inversions(data["inputs"], pad=True)
 
 
 class KeyTransitionDataset(KeyHarmonicDataset):

@@ -808,9 +808,11 @@ class HarmonicInferenceModel:
             )
 
         # Generate KTM loader
-        ktm_dataset = ds.KeyTransitionDataset([], self.key_transition_model.get_dataset_kwargs())
+        reduce = ds.KeyTransitionDataset([], self.key_transition_model.get_dataset_kwargs()).reduce
+        ktm_dataset = ds.HarmonicDataset()
         ktm_dataset.inputs = ktm_inputs
         ktm_dataset.set_hidden_states(ktm_hidden_states)
+        ktm_dataset.reduce = reduce  # TODO: This elsewhere
         ktm_loader = DataLoader(
             ktm_dataset,
             batch_size=ds.KeyTransitionDataset.valid_batch_size,
