@@ -286,7 +286,17 @@ class ChordTransitionDataset(HarmonicDataset):
     valid_batch_size = 64
     chunk_size = 64
 
-    def __init__(self, pieces: List[Piece], transform=None):
+    def __init__(self, pieces: List[Piece], transform: Callable = None):
+        """
+        Create a new Chord Transition Dataset from the given pieces.
+
+        Parameters
+        ----------
+        pieces : List[Piece]
+            The pieces to get the data from.
+        transform : Callable
+            A function to transform numpy arrays returned by __getitem__ by default.
+        """
         super().__init__(transform=transform)
         self.inputs = [
             np.vstack(
@@ -334,11 +344,38 @@ class ChordClassificationDataset(HarmonicDataset):
         pieces: List[Piece],
         transform: Callable = None,
         ranges: List[List[Tuple[int, int]]] = None,
-        change_indices: List[int] = None,
+        change_indices: List[List[int]] = None,
         dummy_targets: bool = False,
         reduction: Dict[ChordType, ChordType] = None,
         use_inversions: bool = True,
     ):
+        """
+        Create a new chord classification dataset from the given pieces.
+
+        Parameters
+        ----------
+        pieces : List[Piece]
+            The pieces to get the data from.
+        transform : Callable
+            A function to transform numpy arrays returned by __getitem__ by default.
+        ranges : List[List[Tuple[int, int]]]
+            Custom chord ranges to use, if not using the default ones from each piece.
+            This should be a list of tuple [start, stop) ranges for each piece.
+        change_indices : List[List[int]]
+            Custom change indices to use, if not using the default ones from each piece.
+            This should be a list of chord change indices for each piece.
+        dummy_targets : bool
+            True to store all zeros for targets. False to get targets from each piece.
+        reduction : Dict[ChordType, ChordType]
+            A reduction to apply to target chords when returning data with __getitem__.
+            These are not applied when the data is loaded, but only when it is returned.
+            So it is safe to change this after initialization.
+        use_inversions : bool
+            True to use inversions for target chords when returning data with __getitem__.
+            False to reduce all chords to root position. This is not applied when the data
+            is loaded, but only when it is returned. So it is safe to change this after
+            initialization.
+        """
         super().__init__(transform=transform, pad_targets=False)
         self.target_pitch_type = []
 
@@ -418,6 +455,32 @@ class ChordSequenceDataset(HarmonicDataset):
         use_inversions_input: bool = True,
         use_inversions_output: bool = True,
     ):
+        """
+        Create a chord sequence dataset from the given pieces.
+
+        Parameters
+        ----------
+        pieces : List[Piece]
+            The pieces to get the data from.
+        transform : Callable
+            A function to transform numpy arrays returned by __getitem__ by default.
+        input_reduction : Dict[ChordType, ChordType]
+            A chord type reduction to apply to the input chords when returning data with
+            __getitem__. This is not applied when the data is loaded, but only when it is
+            returned. So it is safe to change this after initialization.
+        output_reduction : Dict[ChordType, ChordType]
+            A chord type reduction to apply to the target chords when returning data with
+            __getitem__. This is not applied when the data is loaded, but only when it is
+            returned. So it is safe to change this after initialization.
+        use_inversions_input : bool
+            True to use input inversions when returning data with __getitem__. False to reduce
+            all input chords to root position. This is not applied when the data is loaded, but
+            only when it is returned. So it is safe to change this after initialization.
+        use_inversions_output : bool
+            True to use target inversions when returning data with __getitem__. False to reduce
+            all target chords to root position. This is not applied when the data is loaded, but
+            only when it is returned. So it is safe to change this after initialization.
+        """
         super().__init__(transform=transform)
         self.inputs = []
         self.targets = []
@@ -495,6 +558,23 @@ class KeyHarmonicDataset(HarmonicDataset):
         reduction: Dict[ChordType, ChordType] = None,
         use_inversions: bool = True,
     ):
+        """
+        A base class for for key sequence and key transition datasets.
+
+        Parameters
+        ----------
+        transform : Callable
+            A function to transform numpy arrays returned by __getitem__ by default.
+        reduction : Dict[ChordType, ChordType]
+            A reduction to apply to the input chord vectors when returning data with
+            __getitem__. These are not applied when the data is loaded, but only when
+            it is returned. So it is safe to change this after initialization.
+        use_inversions : bool
+            True to use inversions in the input chord vectors when returning data with
+            __getitem__. False to reduce all chords to root position. This is not
+            applied when the data is loaded, but only when it is returned. So it is
+            safe to change this after initialization.
+        """
         super().__init__(transform=transform, pad_targets=False, save_padded_input_lengths=False)
         self.reduction = reduction
         self.use_inversions = use_inversions
@@ -614,6 +694,25 @@ class KeyTransitionDataset(KeyHarmonicDataset):
         reduction: Dict[ChordType, ChordType] = None,
         use_inversions: bool = True,
     ):
+        """
+        Create a key transition dataset from the given pieces.
+
+        Parameters
+        ----------
+        pieces : List[Piece]
+            The pieces to get the data from.
+        transform : Callable
+            A function to transform numpy arrays returned by __getitem__ by default.
+        reduction : Dict[ChordType, ChordType]
+            A reduction to apply to the input chord vectors when returning data with
+            __getitem__. These are not applied when the data is loaded, but only when
+            it is returned. So it is safe to change this after initialization.
+        use_inversions : bool
+            True to use inversions in the input chord vectors when returning data with
+            __getitem__. False to reduce all chords to root position. This is not
+            applied when the data is loaded, but only when it is returned. So it is
+            safe to change this after initialization.
+        """
         super().__init__(transform=transform, reduction=reduction, use_inversions=use_inversions)
         self.inputs = []
         self.targets = []
@@ -693,6 +792,25 @@ class KeySequenceDataset(KeyHarmonicDataset):
         reduction: Dict[ChordType, ChordType] = None,
         use_inversions: bool = True,
     ):
+        """
+        Create a key transition dataset from the given pieces.
+
+        Parameters
+        ----------
+        pieces : List[Piece]
+            The pieces to get the data from.
+        transform : Callable
+            A function to transform numpy arrays returned by __getitem__ by default.
+        reduction : Dict[ChordType, ChordType]
+            A reduction to apply to the input chord vectors when returning data with
+            __getitem__. These are not applied when the data is loaded, but only when
+            it is returned. So it is safe to change this after initialization.
+        use_inversions : bool
+            True to use inversions in the input chord vectors when returning data with
+            __getitem__. False to reduce all chords to root position. This is not
+            applied when the data is loaded, but only when it is returned. So it is
+            safe to change this after initialization.
+        """
         super().__init__(transform=transform, reduction=reduction, use_inversions=use_inversions)
         self.inputs = []
         self.targets = []
