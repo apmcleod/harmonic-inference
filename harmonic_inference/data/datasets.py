@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, Iterable, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
+from numpy.core import overrides
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
@@ -412,6 +413,7 @@ class ChordClassificationDataset(HarmonicDataset):
         self.reduction = reduction
         self.use_inversions = use_inversions
 
+    @overrides
     def reduce(self, data: Dict):
         if not self.dummy_targets:
             data["targets"] = reduce_chord_one_hots(
@@ -528,6 +530,7 @@ class ChordSequenceDataset(HarmonicDataset):
         self.use_inversions_input = use_inversions_input
         self.use_inversions_output = use_inversions_output
 
+    @overrides
     def reduce(self, data: Dict):
         reduce_chord_types(data["inputs"], self.input_reduction, pad=False)
         if not self.use_inversions_input:
@@ -582,12 +585,14 @@ class KeyHarmonicDataset(HarmonicDataset):
         self.piece_lengths = []
         self.key_change_replacements = []
 
+    @overrides
     def __len__(self) -> int:
         if not self.in_ram:
             with h5py.File(self.h5_path, "r") as h5_file:
                 return int(np.sum(h5_file["piece_lengths"]))
         return int(np.sum(self.piece_lengths))
 
+    @overrides
     def __getitem__(self, item) -> Dict:
         def get_piece_index(item: int) -> Tuple[int, bool]:
             """
@@ -664,6 +669,7 @@ class KeyHarmonicDataset(HarmonicDataset):
 
         return self.finalize_data(data, item)
 
+    @overrides
     def reduce(self, data: Dict):
         reduce_chord_types(data["inputs"], self.reduction, pad=True)
         if not self.use_inversions:
