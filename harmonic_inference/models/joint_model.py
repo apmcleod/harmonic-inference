@@ -652,7 +652,7 @@ class HarmonicInferenceModel:
             if current_start != 0:
                 self.run_csm_batched(list(current_states))
 
-            to_check_for_key_change = []
+            to_check_for_key_change: List[State] = []
 
             # Initial branch on absolute chord symbol
             for state, range_data in itertools.product(
@@ -711,8 +711,8 @@ class HarmonicInferenceModel:
                 change_log_probs = np.log(change_probs)
 
             # Branch on key changes
-            to_csm_prior_states = []
-            to_ksm_states = []
+            to_csm_prior_states: List[State] = []
+            to_ksm_states: List[State] = []
             for change_prob, change_log_prob, no_change_log_prob, state in zip(
                 change_probs, change_log_probs, no_change_log_probs, to_check_for_key_change
             ):
@@ -752,6 +752,14 @@ class HarmonicInferenceModel:
             if current_start != 0 and logging.getLogger().isEnabledFor(logging.DEBUG):
                 self.debugger.debug_chord_sequence_priors(to_csm_prior_states)
 
+            # Get output vocabulary from ICM or CSM
+            if current_start == 0:
+                use_inversions = self.initial_chord_model.use_inversions
+                reduction = self.initial_chord_model.reduction
+            else:
+                use_inversions = self.chord_sequence_model.use_output_inversions
+                reduction = self.chord_sequence_model.output_reduction
+
             # Add CSM prior and add to beam (CSM is run at the start of each iteration)
             for state in to_csm_prior_states:
                 state.add_csm_prior(
@@ -760,6 +768,8 @@ class HarmonicInferenceModel:
                     self.onset_cache,
                     self.onset_level_cache,
                     self.LABELS,
+                    use_inversions,
+                    reduction,
                 )
 
                 # Add state to its beam, if it fits
