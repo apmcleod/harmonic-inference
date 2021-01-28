@@ -1,13 +1,15 @@
 """An ICM outputs a prior distribution over the initial (relative) chord in a key."""
 import json
+import logging
 from pathlib import Path
 from typing import Dict, List, Union
 
 import numpy as np
 
 from harmonic_inference.data.chord import Chord, get_chord_vector_length
-from harmonic_inference.data.data_types import ChordType, KeyMode, PitchType
+from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, KeyMode
 from harmonic_inference.data.piece import Piece
+from harmonic_inference.utils.data_utils import load_kwargs_from_json
 from harmonic_inference.utils.harmonic_utils import (
     get_chord_from_one_hot_index,
     get_chord_label_list,
@@ -39,16 +41,72 @@ class SimpleInitialChordModel:
         reduction : Dict[ChordType, ChordType]
             A reduction mapping for chord types.
         """
-        with open(json_path, "r") as json_file:
-            data = json.load(json_file)
+        data = load_kwargs_from_json(json_path)
 
-        self.PITCH_TYPE = PitchType[data["pitch_type"]]
+        self.PITCH_TYPE = data["pitch_type"]
 
         self.major_prior = data["major"]
         self.minor_prior = data["minor"]
 
+        inversions_present = data["inversions_present"]
+        reduction_present = (
+            NO_REDUCTION if data["reduction_present"] is None else data["reduction_present"]
+        )
+
         self.use_inversions = use_inversions
+        if "use_inversions" in data:
+            self.use_inversions = data["use_inversions"]
+
         self.reduction = reduction
+        if "reduction" in data:
+            self.reduction = data["reduction"]
+        if self.reduction is None:
+            self.reduction = NO_REDUCTION
+
+        if self.use_inversions and not inversions_present:
+            logging.warning(
+                "Inversions not present in ICM json, but use_inversions is True.\n"
+                "Setting use_inversions to False."
+            )
+            self.use_inversions = False
+
+        if reduction_present is not None:
+            try:
+                new_reduction = {
+                    chord_type: self.reduction[reduction_present[chord_type]]
+                    for chord_type in ChordType
+                }
+            except KeyError:
+                logging.warning(
+                    "Requested reduction invalid for the reduction that is already present:\n"
+                    "All values in the reduction_present dict must be keys in the reduction dict.\n"
+                    "Setting reduction to reduction_present."
+                )
+                self.reduction = reduction_present
+            else:
+                for chord_type in ChordType:
+                    if (
+                        chord_type in self.reduction
+                        and self.reduction[chord_type] != new_reduction[chord_type]
+                    ):
+                        logging.warning(
+                            "Mismatch between given reduction and nested reduction for %s:\n"
+                            "  Given: %s\n"
+                            "  Nested (will be used instead): %s",
+                            chord_type,
+                            self.reduction[chord_type],
+                            new_reduction[chord_type],
+                        )
+                    elif chord_type not in self.reduction and chord_type in reduction_present:
+                        logging.warning(
+                            "Chord reduction inferred from nested reduction for %s:\n"
+                            "  Given: None\n"
+                            "  Nested (will be used): %s",
+                            chord_type,
+                            new_reduction[chord_type],
+                        )
+
+                self.reduction = new_reduction
 
         if reduction is not None or not use_inversions:
             num_labels = get_chord_label_list(
@@ -63,7 +121,13 @@ class SimpleInitialChordModel:
             for major_prior, minor_prior, (root, chord_type, inversion) in zip(
                 data["major"],
                 data["minor"],
-                get_chord_from_one_hot_index(slice(None, None), self.PITCH_TYPE, relative=True),
+                get_chord_from_one_hot_index(
+                    slice(None, None),
+                    self.PITCH_TYPE,
+                    relative=True,
+                    reduction=reduction_present,
+                    use_inversions=inversions_present,
+                ),
             ):
                 index = get_chord_one_hot_index(
                     chord_type,
@@ -198,7 +262,9 @@ def train_icm(
     with open(json_path, "w") as json_file:
         json.dump(
             {
-                "pitch_type": str(pitch_type).split(".")[1],
+                "inversions_present": True,
+                "reduction_present": None,
+                "pitch_type": str(pitch_type),
                 "major": list(major_key_chords_one_hots),
                 "minor": list(minor_key_chords_one_hots),
             },
