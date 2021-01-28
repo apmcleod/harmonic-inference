@@ -8,6 +8,7 @@ from glob import glob
 from pathlib import Path
 from typing import List, Union
 
+import torch
 from tqdm import tqdm
 
 import h5py
@@ -328,9 +329,19 @@ if __name__ == "__main__":
         help="The seed used when generating the h5_data.",
     )
 
+    parser.add_argument(
+        "--threads",
+        default=None,
+        type=int,
+        help="The number of pytorch cpu threads to create.",
+    )
+
     add_joint_model_args(parser)
 
     ARGS = parser.parse_args()
+
+    if ARGS.threads is not None:
+        torch.set_num_threads(ARGS.threads)
 
     if ARGS.log is not sys.stderr:
         log_path = Path(ARGS.log)
