@@ -78,9 +78,10 @@ class SimpleInitialChordModel:
                 }
             except KeyError:
                 logging.warning(
-                    "Requested reduction invalid for the reduction that is already present:\n"
-                    "All values in the reduction_present dict must be keys in the reduction dict.\n"
-                    "Setting reduction to reduction_present."
+                    "Requested reduction invalid for the reduction that is already present. All "
+                    "values in the reduction_present dict (or all chord_types, if "
+                    "reduction_present is None) must be keys in the reduction dict. Setting "
+                    "reduction to reduction_present."
                 )
                 self.reduction = reduction_present
             else:
