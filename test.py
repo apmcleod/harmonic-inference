@@ -8,10 +8,10 @@ from glob import glob
 from pathlib import Path
 from typing import List, Union
 
+import h5py
 import torch
 from tqdm import tqdm
 
-import h5py
 import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.utils.eval_utils as eu
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
@@ -180,9 +180,9 @@ def evaluate(
                         output_tsv_path.name[:-4] + "_results.tsv"
                     )
                     results_df.to_csv(results_tsv_path, sep="\t")
-                    logging.info("Results TSV written out to %s", output_tsv_path)
+                    logging.info("Results TSV written out to %s", results_tsv_path)
                 except Exception:
-                    logging.exception("Error writing to csv %s", output_tsv_path)
+                    logging.exception("Error writing to csv %s", results_tsv_path)
                     logging.debug(results_df)
 
                 try:
