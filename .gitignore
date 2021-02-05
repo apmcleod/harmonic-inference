@@ -16,3 +16,4 @@ harmonic_inference.egg-info/**
 .pylintrc
 ML_course_data/**
 output*/**
+results*/**
