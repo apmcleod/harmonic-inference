@@ -1,5 +1,6 @@
 """Models that generate probability distributions over the next chord in a sequence."""
-from typing import Tuple
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Tuple
 
 import torch
 import torch.nn as nn
@@ -10,31 +11,81 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import pytorch_lightning as pl
-from harmonic_inference.data.data_types import PitchType
+from harmonic_inference.data.chord import get_chord_vector_length
+from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.datasets import ChordSequenceDataset
-from harmonic_inference.data.piece import Chord, Key
+from harmonic_inference.data.key import get_key_change_vector_length
 
 
-class ChordSequenceModel(pl.LightningModule):
+class ChordSequenceModel(pl.LightningModule, ABC):
     """
     The base class for all Chord Sequence Models, which model the sequence of chords of a Piece.
     """
 
-    def __init__(self, chord_type: PitchType, learning_rate: float):
+    def __init__(
+        self,
+        input_chord_pitch_type: PitchType,
+        input_key_pitch_type: PitchType,
+        output_pitch_type: PitchType,
+        input_reduction: Dict[ChordType, ChordType],
+        output_reduction: Dict[ChordType, ChordType],
+        use_input_inversions: bool,
+        use_output_inversions: bool,
+        learning_rate: float,
+    ):
         """
         Create a new base KeySequenceModel with the given output and input data types.
 
         Parameters
         ----------
-        chord_type : PitchType
-            The way a given model will output its chords.
+        input_chord_pitch_type : PitchType
+            The type of pitch representation for the input chord root pitches.
+        input_key_pitch_type : PitchType
+            The type of pitch representation for the input key change vectors.
+        output_pitch_type : PitchType
+            The type of pitch representation for the target chord root pitches.
+        input_reduction : Dict[ChordType, ChordType]
+            The reduction used for input vector chord types.
+        output_reduction : Dict[ChordType, ChordType]
+            The reduction used for output vector chord types.
+        use_input_inversions : bool
+            True to take inversions into account for the input. False to ignore them.
+        use_output_inversions : bool
+            True to include inversions of chords in the output of this model.
+            False to ignore them.
         learning_rate : float
             The learning rate.
         """
         super().__init__()
         # pylint: disable=invalid-name
-        self.CHORD_TYPE = chord_type
+        self.INPUT_CHORD_PITCH_TYPE = input_chord_pitch_type
+        self.INPUT_KEY_PITCH_TYPE = input_key_pitch_type
+        self.OUTPUT_PITCH_TYPE = output_pitch_type
+
+        self.input_reduction = input_reduction
+        self.output_reduction = output_reduction
+        self.use_input_inversions = use_input_inversions
+        self.use_output_inversions = use_output_inversions
+
         self.lr = learning_rate
+
+    def get_dataset_kwargs(self) -> Dict[str, Any]:
+        """
+        Get a kwargs dict that can be used to create a dataset for this model with
+        the correct parameters.
+
+        Returns
+        -------
+        dataset_kwargs : Dict[str, Any]
+            A keyword args dict that can be used to create a dataset for this model with
+            the correct parameters.
+        """
+        return {
+            "input_reduction": self.input_reduction,
+            "output_reduction": self.output_reduction,
+            "use_inversions_input": self.use_input_inversions,
+            "use_inversions_output": self.use_output_inversions,
+        }
 
     def get_data_from_batch(self, batch):
         inputs = batch["inputs"].float()
@@ -81,13 +132,13 @@ class ChordSequenceModel(pl.LightningModule):
         self.log("val_acc", acc)
 
     def evaluate(self, dataset: ChordSequenceDataset):
-        dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
+        data_loader = DataLoader(dataset, batch_size=dataset.valid_batch_size)
 
         total = 0
         total_loss = 0
         total_acc = 0
 
-        for batch in tqdm(dl, desc="Evaluating CSM"):
+        for batch in tqdm(data_loader, desc="Evaluating CSM"):
             inputs, input_lengths, targets = self.get_data_from_batch(batch)
 
             outputs, _ = self(inputs, input_lengths)
@@ -110,9 +161,22 @@ class ChordSequenceModel(pl.LightningModule):
             "loss": (total_loss / total).item(),
         }
 
-    def init_hidden(self, batch_size: int):
-        # Subclasses should implement this
-        raise NotImplementedError
+    @abstractmethod
+    def init_hidden(self, batch_size: int) -> Tuple[Variable, ...]:
+        """
+        Get initial hidden layers for this model.
+
+        Parameters
+        ----------
+        batch_size : int
+            The batch size to initialize hidden layers for.
+
+        Returns
+        -------
+        hidden : Tuple[Variable, ...]
+            A tuple of initialized hidden layers.
+        """
+        raise NotImplementedError()
 
     def run_one_step(self, batch):
         inputs = batch["inputs"].float()
@@ -145,8 +209,13 @@ class SimpleChordSequenceModel(ChordSequenceModel):
 
     def __init__(
         self,
-        chord_type: PitchType,
-        use_inversions: bool = True,
+        input_chord_pitch_type: PitchType,
+        input_key_pitch_type: PitchType,
+        output_pitch_type: PitchType,
+        input_reduction: Dict[ChordType, ChordType] = None,
+        output_reduction: Dict[ChordType, ChordType] = None,
+        use_input_inversions: bool = True,
+        use_output_inversions: bool = True,
         embed_dim: int = 64,
         lstm_layers: int = 1,
         lstm_hidden_dim: int = 128,
@@ -159,10 +228,21 @@ class SimpleChordSequenceModel(ChordSequenceModel):
 
         Parameters
         ----------
-        chord_type : PitchType
-            The type of pitch representation used for the chords, input and output.
-        use_inversions : bool
-            True to take inversions into account. False to ignore them.
+        input_chord_pitch_type : PitchType
+            The type of pitch representation for the input chord root pitches.
+        input_key_pitch_type : PitchType
+            The type of pitch representation for the input key change vectors.
+        output_pitch_type : PitchType
+            The type of pitch representation for the target chord root pitches.
+        input_reduction : Dict[ChordType, ChordType]
+            The reduction used for input vector chord types.
+        output_reduction : Dict[ChordType, ChordType]
+            The reduction used for output vector chord types.
+        use_input_inversions : bool
+            True to take inversions into account for the input. False to ignore them.
+        use_output_inversions : bool
+            True to include inversions of chords in the output of this model.
+            False to ignore them.
         embed_dim : int
             The size of the input embedding.
         lstm_layers : int
@@ -176,27 +256,38 @@ class SimpleChordSequenceModel(ChordSequenceModel):
         learning_rate : float
             The learning rate.
         """
-        super().__init__(chord_type, learning_rate)
+        super().__init__(
+            input_chord_pitch_type,
+            input_key_pitch_type,
+            output_pitch_type,
+            input_reduction,
+            output_reduction,
+            use_input_inversions,
+            use_output_inversions,
+            learning_rate,
+        )
         self.save_hyperparameters()
 
         # Input and output derived from input type and use_inversions
         self.input_dim = (
-            Chord.get_chord_vector_length(
-                chord_type,
+            get_chord_vector_length(
+                input_chord_pitch_type,
                 one_hot=False,
                 relative=True,
-                use_inversions=use_inversions,
+                use_inversions=use_input_inversions,
                 pad=False,
+                reduction=input_reduction,
             )
-            + Key.get_key_change_vector_length(chord_type, one_hot=False)  # Key change vector
+            + get_key_change_vector_length(input_key_pitch_type, one_hot=False)  # Key change vector
             + 1  # is_key_change
         )
-        self.output_dim = Chord.get_chord_vector_length(
-            chord_type,
+        self.output_dim = get_chord_vector_length(
+            output_pitch_type,
             one_hot=True,
             relative=True,
-            use_inversions=use_inversions,
+            use_inversions=use_output_inversions,
             pad=False,
+            reduction=output_reduction,
         )
 
         self.embed_dim = embed_dim

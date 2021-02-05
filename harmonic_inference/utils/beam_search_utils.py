@@ -8,8 +8,10 @@ import numpy as np
 
 import harmonic_inference.utils.harmonic_constants as hc
 import harmonic_inference.utils.harmonic_utils as hu
-from harmonic_inference.data.data_types import PitchType
-from harmonic_inference.data.piece import Chord, Key
+from harmonic_inference.data.chord import Chord
+from harmonic_inference.data.data_types import ChordType, PitchType
+from harmonic_inference.data.key import Key, get_key_change_vector_length
+from harmonic_inference.data.vector_decoding import reduce_chord_one_hots
 
 
 class State:
@@ -294,6 +296,8 @@ class State:
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[Fraction],
         LABELS: Dict,
+        use_output_inversions: bool,
+        output_reduction: Dict[ChordType, ChordType],
     ):
         """
         Add the log_prior for this state's current relative chord to this state's log_prob.
@@ -313,20 +317,32 @@ class State:
             The onset level of each input in the current piece.
         LABELS : Dict
             A Dictionary of key and chord labels for the current piece.
+        use_output_inversions : bool
+            Whether inversions are used in the state's current csm log prior.
+        output_reduction : Dict[ChordType, ChordType]
+            The reduction used in the state's current csm log prior.
         """
         range_length = self.change_index - self.prev_state.change_index
-        self.log_prob += (
-            self.csm_log_prior[
-                self.get_relative_chord_index(
-                    pitch_type,
-                    duration_cache,
-                    onset_cache,
-                    onset_level_cache,
-                    LABELS,
-                )
-            ]
-            * range_length
+        relative_index = self.get_relative_chord_index(
+            pitch_type,
+            duration_cache,
+            onset_cache,
+            onset_level_cache,
+            LABELS,
         )
+
+        reduced_index = reduce_chord_one_hots(
+            [relative_index],
+            pad=False,
+            pitch_type=pitch_type,
+            inversions_present=True,
+            reduction_present=None,
+            relative=True,
+            reduction=output_reduction,
+            use_inversions=use_output_inversions,
+        )[0]
+
+        self.log_prob += self.csm_log_prior[reduced_index] * range_length
 
     def get_csm_input(
         self,
@@ -357,7 +373,7 @@ class State:
         csm_input : np.array
             The input for the next step of this state's CSM.
         """
-        key_change_vector = np.zeros(Key.get_key_change_vector_length(pitch_type, one_hot=False))
+        key_change_vector = np.zeros(get_key_change_vector_length(pitch_type, one_hot=False))
         is_key_change = 0
         if self.prev_state is not None and self.prev_state.key != self.key:
             # Key change
@@ -411,9 +427,7 @@ class State:
         ktm_input : np.array
             The input for the next step of this state's KTM.
         """
-        key_change_vector = np.zeros(
-            Key.get_key_change_vector_length(pitch_type, one_hot=False) + 1
-        )
+        key_change_vector = np.zeros(get_key_change_vector_length(pitch_type, one_hot=False) + 1)
         if self.prev_state is not None and self.key != self.prev_state.key:
             key_change_vector[:-1] = self.prev_state.get_key(
                 pitch_type, LABELS

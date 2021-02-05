@@ -220,56 +220,23 @@ class HarmonicInferenceModel:
                 models[model], model_class
             ), f"`{model}` in models dict is not of type {model_class.__name__}."
 
-        self.chord_classifier = models["ccm"]
-        self.chord_sequence_model = models["csm"]
-        self.chord_transition_model = models["ctm"]
-        self.key_sequence_model = models["ksm"]
-        self.key_transition_model = models["ktm"]
-        self.initial_chord_model = models["icm"]
-
-        # Ensure all types match
-        assert (
-            self.chord_classifier.INPUT_TYPE == self.chord_transition_model.INPUT_TYPE
-        ), "Chord Classifier input type does not match Chord Transition Model input type"
-        assert (
-            self.chord_classifier.OUTPUT_TYPE == self.chord_sequence_model.CHORD_TYPE
-        ), "Chord Classifier output type does not match Chord Sequence Model chord type"
-        assert (
-            self.chord_sequence_model.CHORD_TYPE == self.key_transition_model.INPUT_TYPE
-        ), "Chord Sequence Model chord type does not match Key Transition Model input type"
-        assert (
-            self.chord_sequence_model.CHORD_TYPE == self.key_sequence_model.INPUT_TYPE
-        ), "Chord Sequence Model chord type does not match Key Transition Model input type"
-        assert (
-            self.initial_chord_model.CHORD_TYPE == self.chord_sequence_model.CHORD_TYPE
-        ), "Initial Chord Model chord type does not match Chord Sequence Model chord type"
+        self.chord_classifier: ccm.ChordClassifierModel = models["ccm"]
+        self.chord_sequence_model: csm.ChordSequenceModel = models["csm"]
+        self.chord_transition_model: ctm.ChordTransitionModel = models["ctm"]
+        self.key_sequence_model: ksm.KeySequenceModel = models["ksm"]
+        self.key_transition_model: ktm.KeyTransitionModel = models["ktm"]
+        self.initial_chord_model: icm.SimpleInitialChordModel = models["icm"]
+        self.check_input_output_types()
 
         # Set joint model types
         self.INPUT_TYPE = self.chord_classifier.INPUT_TYPE
-        self.CHORD_OUTPUT_TYPE = self.chord_sequence_model.CHORD_TYPE
-        self.KEY_OUTPUT_TYPE = self.key_sequence_model.KEY_TYPE
+        self.CHORD_OUTPUT_TYPE = self.chord_sequence_model.OUTPUT_PITCH_TYPE
+        self.KEY_OUTPUT_TYPE = self.key_sequence_model.OUTPUT_PITCH_TYPE
 
         # Load labels
         self.LABELS = {
-            "chord": [
-                (
-                    hu.get_pitch_from_string(root, self.CHORD_OUTPUT_TYPE),
-                    hu.get_chord_type_from_string(description.split(",")[0]),
-                    int(inv),
-                )
-                for root, description, inv in [
-                    chord.split(":")
-                    for chord in hu.get_chord_label_list(
-                        self.CHORD_OUTPUT_TYPE, use_inversions=True
-                    )
-                ]
-            ],
-            "key": [
-                (hu.get_pitch_from_string(tonic, self.KEY_OUTPUT_TYPE), KeyMode[mode.split(".")[1]])
-                for tonic, mode in [
-                    key.split(":") for key in hu.get_key_label_list(self.KEY_OUTPUT_TYPE)
-                ]
-            ],
+            "chord": hu.get_chord_from_one_hot_index(slice(None, None), self.CHORD_OUTPUT_TYPE),
+            "key": hu.get_key_from_one_hot_index(slice(None, None), self.KEY_OUTPUT_TYPE),
             "relative_key": list(
                 itertools.product(
                     KeyMode,
@@ -315,6 +282,59 @@ class HarmonicInferenceModel:
         # No piece currently
         self.current_piece = None
         self.debugger = None
+        self.duration_cache = None
+        self.onset_cache = None
+        self.onset_level_cache = None
+
+    def check_input_output_types(self):
+        """
+        Check input and output types of all models to be sure they are compatible.
+        """
+        # Input vectors
+        assert (
+            self.chord_classifier.INPUT_TYPE == self.chord_transition_model.INPUT_TYPE
+        ), "CCM input type does not match CTM input type"
+        assert (
+            self.chord_classifier.INPUT_PITCH == self.chord_transition_model.PITCH_TYPE
+        ), "CCM input pitch type does not match CTM pitch type"
+
+        # Output from CCM
+        assert (
+            self.chord_classifier.OUTPUT_PITCH == self.chord_sequence_model.INPUT_CHORD_PITCH_TYPE
+        ), "CCM output pitch type does not match CSM chord pitch type"
+
+        # Output from CSM
+        assert (
+            self.chord_sequence_model.OUTPUT_PITCH_TYPE
+            == self.key_sequence_model.INPUT_CHORD_PITCH_TYPE
+        ), "CSM output pitch type does not match KSM input chord pitch type"
+        assert (
+            self.chord_sequence_model.OUTPUT_PITCH_TYPE
+            == self.key_sequence_model.INPUT_CHORD_PITCH_TYPE
+        ), "CSM output pitch type does not match KSM input chord pitch type"
+        assert (
+            self.chord_sequence_model.OUTPUT_PITCH_TYPE
+            == self.chord_sequence_model.INPUT_CHORD_PITCH_TYPE
+        ), "CSM output pitch type does not match its own input chord pitch type"
+
+        # Output from KSM
+        assert (
+            self.chord_sequence_model.INPUT_KEY_PITCH_TYPE
+            == self.key_sequence_model.OUTPUT_PITCH_TYPE
+        ), "CSM input key pitch type does not match KSM output pitch type"
+        assert (
+            self.key_transition_model.INPUT_KEY_PITCH_TYPE
+            == self.key_sequence_model.OUTPUT_PITCH_TYPE
+        ), "KTM input key pitch type does not match KSM output pitch type"
+        assert (
+            self.key_sequence_model.INPUT_KEY_PITCH_TYPE
+            == self.key_sequence_model.OUTPUT_PITCH_TYPE
+        ), "KSM input key pitch type does not match its own input pitch type"
+
+        # Output from ICM
+        assert (
+            self.initial_chord_model.PITCH_TYPE == self.chord_sequence_model.OUTPUT_PITCH_TYPE
+        ), "ICM pitch type does not match CSM output pitch type"
 
     def get_harmony(self, piece: Piece) -> State:
         """
@@ -331,6 +351,7 @@ class HarmonicInferenceModel:
             The top estimated state.
         """
         self.current_piece = piece
+        assert piece.DATA_TYPE == self.INPUT_TYPE, "Piece type doesn't match expected input type"
 
         self.debugger = DebugLogger(
             self.current_piece,
@@ -521,6 +542,7 @@ class HarmonicInferenceModel:
             ranges=[ranges],
             change_indices=[change_indices],
             dummy_targets=True,
+            **self.chord_classifier.get_dataset_kwargs(),
         )
         ccm_loader = DataLoader(
             ccm_dataset,
@@ -630,7 +652,7 @@ class HarmonicInferenceModel:
             if current_start != 0:
                 self.run_csm_batched(list(current_states))
 
-            to_check_for_key_change = []
+            to_check_for_key_change: List[State] = []
 
             # Initial branch on absolute chord symbol
             for state, range_data in itertools.product(
@@ -689,8 +711,8 @@ class HarmonicInferenceModel:
                 change_log_probs = np.log(change_probs)
 
             # Branch on key changes
-            to_csm_prior_states = []
-            to_ksm_states = []
+            to_csm_prior_states: List[State] = []
+            to_ksm_states: List[State] = []
             for change_prob, change_log_prob, no_change_log_prob, state in zip(
                 change_probs, change_log_probs, no_change_log_probs, to_check_for_key_change
             ):
@@ -730,6 +752,14 @@ class HarmonicInferenceModel:
             if current_start != 0 and logging.getLogger().isEnabledFor(logging.DEBUG):
                 self.debugger.debug_chord_sequence_priors(to_csm_prior_states)
 
+            # Get output vocabulary from ICM or CSM
+            if current_start == 0:
+                use_inversions = self.initial_chord_model.use_inversions
+                reduction = self.initial_chord_model.reduction
+            else:
+                use_inversions = self.chord_sequence_model.use_output_inversions
+                reduction = self.chord_sequence_model.output_reduction
+
             # Add CSM prior and add to beam (CSM is run at the start of each iteration)
             for state in to_csm_prior_states:
                 state.add_csm_prior(
@@ -738,6 +768,8 @@ class HarmonicInferenceModel:
                     self.onset_cache,
                     self.onset_level_cache,
                     self.LABELS,
+                    use_inversions,
+                    reduction,
                 )
 
                 # Add state to its beam, if it fits
@@ -786,9 +818,11 @@ class HarmonicInferenceModel:
             )
 
         # Generate KTM loader
+        reduce = ds.KeyTransitionDataset([], self.key_transition_model.get_dataset_kwargs()).reduce
         ktm_dataset = ds.HarmonicDataset()
         ktm_dataset.inputs = ktm_inputs
-        ktm_dataset.hidden_states = ktm_hidden_states
+        ktm_dataset.set_hidden_states(ktm_hidden_states)
+        ktm_dataset.reduce = reduce
         ktm_loader = DataLoader(
             ktm_dataset,
             batch_size=ds.KeyTransitionDataset.valid_batch_size,
@@ -857,10 +891,12 @@ class HarmonicInferenceModel:
             )
 
         # Generate KSM loader
-        ksm_dataset = ds.HarmonicDataset()
+        reduce = ds.KeySequenceDataset([], self.key_sequence_model.get_dataset_kwargs()).reduce
+        ksm_dataset = ds.HarmonicDataset([])
         ksm_dataset.inputs = ksm_inputs
-        ksm_dataset.hidden_states = ksm_hidden_states
+        ksm_dataset.set_hidden_states(ksm_hidden_states)
         ksm_dataset.input_lengths = [len(ksm_input) for ksm_input in ksm_inputs]
+        ksm_dataset.reduce = reduce
         ksm_dataset.targets = np.zeros(len(ksm_inputs))
         ksm_loader = DataLoader(
             ksm_dataset,
@@ -972,9 +1008,13 @@ class HarmonicInferenceModel:
             )
 
         # Generate CSM loader
-        csm_dataset = ds.HarmonicDataset()
+        reduce = ds.ChordTransitionDataset(
+            [], self.key_transition_model.get_dataset_kwargs()
+        ).reduce
+        csm_dataset = ds.HarmonicDataset([])
         csm_dataset.inputs = csm_inputs
-        csm_dataset.hidden_states = csm_hidden_states
+        csm_dataset.set_hidden_states(csm_hidden_states)
+        csm_dataset.reduce = reduce
         csm_loader = DataLoader(
             csm_dataset,
             batch_size=ds.ChordSequenceDataset.valid_batch_size,

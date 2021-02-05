@@ -1,5 +1,7 @@
+"""Create blocks of h5 data to use for training, validation, and testing."""
 import argparse
 import logging
+import os
 import pickle
 import sys
 from pathlib import Path
@@ -76,12 +78,13 @@ if __name__ == "__main__":
     ARGS.splits = [split / sum_splits for split in ARGS.splits]
 
     if ARGS.log is not sys.stderr:
+        os.makedirs(Path(ARGS.log).parent, exist_ok=True)
         logging.basicConfig(filename=ARGS.log, level=logging.INFO, filemode="w")
     files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(ARGS.input)
 
     if ARGS.seed is None:
         ARGS.seed = np.random.randint(0, 2 ** 32)
-        logging.info(f"Using seed {ARGS.seed}")
+        logging.info("Using seed %s", ARGS.seed)
 
     dataset_splits, split_ids, split_pieces = ds.get_dataset_splits(
         files_df[:5] if ARGS.debug else files_df,
@@ -92,6 +95,8 @@ if __name__ == "__main__":
         splits=ARGS.splits,
         seed=ARGS.seed,
     )
+
+    os.makedirs(Path(ARGS.output), exist_ok=True)
 
     for split, pieces in zip(SPLITS, split_pieces):
         if len(pieces) > 0:

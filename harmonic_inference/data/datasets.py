@@ -2,7 +2,7 @@
 import logging
 import shutil
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -10,7 +10,14 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 
 import h5py
-from harmonic_inference.data.piece import Key, Piece, ScorePiece
+from harmonic_inference.data.data_types import ChordType, PitchType
+from harmonic_inference.data.key import get_key_change_vector_length
+from harmonic_inference.data.piece import Piece, ScorePiece
+from harmonic_inference.data.vector_decoding import (
+    reduce_chord_one_hots,
+    reduce_chord_types,
+    remove_chord_inversions,
+)
 
 
 class HarmonicDataset(Dataset):
@@ -18,7 +25,14 @@ class HarmonicDataset(Dataset):
     The base dataset that all model-specific dataset objects will inherit from.
     """
 
-    def __init__(self, transform: Callable = None):
+    def __init__(
+        self,
+        transform: Callable = None,
+        pad_inputs: bool = True,
+        pad_targets: bool = True,
+        save_padded_input_lengths: bool = True,
+        save_padded_target_lengths: bool = True,
+    ):
         """
         Create a new base dataset.
 
@@ -26,11 +40,92 @@ class HarmonicDataset(Dataset):
         ----------
         transform : Callable
             A function to call on each returned data point.
+        pad_inputs : bool
+            Pad this datset's inputs (when calling self.pad()).
+        pad_targets : bool
+            Pad this dataset's targets (when calling self.pad()).
+        save_padded_input_lengths : bool
+            Save the returned lengths when padding inputs (when calling self.pad()).
+        save_padded_target_lengths : bool
+            Save the returned lengths when padding targets (when calling self.pad()).
         """
         self.h5_path = None
         self.padded = False
         self.in_ram = True
         self.transform = transform
+
+        self.inputs = None
+        self.input_lengths = None
+        self.max_input_length = None
+        self.pad_inputs = pad_inputs
+        self.save_padded_input_lengths = save_padded_input_lengths
+
+        self.targets = None
+        self.target_lengths = None
+        self.max_target_length = None
+        self.pad_targets = pad_targets
+        self.save_padded_target_lengths = save_padded_target_lengths
+
+        self.hidden_states = None
+
+    def finalize_data(self, data: Dict[str, np.array], item) -> Dict:
+        """
+        Finalize the given data return dict by adding the hidden states corresponding
+        to the given index (if hidden_states are loaded), and then transforming the
+        data with the Dataset's transform Callable.
+
+        Parameters
+        ----------
+        data : Dict[str, np.array]
+            The data dictionary.
+        item : int
+            The index (or other indexer) to load the correct hidden state.
+
+        Returns
+        -------
+        data : Dict
+            The given data, finalized with hidden states and transformed.
+        """
+        if self.hidden_states is not None:
+            data["hidden_states"] = (
+                self.hidden_states[0][:, item],
+                self.hidden_states[1][:, item],
+            )
+
+        self.reduce(data)
+
+        if self.transform:
+            data.update(
+                {
+                    key: self.transform(value)
+                    for key, value in data.items()
+                    if isinstance(value, np.ndarray)
+                }
+            )
+
+        return data
+
+    def reduce(self, data: Dict):
+        """
+        Reduce the given data in place.
+
+        Parameters
+        ----------
+        data : Dict
+            The data, created by the __getitem__(item) function, to be reduced with chord
+            type and inversion reductions. This default implementation does nothing.
+        """
+
+    def set_hidden_states(self, hidden_states: np.array):
+        """
+        Load hidden states into this Dataset object.
+
+        Parameters
+        ----------
+        hidden_states : np.array
+            The hidden states to load into this Dataset.
+        """
+        self.hidden_states = hidden_states
 
     def __len__(self) -> int:
         """
@@ -71,28 +166,25 @@ class HarmonicDataset(Dataset):
                     for key in ["inputs", "targets", "input_lengths", "target_lengths"]
                     if key in h5_file
                 }
+
         else:
             data = {"inputs": self.inputs[item]}
-            if hasattr(self, "targets"):
+
+            # During inference, we have no targets
+            if self.targets is not None:
                 data["targets"] = self.targets[item]
 
-            if hasattr(self, "hidden_states"):
-                data["hidden_states"] = (
-                    getattr(self, "hidden_states")[0][:, item],
-                    getattr(self, "hidden_states")[1][:, item],
-                )
-
-            if hasattr(self, "input_lengths"):
-                if not hasattr(self, "max_input_length"):
-                    self.max_input_length = max(self.input_lengths)
+            if self.input_lengths is not None:
+                if self.max_input_length is None:
+                    self.max_input_length = np.max(self.input_lengths)
                 padded_input = np.zeros(([self.max_input_length] + list(data["inputs"][0].shape)))
                 padded_input[: len(data["inputs"])] = data["inputs"]
                 data["inputs"] = padded_input
                 data["input_lengths"] = self.input_lengths[item]
 
-            if hasattr(self, "target_lengths"):
-                if not hasattr(self, "max_target_length"):
-                    self.max_target_length = max(self.target_lengths)
+            if self.target_lengths is not None:
+                if self.max_target_length is None:
+                    self.max_target_length = np.max(self.target_lengths)
                 padded_target = np.zeros(
                     ([self.max_target_length] + list(data["targets"][0].shape))
                 )
@@ -100,16 +192,7 @@ class HarmonicDataset(Dataset):
                 data["targets"] = padded_target
                 data["target_lengths"] = self.target_lengths[item]
 
-        if self.transform:
-            data.update(
-                {
-                    key: self.transform(value)
-                    for key, value in data.items()
-                    if isinstance(value, np.ndarray)
-                }
-            )
-
-        return data
+        return self.finalize_data(data, item)
 
     def pad(self):
         """
@@ -125,8 +208,19 @@ class HarmonicDataset(Dataset):
 
         This also sets self.padded to True.
         """
-        self.targets, self.target_lengths = pad_array(self.targets)
-        self.inputs, self.input_lengths = pad_array(self.inputs)
+        if self.padded:
+            return
+
+        if self.pad_targets:
+            self.targets, target_lengths = pad_array(self.targets)
+            if self.save_padded_target_lengths:
+                self.target_lengths = target_lengths
+
+        if self.pad_inputs:
+            self.inputs, input_lengths = pad_array(self.inputs)
+            if self.save_padded_input_lengths:
+                self.input_lengths = input_lengths
+
         self.padded = True
 
     def to_h5(self, h5_path: Union[str, Path], file_ids: Iterable[int] = None):
@@ -156,10 +250,8 @@ class HarmonicDataset(Dataset):
             try:
                 shutil.copy(self.h5_path, h5_path)
                 self.h5_path = h5_path
-            except BaseException as e:
-                logging.exception(
-                    f"Error copying existing h5 file {self.h5_path} to {h5_path}:\n{e}"
-                )
+            except OSError:
+                logging.exception("Error copying existing h5 file %s to %s", self.h5_path, h5_path)
             return
 
         h5_file = h5py.File(h5_path, "w")
@@ -171,9 +263,10 @@ class HarmonicDataset(Dataset):
             "target_lengths",
             "piece_lengths",
             "key_change_replacements",
+            "target_pitch_type",
         ]
         for key in keys:
-            if hasattr(self, key):
+            if hasattr(self, key) and getattr(self, key) is not None:
                 h5_file.create_dataset(key, data=np.array(getattr(self, key)), compression="gzip")
         if file_ids is not None:
             h5_file.create_dataset("file_ids", data=np.array(file_ids), compression="gzip")
@@ -193,7 +286,17 @@ class ChordTransitionDataset(HarmonicDataset):
     valid_batch_size = 64
     chunk_size = 64
 
-    def __init__(self, pieces: List[Piece], transform=None):
+    def __init__(self, pieces: List[Piece], transform: Callable = None):
+        """
+        Create a new Chord Transition Dataset from the given pieces.
+
+        Parameters
+        ----------
+        pieces : List[Piece]
+            The pieces to get the data from.
+        transform : Callable
+            A function to transform numpy arrays returned by __getitem__ by default.
+        """
         super().__init__(transform=transform)
         self.inputs = [
             np.vstack(
@@ -218,6 +321,9 @@ class ChordTransitionDataset(HarmonicDataset):
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
         self.target_lengths = np.array([len(target) for target in self.targets])
 
+        self.pad_targets = True
+        self.pad_inputs = True
+
 
 class ChordClassificationDataset(HarmonicDataset):
     """
@@ -238,10 +344,40 @@ class ChordClassificationDataset(HarmonicDataset):
         pieces: List[Piece],
         transform: Callable = None,
         ranges: List[List[Tuple[int, int]]] = None,
-        change_indices: List[int] = None,
+        change_indices: List[List[int]] = None,
         dummy_targets: bool = False,
+        reduction: Dict[ChordType, ChordType] = None,
+        use_inversions: bool = True,
     ):
-        super().__init__(transform=transform)
+        """
+        Create a new chord classification dataset from the given pieces.
+
+        Parameters
+        ----------
+        pieces : List[Piece]
+            The pieces to get the data from.
+        transform : Callable
+            A function to transform numpy arrays returned by __getitem__ by default.
+        ranges : List[List[Tuple[int, int]]]
+            Custom chord ranges to use, if not using the default ones from each piece.
+            This should be a list of tuple [start, stop) ranges for each piece.
+        change_indices : List[List[int]]
+            Custom change indices to use, if not using the default ones from each piece.
+            This should be a list of chord change indices for each piece.
+        dummy_targets : bool
+            True to store all zeros for targets. False to get targets from each piece.
+        reduction : Dict[ChordType, ChordType]
+            A reduction to apply to target chords when returning data with __getitem__.
+            These are not applied when the data is loaded, but only when it is returned.
+            So it is safe to change this after initialization.
+        use_inversions : bool
+            True to use inversions for target chords when returning data with __getitem__.
+            False to reduce all chords to root position. This is not applied when the data
+            is loaded, but only when it is returned. So it is safe to change this after
+            initialization.
+        """
+        super().__init__(transform=transform, pad_targets=False)
+        self.target_pitch_type = []
 
         if ranges is None:
             ranges = np.full(len(pieces), None)
@@ -269,9 +405,25 @@ class ChordClassificationDataset(HarmonicDataset):
                 ]
             )
 
-    def pad(self):
-        self.inputs, self.input_lengths = pad_array(self.inputs)
-        self.padded = True
+            if len(pieces) > 0 and len(pieces[0].get_chords()) > 0:
+                self.target_pitch_type = [pieces[0].get_chords()[0].pitch_type.value]
+
+        self.dummy_targets = dummy_targets
+        self.reduction = reduction
+        self.use_inversions = use_inversions
+
+    def reduce(self, data: Dict):
+        if not self.dummy_targets:
+            data["targets"] = reduce_chord_one_hots(
+                data["targets"],
+                False,
+                PitchType(self.target_pitch_type[0]),
+                inversions_present=True,
+                reduction_present=None,
+                relative=False,
+                reduction=self.reduction,
+                use_inversions=self.use_inversions,
+            )[0]
 
 
 class ChordSequenceDataset(HarmonicDataset):
@@ -294,20 +446,58 @@ class ChordSequenceDataset(HarmonicDataset):
     valid_batch_size = 64
     chunk_size = 256
 
-    def __init__(self, pieces: List[Piece], transform=None):
+    def __init__(
+        self,
+        pieces: List[Piece],
+        transform: Callable = None,
+        input_reduction: Dict[ChordType, ChordType] = None,
+        output_reduction: Dict[ChordType, ChordType] = None,
+        use_inversions_input: bool = True,
+        use_inversions_output: bool = True,
+    ):
+        """
+        Create a chord sequence dataset from the given pieces.
+
+        Parameters
+        ----------
+        pieces : List[Piece]
+            The pieces to get the data from.
+        transform : Callable
+            A function to transform numpy arrays returned by __getitem__ by default.
+        input_reduction : Dict[ChordType, ChordType]
+            A chord type reduction to apply to the input chords when returning data with
+            __getitem__. This is not applied when the data is loaded, but only when it is
+            returned. So it is safe to change this after initialization.
+        output_reduction : Dict[ChordType, ChordType]
+            A chord type reduction to apply to the target chords when returning data with
+            __getitem__. This is not applied when the data is loaded, but only when it is
+            returned. So it is safe to change this after initialization.
+        use_inversions_input : bool
+            True to use input inversions when returning data with __getitem__. False to reduce
+            all input chords to root position. This is not applied when the data is loaded, but
+            only when it is returned. So it is safe to change this after initialization.
+        use_inversions_output : bool
+            True to use target inversions when returning data with __getitem__. False to reduce
+            all target chords to root position. This is not applied when the data is loaded, but
+            only when it is returned. So it is safe to change this after initialization.
+        """
         super().__init__(transform=transform)
         self.inputs = []
         self.targets = []
+        self.target_pitch_type = []
 
         for piece in pieces:
             piece_input = []
             chords = piece.get_chords()
             key_changes = piece.get_key_change_indices()
             keys = piece.get_keys()
-            key_vector_length = 1 + Key.get_key_change_vector_length(
+            key_vector_length = 1 + get_key_change_vector_length(
                 keys[0].tonic_type,
                 one_hot=False,
             )
+
+            if len(chords) > 0:
+                self.target_pitch_type = [chords[0].pitch_type.value]
 
             for prev_key, key, start, end in zip(
                 [None] + list(keys[:-1]), keys, key_changes, list(key_changes[1:]) + [len(chords)]
@@ -333,6 +523,27 @@ class ChordSequenceDataset(HarmonicDataset):
         self.target_lengths = np.array([len(target) for target in self.targets])
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
 
+        self.input_reduction = input_reduction
+        self.output_reduction = output_reduction
+        self.use_inversions_input = use_inversions_input
+        self.use_inversions_output = use_inversions_output
+
+    def reduce(self, data: Dict):
+        reduce_chord_types(data["inputs"], self.input_reduction, pad=False)
+        if not self.use_inversions_input:
+            remove_chord_inversions(data["inputs"], pad=False)
+
+        data["targets"] = reduce_chord_one_hots(
+            data["targets"],
+            False,
+            PitchType(self.target_pitch_type[0]),
+            inversions_present=True,
+            reduction_present=None,
+            relative=True,
+            reduction=self.output_reduction,
+            use_inversions=self.use_inversions_output,
+        )
+
 
 class KeyHarmonicDataset(HarmonicDataset):
     """
@@ -341,12 +552,35 @@ class KeyHarmonicDataset(HarmonicDataset):
     method.
     """
 
-    def __init__(self, transform: Callable = None):
-        super().__init__(transform=transform)
+    def __init__(
+        self,
+        transform: Callable = None,
+        reduction: Dict[ChordType, ChordType] = None,
+        use_inversions: bool = True,
+    ):
+        """
+        A base class for for key sequence and key transition datasets.
 
-    def pad(self):
-        self.inputs, _ = pad_array(self.inputs)
-        self.padded = True
+        Parameters
+        ----------
+        transform : Callable
+            A function to transform numpy arrays returned by __getitem__ by default.
+        reduction : Dict[ChordType, ChordType]
+            A reduction to apply to the input chord vectors when returning data with
+            __getitem__. These are not applied when the data is loaded, but only when
+            it is returned. So it is safe to change this after initialization.
+        use_inversions : bool
+            True to use inversions in the input chord vectors when returning data with
+            __getitem__. False to reduce all chords to root position. This is not
+            applied when the data is loaded, but only when it is returned. So it is
+            safe to change this after initialization.
+        """
+        super().__init__(transform=transform, pad_targets=False, save_padded_input_lengths=False)
+        self.reduction = reduction
+        self.use_inversions = use_inversions
+
+        self.piece_lengths = []
+        self.key_change_replacements = []
 
     def __len__(self) -> int:
         if not self.in_ram:
@@ -384,6 +618,7 @@ class KeyHarmonicDataset(HarmonicDataset):
             raise ValueError(f"Invalid item {item} requested for dataset of length {len(self)}")
 
         piece_idx, prev_in_piece = get_piece_index(item)
+
         if not self.in_ram:
             assert self.h5_path is not None, "Data must be either in ram or in an h5_file."
             with h5py.File(self.h5_path, "r") as h5_file:
@@ -397,7 +632,7 @@ class KeyHarmonicDataset(HarmonicDataset):
             piece_input = self.inputs[piece_idx]
             input_length = self.input_lengths[item]
             start_index = self.input_lengths[item - 1] if prev_in_piece else 0
-            if not hasattr(self, "max_input_length"):
+            if self.max_input_length is None:
                 self.max_input_length = np.max(self.input_lengths)
             key_change_replacement = self.key_change_replacements[item]
             target = self.targets[item]
@@ -427,22 +662,12 @@ class KeyHarmonicDataset(HarmonicDataset):
             "input_lengths": input_length,
         }
 
-        if hasattr(self, "hidden_states"):
-            data["hidden_states"] = (
-                getattr(self, "hidden_states")[0][:, item],
-                getattr(self, "hidden_states")[1][:, item],
-            )
+        return self.finalize_data(data, item)
 
-        if self.transform:
-            data.update(
-                {
-                    key: self.transform(value)
-                    for key, value in data.items()
-                    if isinstance(value, np.ndarray)
-                }
-            )
-
-        return data
+    def reduce(self, data: Dict):
+        reduce_chord_types(data["inputs"], self.reduction, pad=True)
+        if not self.use_inversions:
+            remove_chord_inversions(data["inputs"], pad=True)
 
 
 class KeyTransitionDataset(KeyHarmonicDataset):
@@ -462,8 +687,33 @@ class KeyTransitionDataset(KeyHarmonicDataset):
     valid_batch_size = 64
     chunk_size = 256
 
-    def __init__(self, pieces: List[Piece], transform=None):
-        super().__init__(transform=transform)
+    def __init__(
+        self,
+        pieces: List[Piece],
+        transform: Callable = None,
+        reduction: Dict[ChordType, ChordType] = None,
+        use_inversions: bool = True,
+    ):
+        """
+        Create a key transition dataset from the given pieces.
+
+        Parameters
+        ----------
+        pieces : List[Piece]
+            The pieces to get the data from.
+        transform : Callable
+            A function to transform numpy arrays returned by __getitem__ by default.
+        reduction : Dict[ChordType, ChordType]
+            A reduction to apply to the input chord vectors when returning data with
+            __getitem__. These are not applied when the data is loaded, but only when
+            it is returned. So it is safe to change this after initialization.
+        use_inversions : bool
+            True to use inversions in the input chord vectors when returning data with
+            __getitem__. False to reduce all chords to root position. This is not
+            applied when the data is loaded, but only when it is returned. So it is
+            safe to change this after initialization.
+        """
+        super().__init__(transform=transform, reduction=reduction, use_inversions=use_inversions)
         self.inputs = []
         self.targets = []
 
@@ -476,7 +726,7 @@ class KeyTransitionDataset(KeyHarmonicDataset):
             chords = piece.get_chords()
             key_changes = piece.get_key_change_indices()
             keys = piece.get_keys()
-            key_vector_length = 1 + Key.get_key_change_vector_length(
+            key_vector_length = 1 + get_key_change_vector_length(
                 keys[0].tonic_type,
                 one_hot=False,
             )
@@ -535,8 +785,33 @@ class KeySequenceDataset(KeyHarmonicDataset):
     valid_batch_size = 64
     chunk_size = 256
 
-    def __init__(self, pieces: List[Piece], transform=None):
-        super().__init__(transform=transform)
+    def __init__(
+        self,
+        pieces: List[Piece],
+        transform: Callable = None,
+        reduction: Dict[ChordType, ChordType] = None,
+        use_inversions: bool = True,
+    ):
+        """
+        Create a key transition dataset from the given pieces.
+
+        Parameters
+        ----------
+        pieces : List[Piece]
+            The pieces to get the data from.
+        transform : Callable
+            A function to transform numpy arrays returned by __getitem__ by default.
+        reduction : Dict[ChordType, ChordType]
+            A reduction to apply to the input chord vectors when returning data with
+            __getitem__. These are not applied when the data is loaded, but only when
+            it is returned. So it is safe to change this after initialization.
+        use_inversions : bool
+            True to use inversions in the input chord vectors when returning data with
+            __getitem__. False to reduce all chords to root position. This is not
+            applied when the data is loaded, but only when it is returned. So it is
+            safe to change this after initialization.
+        """
+        super().__init__(transform=transform, reduction=reduction, use_inversions=use_inversions)
         self.inputs = []
         self.targets = []
 
@@ -549,7 +824,7 @@ class KeySequenceDataset(KeyHarmonicDataset):
             chords = piece.get_chords()
             key_changes = piece.get_key_change_indices()
             keys = piece.get_keys()
-            key_vector_length = 1 + Key.get_key_change_vector_length(
+            key_vector_length = 1 + get_key_change_vector_length(
                 keys[0].tonic_type,
                 one_hot=False,
             )
@@ -590,7 +865,10 @@ class KeySequenceDataset(KeyHarmonicDataset):
 
 
 def h5_to_dataset(
-    h5_path: Union[str, Path], dataset_class: HarmonicDataset, transform: Callable = None
+    h5_path: Union[str, Path],
+    dataset_class: HarmonicDataset,
+    transform: Callable = None,
+    dataset_kwargs: Dict[str, Any] = None,
 ) -> HarmonicDataset:
     """
     Load a harmonic dataset object from an h5 file into the given HarmonicDataset subclass.
@@ -604,6 +882,8 @@ def h5_to_dataset(
     transform : Callable
         A function to pass each element of the dataset's returned data dicts to. For example,
         torch.from_numpy().
+    dataset_kwargs : Dict[str, Any]
+        Keyword arguments to pass to the dataset.init() call.
 
     Returns
     -------
@@ -611,60 +891,51 @@ def h5_to_dataset(
         A HarmonicDataset of the given class, loaded with inputs and targets from the given
         h5 file.
     """
-    dataset = dataset_class([], transform=transform)
+    if dataset_kwargs is None:
+        dataset_kwargs = {}
+
+    dataset = dataset_class([], transform=transform, **dataset_kwargs)
 
     with h5py.File(h5_path, "r") as h5_file:
-        assert "inputs" in h5_file
-        assert "targets" in h5_file
+        assert "inputs" in h5_file, f"{h5_file} must have a dataset called inputs"
+        assert "targets" in h5_file, f"{h5_file} must have a dataset called targets"
         dataset.h5_path = h5_path
         dataset.padded = False
         dataset.in_ram = False
         chunk_size = dataset.chunk_size
 
         try:
-            if "input_lengths" in h5_file:
-                dataset.input_lengths = np.array(h5_file["input_lengths"])
-                dataset.inputs = []
-                for chunk_start in tqdm(
-                    range(0, len(dataset.input_lengths), chunk_size),
-                    desc=f"Loading input chunks from {h5_path}",
-                ):
-                    input_chunk = h5_file["inputs"][chunk_start : chunk_start + chunk_size]
-                    chunk_lengths = dataset.input_lengths[chunk_start : chunk_start + chunk_size]
-                    dataset.inputs.extend(
-                        [
-                            np.array(item[:length], dtype=np.float16)
-                            for item, length in zip(input_chunk, chunk_lengths)
-                        ]
-                    )
-            else:
-                dataset.inputs = np.array(h5_file["inputs"], dtype=np.float16)
+            for data in ["input", "target"]:
+                if f"{data}_lengths" in h5_file:
+                    lengths = np.array(h5_file[f"{data}_lengths"])
+                    data_list = []
 
-            if "target_lengths" in h5_file:
-                dataset.target_lengths = np.array(h5_file["target_lengths"])
-                dataset.targets = []
-                for chunk_start in tqdm(
-                    range(0, len(dataset.target_lengths), chunk_size),
-                    desc=f"Loading target chunks from {h5_path}",
-                ):
-                    target_chunk = h5_file["targets"][chunk_start : chunk_start + chunk_size]
-                    chunk_lengths = dataset.target_lengths[chunk_start : chunk_start + chunk_size]
-                    dataset.targets.extend(
-                        [
-                            np.array(item[:length], dtype=np.float16)
-                            for item, length in zip(target_chunk, chunk_lengths)
-                        ]
-                    )
-            else:
-                dataset.targets = np.array(h5_file["targets"], dtype=np.float16)
+                    for chunk_start in tqdm(
+                        range(0, len(lengths), chunk_size),
+                        desc=f"Loading {data} chunks from {h5_path}",
+                    ):
+                        chunk = h5_file[f"{data}s"][chunk_start : chunk_start + chunk_size]
+                        chunk_lengths = lengths[chunk_start : chunk_start + chunk_size]
+                        data_list.extend(
+                            [
+                                np.array(item[:length], dtype=np.float16)
+                                for item, length in zip(chunk, chunk_lengths)
+                            ]
+                        )
 
-            for key in ["piece_lengths", "key_change_replacements"]:
+                    setattr(dataset, f"{data}_lengths", lengths)
+                    setattr(dataset, f"{data}s", data_list)
+
+                else:
+                    setattr(dataset, f"{data}s", np.array(h5_file[f"{data}s"], dtype=np.float16))
+
+            for key in ["piece_lengths", "key_change_replacements", "target_pitch_type"]:
                 if key in h5_file:
                     setattr(dataset, key, np.array(h5_file[key]))
 
             dataset.in_ram = True
 
-        except Exception:
+        except MemoryError:
             logging.exception("Dataset too large to fit into RAM. Reading from h5 file.")
             dataset.padded = True
 
@@ -710,7 +981,7 @@ def get_split_file_ids_and_pieces(
     measures: pd.DataFrame,
     chords: pd.DataFrame,
     notes: pd.DataFrame,
-    splits: Iterable[float] = [0.8, 0.1, 0.1],
+    splits: Iterable[float] = (0.8, 0.1, 0.1),
     seed: int = None,
 ) -> Tuple[Iterable[Iterable[int]], Iterable[Piece]]:
     """
@@ -751,7 +1022,7 @@ def get_split_file_ids_and_pieces(
 
     for i in tqdm(files.index):
         file_name = f"{files.loc[i].corpus_name}/{files.loc[i].file_name}"
-        logging.info(f"Parsing {file_name} (id {i})")
+        logging.info("Parsing %s (id %s)", file_name, i)
 
         dfs = [chords, measures, notes]
         names = ["chords", "measures", "notes"]
@@ -760,15 +1031,15 @@ def get_split_file_ids_and_pieces(
         if not all(exists):
             for exist, name in zip(exists, names):
                 if not exist:
-                    logging.warning(f"{name}_df does not contain {file_name} data (id {i}).")
+                    logging.warning("%s_df does not contain %s data (id %s).", name, file_name, i)
             continue
 
         try:
             piece = ScorePiece(notes.loc[i], chords.loc[i], measures.loc[i])
             pieces.append(piece)
             df_indexes.append(i)
-        except Exception as e:
-            logging.exception(f"Error parsing index {i}: {e}")
+        except Exception:
+            logging.exception("Error parsing index %s", i)
             continue
 
     # Shuffle the pieces and the df_indexes the same way
@@ -805,7 +1076,7 @@ def get_dataset_splits(
     chords: pd.DataFrame,
     notes: pd.DataFrame,
     datasets: Iterable[HarmonicDataset],
-    splits: Iterable[float] = [0.8, 0.1, 0.1],
+    splits: Iterable[float] = (0.8, 0.1, 0.1),
     seed: int = None,
 ) -> Tuple[List[List[HarmonicDataset]], List[List[int]], List[List[Piece]]]:
     """
@@ -854,8 +1125,9 @@ def get_dataset_splits(
     for split_index, (split_prop, pieces) in enumerate(zip(splits, split_pieces)):
         if len(pieces) == 0:
             logging.warning(
-                f"Split {split_index} with prop {split_prop} contains no pieces. Returning None "
-                "for those."
+                "Split %s with prop %s contains no pieces. Returning None for those.",
+                split_index,
+                split_prop,
             )
             continue
 

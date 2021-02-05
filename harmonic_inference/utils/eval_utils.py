@@ -7,7 +7,6 @@ from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
-from ms3 import Parse
 
 import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.data.data_types import (
@@ -19,6 +18,104 @@ from harmonic_inference.data.data_types import (
 )
 from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import State
+from ms3 import Parse
+
+
+def get_results_df(
+    piece: Piece,
+    state: State,
+    output_root_type: PitchType,
+    output_tonic_type: PitchType,
+    chord_root_type: PitchType,
+    key_tonic_type: PitchType,
+) -> pd.DataFrame:
+    """
+    Evaluate the piece's estimated chords.
+
+    Parameters
+    ----------
+    piece : Piece
+        The piece, containing the ground truth harmonic structure.
+    state : State
+        The state, containing the estimated harmonic structure.
+    chord_root_type : PitchType
+        The pitch type used for chord roots.
+    key_tonic_type : PitchType
+        The pitch type used for key tonics.
+
+    Returns
+    -------
+    results_df : pd.DataFrame
+        A DataFrame containing the results of the given state, with the given settings.
+    """
+    labels_list = []
+
+    gt_chords = piece.get_chords()
+    gt_changes = piece.get_chord_change_indices()
+    gt_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
+        chord = chord.to_pitch_type(chord_root_type)
+        gt_chord_labels[start:end] = chord.get_one_hot_index(
+            relative=False, use_inversion=True, pad=False
+        )
+    gt_chord_labels[gt_changes[-1] :] = (
+        gt_chords[-1]
+        .to_pitch_type(chord_root_type)
+        .get_one_hot_index(relative=False, use_inversion=True, pad=False)
+    )
+
+    chords, changes = state.get_chords()
+    estimated_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    for chord, start, end in zip(chords, changes[:-1], changes[1:]):
+        root, chord_type, inv = hu.get_chord_from_one_hot_index(chord, output_root_type)
+        root = hu.get_pitch_from_string(
+            hu.get_pitch_string(root, output_root_type), chord_root_type
+        )
+        chord = hu.get_chord_one_hot_index(chord_type, root, chord_root_type, inversion=inv)
+        estimated_chord_labels[start:end] = chord
+
+    gt_keys = piece.get_keys()
+    gt_changes = piece.get_key_change_input_indices()
+    gt_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    for key, start, end in zip(gt_keys, gt_changes, gt_changes[1:]):
+        key = key.to_pitch_type(key_tonic_type)
+        gt_key_labels[start:end] = key.get_one_hot_index()
+    gt_key_labels[gt_changes[-1] :] = gt_keys[-1].to_pitch_type(key_tonic_type).get_one_hot_index()
+
+    keys, changes = state.get_keys()
+    estimated_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    for key, start, end in zip(keys, changes[:-1], changes[1:]):
+        tonic, mode = hu.get_key_from_one_hot_index(key, output_tonic_type)
+        tonic = hu.get_pitch_from_string(
+            hu.get_pitch_string(tonic, output_tonic_type), key_tonic_type
+        )
+        key = hu.get_key_one_hot_index(mode, tonic, key_tonic_type)
+        estimated_key_labels[start:end] = key
+
+    chord_label_list = hu.get_chord_label_list(chord_root_type, use_inversions=True)
+    key_label_list = hu.get_key_label_list(key_tonic_type)
+
+    for duration, est_chord_label, gt_chord_label, est_key_label, gt_key_label in zip(
+        piece.get_duration_cache(),
+        estimated_chord_labels,
+        gt_chord_labels,
+        estimated_key_labels,
+        gt_key_labels,
+    ):
+        if duration == 0:
+            continue
+
+        labels_list.append(
+            {
+                "gt_key": key_label_list[gt_key_label],
+                "gt_chord": chord_label_list[gt_chord_label],
+                "est_key": key_label_list[est_key_label],
+                "est_chord": chord_label_list[est_chord_label],
+                "duration": duration,
+            }
+        )
+
+    return pd.DataFrame(labels_list)
 
 
 def evaluate_chords(

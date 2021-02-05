@@ -11,6 +11,11 @@ class PieceType(Enum):
     MIDI = 1
     AUDIO = 2
 
+    def __lt__(self, other):
+        if not isinstance(other, PieceType):
+            raise NotImplementedError()
+        return self.value < other.value
+
 
 class PitchType(Enum):
     """
@@ -21,6 +26,11 @@ class PitchType(Enum):
     TPC = 0
     MIDI = 1
 
+    def __lt__(self, other):
+        if not isinstance(other, PitchType):
+            raise NotImplementedError()
+        return self.value < other.value
+
 
 class KeyMode(Enum):
     """
@@ -29,6 +39,11 @@ class KeyMode(Enum):
 
     MAJOR = 0
     MINOR = 1
+
+    def __lt__(self, other):
+        if not isinstance(other, KeyMode):
+            raise NotImplementedError()
+        return self.value < other.value
 
 
 class ChordType(Enum):
@@ -48,6 +63,11 @@ class ChordType(Enum):
     HALF_DIM7 = 9
     AUG_MIN7 = 10
     AUG_MAJ7 = 11
+
+    def __lt__(self, other):
+        if not isinstance(other, ChordType):
+            raise NotImplementedError()
+        return self.value < other.value
 
 
 NO_REDUCTION = {chord_type: chord_type for chord_type in ChordType}

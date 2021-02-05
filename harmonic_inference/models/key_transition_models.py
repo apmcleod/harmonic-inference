@@ -1,5 +1,6 @@
 """Models that output the probability of a key change occurring on a given input."""
-from typing import Tuple
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Tuple
 
 import torch
 import torch.nn as nn
@@ -10,31 +11,65 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import pytorch_lightning as pl
-from harmonic_inference.data.data_types import PitchType
+from harmonic_inference.data.chord import get_chord_vector_length
+from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.datasets import KeyTransitionDataset
-from harmonic_inference.data.piece import Chord, Key
+from harmonic_inference.data.key import get_key_change_vector_length
 
 
-class KeyTransitionModel(pl.LightningModule):
+class KeyTransitionModel(pl.LightningModule, ABC):
     """
     The base class for all Key Transition Models which model when a key change will occur.
     """
 
-    def __init__(self, input_type: PitchType, learning_rate: float):
+    def __init__(
+        self,
+        input_chord_pitch_type: PitchType,
+        input_key_pitch_type: PitchType,
+        use_inversions: bool,
+        reduction: Dict[ChordType, ChordType],
+        learning_rate: float,
+    ):
         """
-        Create a new base model.
+        Create a new base KeySequenceModel with the given output and input data types.
 
         Parameters
         ----------
-        input_type : PitchType
-            What type of input the model is expecting in get_change_prob(input_data).
+        input_chord_pitch_type : PitchType
+            The pitch representation used in the input chord data.
+        input_key_pitch_type : PitchType
+            The pitch representation used in the input key data.
+        use_inversions : bool
+            True to use inversions in the input vectors. False otherwise.
+        reduction : Dict[ChordType, ChordType]
+            The reduction to use for chord types.
         learning_rate : float
             The learning rate.
         """
         super().__init__()
-        # pylint: disable=invalid-name
-        self.INPUT_TYPE = input_type
+        self.INPUT_CHORD_PITCH_TYPE = input_chord_pitch_type
+        self.INPUT_KEY_PITCH_TYPE = input_key_pitch_type
+
+        self.reduction = reduction
+        self.use_inversions = use_inversions
+
         self.lr = learning_rate
+
+    def get_dataset_kwargs(self) -> Dict[str, Any]:
+        """
+        Get a kwargs dict that can be used to create a dataset for this model with
+        the correct parameters.
+
+        Returns
+        -------
+        dataset_kwargs : Dict[str, Any]
+            A keyword args dict that can be used to create a dataset for this model with
+            the correct parameters.
+        """
+        return {
+            "reduction": self.reduction,
+            "use_inversions": self.use_inversions,
+        }
 
     def get_data_from_batch(self, batch):
         inputs = batch["inputs"].float()
@@ -107,8 +142,21 @@ class KeyTransitionModel(pl.LightningModule):
             "loss": (total_loss / total).item(),
         }
 
-    def init_hidden(self, batch_size: int):
-        # Subclasses should implement this
+    @abstractmethod
+    def init_hidden(self, batch_size: int) -> Tuple[Variable, ...]:
+        """
+        Get initial hidden layers for this model.
+
+        Parameters
+        ----------
+        batch_size : int
+            The batch size to initialize hidden layers for.
+
+        Returns
+        -------
+        hidden : Tuple[Variable, ...]
+            A tuple of initialized hidden layers.
+        """
         raise NotImplementedError()
 
     def run_one_step(self, batch):
@@ -142,21 +190,26 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
 
     def __init__(
         self,
-        input_type: PitchType,
+        input_chord_pitch_type: PitchType,
+        input_key_pitch_type: PitchType,
         embed_dim: int = 128,
         lstm_layers: int = 1,
         lstm_hidden_dim: int = 128,
         hidden_dim: int = 64,
         dropout: float = 0.0,
         learning_rate: float = 0.001,
+        use_inversions: bool = True,
+        reduction: Dict[ChordType, ChordType] = None,
     ):
         """
         Create a new simple key transition model.
 
         Parameters
         ----------
-        input_type : PitchType
-            The type of input data for this model.
+        input_chord_pitch_type : PitchType
+            The pitch representation used in the input chord data.
+        input_key_pitch_type : PitchType
+            The pitch representation used in the input key data.
         embed_dim : int
             The size of the input embedding.
         lstm_layers : int
@@ -169,20 +222,31 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
             The dropout proportion.
         learning_rate : float
             The learning rate.
+        use_inversions : bool
+            True to use inversions in the input vectors. False otherwise.
+        reduction : Dict[ChordType, ChordType]
+            The reduction to use for chord types.
         """
-        super().__init__(input_type, learning_rate)
+        super().__init__(
+            input_chord_pitch_type,
+            input_key_pitch_type,
+            use_inversions,
+            reduction,
+            learning_rate,
+        )
         self.save_hyperparameters()
 
         # Input derived from input type
         self.input_dim = (
-            Chord.get_chord_vector_length(
-                input_type,
+            get_chord_vector_length(
+                input_chord_pitch_type,
                 one_hot=False,
                 relative=True,
-                use_inversions=True,
+                use_inversions=use_inversions,
                 pad=True,
+                reduction=reduction,
             )
-            + Key.get_key_change_vector_length(input_type, one_hot=False)
+            + get_key_change_vector_length(input_key_pitch_type, one_hot=False)
             + 1
         )
 

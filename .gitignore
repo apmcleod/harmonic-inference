@@ -1,6 +1,8 @@
 **/__pycache__
 **/.ipynb_checkpoints
 checkpoints/**
+model_jsons/**
+*.old/**
 .idea/**
 data/**
 h5_data/**
@@ -14,3 +16,4 @@ harmonic_inference.egg-info/**
 .pylintrc
 ML_course_data/**
 output*/**
+results*/**

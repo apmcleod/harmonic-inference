@@ -1,19 +1,16 @@
+"""Script to train any of the different models for harmonic inference."""
 import argparse
-import json
 import logging
 import os
 import pickle
 import sys
 from pathlib import Path
 
-import h5py
-import pytorch_lightning as pl
 import torch
-from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
-from pytorch_lightning.profiler import AdvancedProfiler
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+import h5py
 import harmonic_inference.data.datasets as ds
 import harmonic_inference.models.chord_classifier_models as ccm
 import harmonic_inference.models.chord_sequence_models as csm
@@ -21,10 +18,14 @@ import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
+import pytorch_lightning as pl
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 from harmonic_inference.data.data_types import PieceType, PitchType
 from harmonic_inference.data.piece import ScorePiece
 from harmonic_inference.models.joint_model import MODEL_CLASSES
+from harmonic_inference.utils.data_utils import load_kwargs_from_json
+from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
+from pytorch_lightning.profiler import AdvancedProfiler
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -74,6 +75,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--threads",
+        default=None,
+        type=int,
+        help="The number of pytorch cpu threads to create.",
+    )
+
+    parser.add_argument(
         "--profile",
         action="store_true",
         help="Run a profiler during training. The results are saved to "
@@ -106,45 +114,65 @@ if __name__ == "__main__":
 
     if ARGS.checkpoint == DEFAULT_CHECKPOINT_PATH:
         ARGS.checkpoint = os.path.join("checkpoints", ARGS.model)
-        os.makedirs(ARGS.checkpoint, exist_ok=True)
 
-    if ARGS.model_kwargs is None:
-        kwargs = {}
-    else:
-        with open(ARGS.model_kwargs, "r") as json_file:
-            kwargs = json.load(json_file)
+    os.makedirs(ARGS.checkpoint, exist_ok=True)
+
+    kwargs = load_kwargs_from_json(ARGS.model_kwargs)
 
     if ARGS.model == "ccm":
         model = ccm.SimpleChordClassifier(
             PieceType.SCORE,
             PitchType.TPC,
-            use_inversions=True,
+            PitchType.TPC,
             learning_rate=ARGS.lr,
+            **kwargs,
         )
         dataset = ds.ChordClassificationDataset
+
     elif ARGS.model == "ctm":
-        model = ctm.SimpleChordTransitionModel(PieceType.SCORE, learning_rate=ARGS.lr, **kwargs)
+        model = ctm.SimpleChordTransitionModel(
+            PieceType.SCORE,
+            PitchType.TPC,
+            learning_rate=ARGS.lr,
+            **kwargs,
+        )
         dataset = ds.ChordTransitionDataset
+
     elif ARGS.model == "csm":
-        model = csm.SimpleChordSequenceModel(PitchType.TPC, learning_rate=ARGS.lr, **kwargs)
+        model = csm.SimpleChordSequenceModel(
+            PitchType.TPC,
+            PitchType.TPC,
+            PitchType.TPC,
+            learning_rate=ARGS.lr,
+            **kwargs,
+        )
         dataset = ds.ChordSequenceDataset
+
     elif ARGS.model == "ktm":
-        model = ktm.SimpleKeyTransitionModel(PitchType.TPC, learning_rate=ARGS.lr, **kwargs)
+        model = ktm.SimpleKeyTransitionModel(
+            PitchType.TPC,
+            PitchType.TPC,
+            learning_rate=ARGS.lr,
+            **kwargs,
+        )
         dataset = ds.KeyTransitionDataset
+
     elif ARGS.model == "ksm":
         model = ksm.SimpleKeySequenceModel(
+            PitchType.TPC,
             PitchType.TPC,
             PitchType.TPC,
             learning_rate=ARGS.lr,
             **kwargs,
         )
         dataset = ds.KeySequenceDataset
+
     elif ARGS.model == "icm":
         # Load training data for ctm, just to get file_ids
         h5_path = Path(ARGS.h5_dir / f"ChordTransitionDataset_train_seed_{ARGS.seed}.h5")
         with h5py.File(h5_path, "r") as h5_file:
             if "file_ids" not in h5_file:
-                logging.error(f"file_ids not found in {h5_path}. Re-create with create_h5_data.py")
+                logging.error("file_ids not found in %s. Re-create with create_h5_data.py", h5_path)
                 sys.exit(1)
 
             file_ids = list(h5_file["file_ids"])
@@ -173,23 +201,35 @@ if __name__ == "__main__":
                 )
 
         chords = [piece.get_chords()[0] for piece in pieces]
-        icm.SimpleInitialChordModel.train(
+        icm.train_icm(
             chords,
             os.path.join(ARGS.checkpoint, "initial_chord_prior.json"),
-            use_inversions=True,
             add_n_smoothing=1.0,
         )
         sys.exit(0)
 
     else:
-        logging.error(f"Invalid model: {ARGS.model}")
+        logging.error("Invalid model: %s", ARGS.model)
         sys.exit(1)
+
+    if ARGS.threads is not None:
+        torch.set_num_threads(ARGS.threads)
 
     h5_path_train = Path(ARGS.h5_dir / f"{dataset.__name__}_train_seed_{ARGS.seed}.h5")
     h5_path_valid = Path(ARGS.h5_dir / f"{dataset.__name__}_valid_seed_{ARGS.seed}.h5")
 
-    dataset_train = ds.h5_to_dataset(h5_path_train, dataset, transform=torch.from_numpy)
-    dataset_valid = ds.h5_to_dataset(h5_path_valid, dataset, transform=torch.from_numpy)
+    dataset_train = ds.h5_to_dataset(
+        h5_path_train,
+        dataset,
+        transform=torch.from_numpy,
+        dataset_kwargs=model.get_dataset_kwargs(),
+    )
+    dataset_valid = ds.h5_to_dataset(
+        h5_path_valid,
+        dataset,
+        transform=torch.from_numpy,
+        dataset_kwargs=model.get_dataset_kwargs(),
+    )
 
     dl_train = DataLoader(
         dataset_train,

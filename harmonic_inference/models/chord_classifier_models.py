@@ -1,7 +1,7 @@
 """Models that generate probability distributions over chord classifications of a given input."""
-from typing import Collection, Tuple
+from abc import ABC, abstractmethod
+from typing import Any, Collection, Dict, Tuple
 
-import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,34 +10,71 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from harmonic_inference.data.data_types import PieceType, PitchType
+import pytorch_lightning as pl
+from harmonic_inference.data.chord import get_chord_vector_length
+from harmonic_inference.data.data_types import ChordType, PieceType, PitchType
 from harmonic_inference.data.datasets import ChordClassificationDataset
-from harmonic_inference.data.piece import Chord, Note
+from harmonic_inference.data.note import get_note_vector_length
 
 
-class ChordClassifierModel(pl.LightningModule):
+class ChordClassifierModel(pl.LightningModule, ABC):
     """
     The base type for all Chord Classifier Models, which take as input sets of frames from Pieces,
     and output chord probabilities for them.
     """
 
-    def __init__(self, input_type: PieceType, output_type: PitchType, learning_rate: float):
+    def __init__(
+        self,
+        input_type: PieceType,
+        input_pitch: PitchType,
+        output_pitch: PitchType,
+        reduction: Dict[ChordType, ChordType],
+        use_inversions: bool,
+        learning_rate: float,
+    ):
         """
         Create a new base ChordClassifierModel with the given input and output formats.
 
         Parameters
         ----------
         input_type : PieceType
-            The input type this model is expecting.
-        output_type : PitchType
-            The type of chord this model will output.
+            The type of piece that the input data is coming from.
+        input_pitch : PitchType
+            What pitch type the model is expecting for notes.
+        output_pitch : PitchType
+            The pitch type to use for outputs of this model.
+        reduction : Dict[ChordType, ChordType]
+            The reduction used for the output chord types.
+        use_inversions : bool
+            Whether to use different inversions as different chords in the output.
         learning_rate : float
             The learning rate.
         """
         super().__init__()
         self.INPUT_TYPE = input_type
-        self.OUTPUT_TYPE = output_type
+        self.INPUT_PITCH = input_pitch
+        self.OUTPUT_PITCH = output_pitch
+
+        self.reduction = reduction
+        self.use_inversions = use_inversions
+
         self.lr = learning_rate
+
+    def get_dataset_kwargs(self) -> Dict[str, Any]:
+        """
+        Get a kwargs dict that can be used to create a dataset for this model with
+        the correct parameters.
+
+        Returns
+        -------
+        dataset_kwargs : Dict[str, Any]
+            A keyword args dict that can be used to create a dataset for this model with
+            the correct parameters.
+        """
+        return {
+            "reduction": self.reduction,
+            "use_inversions": self.use_inversions,
+        }
 
     def get_output(self, batch):
         notes = batch["inputs"].float()
@@ -96,6 +133,23 @@ class ChordClassifierModel(pl.LightningModule):
             "loss": (total_loss / total).item(),
         }
 
+    @abstractmethod
+    def init_hidden(self, batch_size: int) -> Tuple[Variable, ...]:
+        """
+        Get initial hidden layers for this model.
+
+        Parameters
+        ----------
+        batch_size : int
+            The batch size to initialize hidden layers for.
+
+        Returns
+        -------
+        hidden : Tuple[Variable, ...]
+            A tuple of initialized hidden layers.
+        """
+        raise NotImplementedError()
+
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
             self.parameters(), lr=self.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.001
@@ -117,8 +171,10 @@ class SimpleChordClassifier(ChordClassifierModel):
 
     def __init__(
         self,
-        input_type: PitchType,
-        output_type: PitchType,
+        input_type: PieceType,
+        input_pitch: PitchType,
+        output_pitch: PitchType,
+        reduction: Dict[ChordType, ChordType] = None,
         use_inversions: bool = True,
         lstm_layers: int = 1,
         lstm_hidden_dim: int = 128,
@@ -131,10 +187,14 @@ class SimpleChordClassifier(ChordClassifierModel):
 
         Parameters
         ----------
-        input_type : PitchType
-            The pitch type to use for inputs to this model. Used to derive the input length.
-        output_type : PitchType
+        input_type : PieceType
+            The type of piece that the input data is coming from.
+        input_pitch : PitchType
+            What pitch type the model is expecting for notes.
+        output_pitch : PitchType
             The pitch type to use for outputs of this model. Used to derive the output length.
+        reduction : Dict[ChordType, ChordType]
+            The reduction used for the output chord types.
         use_inversions : bool
             Whether to use different inversions as different chords in the output. Used to
             derive the output length.
@@ -149,17 +209,25 @@ class SimpleChordClassifier(ChordClassifierModel):
         learning_rate : float
             The learning rate.
         """
-        super().__init__(input_type, output_type, learning_rate)
+        super().__init__(
+            input_type,
+            input_pitch,
+            output_pitch,
+            reduction,
+            use_inversions,
+            learning_rate,
+        )
         self.save_hyperparameters()
 
         # Input and output derived from pitch_type and use_inversions
-        self.input_dim = Note.get_note_vector_length(input_type)
-        self.num_classes = Chord.get_chord_vector_length(
-            output_type,
+        self.input_dim = get_note_vector_length(input_pitch)
+        self.num_classes = get_chord_vector_length(
+            output_pitch,
             one_hot=True,
             relative=False,
             use_inversions=use_inversions,
             pad=False,
+            reduction=reduction,
         )
 
         # LSTM hidden layer and depth

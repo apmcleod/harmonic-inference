@@ -1,5 +1,6 @@
 """Models that output the probability of a chord change occurring on a given input."""
-from typing import Tuple
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Tuple
 
 import torch
 import torch.nn as nn
@@ -12,15 +13,20 @@ from tqdm import tqdm
 import pytorch_lightning as pl
 from harmonic_inference.data.data_types import PieceType, PitchType
 from harmonic_inference.data.datasets import ChordTransitionDataset
-from harmonic_inference.data.piece import Note
+from harmonic_inference.data.note import get_note_vector_length
 
 
-class ChordTransitionModel(pl.LightningModule):
+class ChordTransitionModel(pl.LightningModule, ABC):
     """
     The base class for all Chord Transition Models which model when a chord change will occur.
     """
 
-    def __init__(self, input_type: PieceType, learning_rate: float):
+    def __init__(
+        self,
+        input_type: PieceType,
+        pitch_type: PitchType,
+        learning_rate: float,
+    ):
         """
         Create a new base model.
 
@@ -28,12 +34,28 @@ class ChordTransitionModel(pl.LightningModule):
         ----------
         input_type : PieceType
             What type of input the model is expecting.
+        pitch_type : PitchType
+            What pitch type the model is expecting for notes.
         learning_rate : float
             The learning rate.
         """
         super().__init__()
         self.INPUT_TYPE = input_type
+        self.PITCH_TYPE = pitch_type
         self.lr = learning_rate
+
+    def get_dataset_kwargs(self) -> Dict[str, Any]:
+        """
+        Get a kwargs dict that can be used to create a dataset for this model with
+        the correct parameters.
+
+        Returns
+        -------
+        dataset_kwargs : Dict[str, Any]
+            A keyword args dict that can be used to create a dataset for this model with
+            the correct parameters.
+        """
+        return {}
 
     def get_data_from_batch(self, batch):
         inputs = batch["inputs"].float()
@@ -111,6 +133,23 @@ class ChordTransitionModel(pl.LightningModule):
             "loss": (total_loss / total).item(),
         }
 
+    @abstractmethod
+    def init_hidden(self, batch_size: int) -> Tuple[Variable, ...]:
+        """
+        Get initial hidden layers for this model.
+
+        Parameters
+        ----------
+        batch_size : int
+            The batch size to initialize hidden layers for.
+
+        Returns
+        -------
+        hidden : Tuple[Variable, ...]
+            A tuple of initialized hidden layers.
+        """
+        raise NotImplementedError()
+
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
             self.parameters(), lr=self.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.001
@@ -134,6 +173,7 @@ class SimpleChordTransitionModel(ChordTransitionModel):
     def __init__(
         self,
         input_type: PieceType,
+        pitch_type: PitchType,
         embed_dim: int = 64,
         lstm_layers: int = 1,
         lstm_hidden_dim: int = 128,
@@ -148,6 +188,8 @@ class SimpleChordTransitionModel(ChordTransitionModel):
         ----------
         input_type : PieceType
             The type of piece that the input data is coming from.
+        pitch_type : PitchType
+            What pitch type the model is expecting for notes.
         embed_dim : int
             The size of the input embedding.
         lstm_layers : int
@@ -161,13 +203,11 @@ class SimpleChordTransitionModel(ChordTransitionModel):
         learning_rate : float
             The learning rate.
         """
-        super().__init__(input_type, learning_rate)
+        super().__init__(input_type, pitch_type, learning_rate)
         self.save_hyperparameters()
 
         # Input and output derived from input type and use_inversions
-        self.input_dim = Note.get_note_vector_length(
-            PitchType.TPC if input_type == PieceType.SCORE else PitchType.MIDI
-        )
+        self.input_dim = get_note_vector_length(pitch_type)
 
         self.embed_dim = embed_dim
         self.embed = nn.Linear(self.input_dim, self.embed_dim)

@@ -1,3 +1,4 @@
+"""Script to test (evaluate) a joint model for harmonic inference."""
 import argparse
 import logging
 import os
@@ -8,12 +9,13 @@ from pathlib import Path
 from typing import List, Union
 
 import h5py
+import torch
 from tqdm import tqdm
 
 import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.utils.eval_utils as eu
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
-from harmonic_inference.data.data_types import NO_REDUCTION, TRIAD_REDUCTION
+from harmonic_inference.data.data_types import NO_REDUCTION, TRIAD_REDUCTION, PitchType
 from harmonic_inference.data.piece import Piece, ScorePiece
 from harmonic_inference.models.joint_model import (
     MODEL_CLASSES,
@@ -90,7 +92,7 @@ def evaluate(
 
     for piece in tqdm(pieces, desc="Getting harmony for pieces"):
         if piece.name is not None:
-            logging.info(f"Running piece {piece.name}")
+            logging.info("Running piece %s", piece.name)
 
         state = model.get_harmony(piece)
 
@@ -158,9 +160,30 @@ def evaluate(
                 model.KEY_OUTPUT_TYPE,
             )
 
+            # Write MIDI outputs for SPS chord-eval testing
+            results_df = eu.get_results_df(
+                piece,
+                state,
+                model.CHORD_OUTPUT_TYPE,
+                model.KEY_OUTPUT_TYPE,
+                PitchType.MIDI,
+                PitchType.MIDI,
+            )
+
             if piece.name is not None and output_tsv_dir is not None:
                 piece_name = Path(piece.name.split(" ")[-1])
                 output_tsv_path = output_tsv_dir / piece_name
+
+                try:
+                    output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
+                    results_tsv_path = output_tsv_path.parent / (
+                        output_tsv_path.name[:-4] + "_results.tsv"
+                    )
+                    results_df.to_csv(results_tsv_path, sep="\t")
+                    logging.info("Results TSV written out to %s", results_tsv_path)
+                except Exception:
+                    logging.exception("Error writing to csv %s", results_tsv_path)
+                    logging.debug(results_df)
 
                 try:
                     output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
@@ -306,9 +329,19 @@ if __name__ == "__main__":
         help="The seed used when generating the h5_data.",
     )
 
+    parser.add_argument(
+        "--threads",
+        default=None,
+        type=int,
+        help="The number of pytorch cpu threads to create.",
+    )
+
     add_joint_model_args(parser)
 
     ARGS = parser.parse_args()
+
+    if ARGS.threads is not None:
+        torch.set_num_threads(ARGS.threads)
 
     if ARGS.log is not sys.stderr:
         log_path = Path(ARGS.log)
@@ -349,29 +382,29 @@ if __name__ == "__main__":
 
         possible_checkpoints = sorted(glob(checkpoint_arg))
         if len(possible_checkpoints) == 0:
-            logging.error(f"No checkpoints found for {model_name} in {checkpoint_arg}")
+            logging.error("No checkpoints found for %s in %s.", model_name, checkpoint_arg)
             sys.exit(2)
 
         if len(possible_checkpoints) == 1:
             checkpoint = possible_checkpoints[0]
-            logging.info(f"Loading checkpoint {checkpoint} for {model_name}.")
+            logging.info("Loading checkpoint %s for %s.", checkpoint, model_name)
 
         else:
             checkpoint = possible_checkpoints[-1]
-            logging.info(f"Multiple checkpoints found for {model_name}. Loading {checkpoint}.")
+            logging.info("Multiple checkpoints found for %s. Loading %s.", model_name, checkpoint)
 
         models[model_name] = model_class.load_from_checkpoint(checkpoint)
         models[model_name].freeze()
 
     # Load icm json differently
-    logging.info(f"Loading checkpoint {ARGS.icm_json} for icm.")
+    logging.info("Loading checkpoint %s for icm.", ARGS.icm_json)
     models["icm"] = icm.SimpleInitialChordModel(ARGS.icm_json)
 
     # Load validation data for ctm
     h5_path = Path(ARGS.h5_dir / f"ChordTransitionDataset_valid_seed_{ARGS.seed}.h5")
     with h5py.File(h5_path, "r") as h5_file:
         if "file_ids" not in h5_file:
-            logging.error(f"file_ids not found in {h5_path}. Re-create with create_h5_data.py")
+            logging.error("file_ids not found in %s. Re-create with create_h5_data.py", h5_path)
             sys.exit(1)
 
         file_ids = list(h5_file["file_ids"])
