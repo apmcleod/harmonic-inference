@@ -44,9 +44,15 @@ LABELS = {
 
 MIN_CHORD_CHANGE_PROB_DEFAULT = 0.15
 MAX_NO_CHORD_CHANGE_PROB_DEFAULT = 0.65
+MAX_CHORD_LENGTH_DEFAULT = Fraction(8)
 MIN_KEY_CHANGE_PROB_DEFAULT = 0.05
 MAX_NO_KEY_CHANGE_PROB_DEFAULT = 0.75
+BEAM_SIZE_DEFAULT = 50
 MAX_CHORD_BRANCHING_FACTOR_DEFAULT = 5
+TARGET_CHORD_BRANCH_PROB_DEFAULT = 0.95
+MAX_KEY_BRANCHING_FACTOR_DEFAULT = 5
+TARGET_KEY_BRANCH_PROB_DEFAULT = 0.95
+HASH_LENGTH_DEFAULT = 5
 KSM_EXPONENT_DEFAULT = 50
 
 
@@ -75,7 +81,7 @@ def add_joint_model_args(parser: ArgumentParser):
 
     parser.add_argument(
         "--max-chord-length",
-        default=Fraction(8),
+        default=MAX_CHORD_LENGTH_DEFAULT,
         type=Fraction,
         help="The maximum duration (in whole notes) of a chord.",
     )
@@ -96,7 +102,7 @@ def add_joint_model_args(parser: ArgumentParser):
 
     parser.add_argument(
         "--beam-size",
-        default=50,
+        default=BEAM_SIZE_DEFAULT,
         type=int,
         help="The beam size to use during decoding.",
     )
@@ -110,7 +116,7 @@ def add_joint_model_args(parser: ArgumentParser):
 
     parser.add_argument(
         "--target-chord-branch-prob",
-        default=0.95,
+        default=TARGET_CHORD_BRANCH_PROB_DEFAULT,
         type=float,
         help=(
             "Once the chords branched into account for at least this much probability mass "
@@ -120,14 +126,14 @@ def add_joint_model_args(parser: ArgumentParser):
 
     parser.add_argument(
         "--max-key-branching-factor",
-        default=5,
+        default=MAX_KEY_BRANCHING_FACTOR_DEFAULT,
         type=int,
         help="The maximum number of different keys to branch into.",
     )
 
     parser.add_argument(
         "--target-key-branch-prob",
-        default=0.95,
+        default=TARGET_KEY_BRANCH_PROB_DEFAULT,
         type=float,
         help=(
             "Once the keys branched into account for at least this much probability mass "
@@ -137,7 +143,7 @@ def add_joint_model_args(parser: ArgumentParser):
 
     parser.add_argument(
         "--hash-length",
-        default=5,
+        default=HASH_LENGTH_DEFAULT,
         type=int,
         help=(
             "If 2 states are identical in chord and key for this many chord changes "
@@ -166,15 +172,15 @@ class HarmonicInferenceModel:
         models: Dict,
         min_chord_change_prob: float = MIN_CHORD_CHANGE_PROB_DEFAULT,
         max_no_chord_change_prob: float = MAX_NO_CHORD_CHANGE_PROB_DEFAULT,
-        max_chord_length: Fraction = Fraction(8),
+        max_chord_length: Fraction = MAX_CHORD_LENGTH_DEFAULT,
         min_key_change_prob: float = MIN_KEY_CHANGE_PROB_DEFAULT,
         max_no_key_change_prob: float = MAX_NO_KEY_CHANGE_PROB_DEFAULT,
-        beam_size: int = 50,
+        beam_size: int = BEAM_SIZE_DEFAULT,
         max_chord_branching_factor: int = MAX_CHORD_BRANCHING_FACTOR_DEFAULT,
-        target_chord_branch_prob: float = 0.95,
-        max_key_branching_factor: int = 5,
-        target_key_branch_prob: float = 0.95,
-        hash_length: int = 5,
+        target_chord_branch_prob: float = TARGET_CHORD_BRANCH_PROB_DEFAULT,
+        max_key_branching_factor: int = MAX_KEY_BRANCHING_FACTOR_DEFAULT,
+        target_key_branch_prob: float = TARGET_KEY_BRANCH_PROB_DEFAULT,
+        hash_length: int = HASH_LENGTH_DEFAULT,
         ksm_exponent: float = KSM_EXPONENT_DEFAULT,
     ):
         """
