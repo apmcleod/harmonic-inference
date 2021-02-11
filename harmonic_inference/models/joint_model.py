@@ -42,6 +42,14 @@ LABELS = {
 }
 
 
+MIN_CHORD_CHANGE_PROB_DEFAULT = 0.15
+MAX_NO_CHORD_CHANGE_PROB_DEFAULT = 0.65
+MIN_KEY_CHANGE_PROB_DEFAULT = 0.05
+MAX_NO_KEY_CHANGE_PROB_DEFAULT = 0.75
+MAX_CHORD_BRANCHING_FACTOR_DEFAULT = 5
+KSM_EXPONENT_DEFAULT = 50
+
+
 def add_joint_model_args(parser: ArgumentParser):
     """
     Add parameters for the HarmonicInferenceModel to the given ArgumentParser.
@@ -53,14 +61,14 @@ def add_joint_model_args(parser: ArgumentParser):
     """
     parser.add_argument(
         "--min-chord-change-prob",
-        default=0.25,
+        default=MIN_CHORD_CHANGE_PROB_DEFAULT,
         type=float,
         help="The minimum CTM probability that can be a chord change.",
     )
 
     parser.add_argument(
         "--max-no-chord-change-prob",
-        default=0.75,
+        default=MAX_NO_CHORD_CHANGE_PROB_DEFAULT,
         type=float,
         help="The maximum CTM probability that can be a non-chord change.",
     )
@@ -74,14 +82,14 @@ def add_joint_model_args(parser: ArgumentParser):
 
     parser.add_argument(
         "--min-key-change-prob",
-        default=0.25,
+        default=MIN_KEY_CHANGE_PROB_DEFAULT,
         type=float,
         help="The minimum KTM probability that can be a key change.",
     )
 
     parser.add_argument(
         "--max-no-key-change-prob",
-        default=0.75,
+        default=MAX_NO_KEY_CHANGE_PROB_DEFAULT,
         type=float,
         help="The maximum KTM probability that can be a non-key change.",
     )
@@ -95,7 +103,7 @@ def add_joint_model_args(parser: ArgumentParser):
 
     parser.add_argument(
         "--max-chord-branching-factor",
-        default=20,
+        default=MAX_CHORD_BRANCHING_FACTOR_DEFAULT,
         type=int,
         help="The maximum number of different chords to branch into.",
     )
@@ -139,7 +147,7 @@ def add_joint_model_args(parser: ArgumentParser):
 
     parser.add_argument(
         "--ksm-exponent",
-        default=1.0,
+        default=KSM_EXPONENT_DEFAULT,
         type=float,
         help=(
             "An exponent to be applied to the KSM's probability outputs. Used to weight "
@@ -156,18 +164,18 @@ class HarmonicInferenceModel:
     def __init__(
         self,
         models: Dict,
-        min_chord_change_prob: float = 0.25,
-        max_no_chord_change_prob: float = 0.75,
+        min_chord_change_prob: float = MIN_CHORD_CHANGE_PROB_DEFAULT,
+        max_no_chord_change_prob: float = MAX_NO_CHORD_CHANGE_PROB_DEFAULT,
         max_chord_length: Fraction = Fraction(8),
-        min_key_change_prob: float = 0.25,
-        max_no_key_change_prob: float = 0.75,
+        min_key_change_prob: float = MIN_KEY_CHANGE_PROB_DEFAULT,
+        max_no_key_change_prob: float = MAX_NO_KEY_CHANGE_PROB_DEFAULT,
         beam_size: int = 50,
-        max_chord_branching_factor: int = 20,
+        max_chord_branching_factor: int = MAX_CHORD_BRANCHING_FACTOR_DEFAULT,
         target_chord_branch_prob: float = 0.95,
         max_key_branching_factor: int = 5,
         target_key_branch_prob: float = 0.95,
         hash_length: int = 5,
-        ksm_exponent: float = 1.0,
+        ksm_exponent: float = KSM_EXPONENT_DEFAULT,
     ):
         """
         Create a new HarmonicInferenceModel from a set of pre-loaded models.
