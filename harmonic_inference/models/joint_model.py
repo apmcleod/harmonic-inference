@@ -696,18 +696,26 @@ class HarmonicInferenceModel:
                 # Branch
                 for chord_id in chord_priors_argsort[:max_index]:
                     if chord_id == state.chord:
-                        # Disallow self-transitions
-                        continue
+                        # Same chord as last range: rejoin a split range
+                        # TODO: Implement this, think about how to handle key changes
+                        new_state = state.rejoin(
+                            range_end,
+                            range_log_prob + chord_log_priors[chord_id] * range_length,
+                            self.CHORD_OUTPUT_TYPE,
+                            self.LABELS,
+                        )
 
-                    # Calculate the new state on this absolute chord
-                    new_state = state.chord_transition(
-                        chord_id,
-                        range_end,
-                        range_log_prob + chord_log_priors[chord_id] * range_length,
-                        self.CHORD_OUTPUT_TYPE,
-                        self.LABELS,
-                    )
+                    else:
+                        # New chord here: transition
+                        new_state = state.chord_transition(
+                            chord_id,
+                            range_end,
+                            range_log_prob + chord_log_priors[chord_id] * range_length,
+                            self.CHORD_OUTPUT_TYPE,
+                            self.LABELS,
+                        )
 
+                    # Invalid transitions return None
                     if new_state is not None:
                         if current_start == 0 or all_states[range_end].fits_in_beam(
                             new_state,
@@ -715,7 +723,8 @@ class HarmonicInferenceModel:
                         ):
                             to_check_for_key_change.append(new_state)
                         else:
-                            # No other chord will fit in beam
+                            # No other chord will fit in beam, since we are searching
+                            # through chords by probability
                             break
 
             # Check for key changes
