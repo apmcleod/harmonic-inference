@@ -36,6 +36,9 @@ class State:
         csm_log_prior: np.array = None,
         key_obj: Key = None,
         must_key_transition: bool = False,
+        most_recent_csm: float = None,
+        most_recent_ksm: float = None,
+        most_recent_ktm: float = None,
     ):
         """
         Create a new State.
@@ -72,6 +75,12 @@ class State:
             True if this State must key transition to be valid. This happens in the case that
             the chord's root or bass note are outside of the valid range of relative pitches
             from the key's tonic.
+        most_recent_csm : float
+            The most recent csm prior added to this State's log_prob.
+        most_recent_ksm : float
+            The most recent ksm prior added to this State's log_prob.
+        most_recent_ktm : float
+            The most recent ktm prior added to this State's log_prob.
         """
         self._valid = True
 
@@ -92,6 +101,10 @@ class State:
         self.ktm_hidden_state = copy.deepcopy(ktm_hidden_state)
         self.ksm_hidden_state = copy.deepcopy(ksm_hidden_state)
         self.csm_log_prior = csm_log_prior
+
+        self.most_recent_csm = most_recent_csm
+        self.most_recent_ksm = most_recent_ksm
+        self.most_recent_ktm = most_recent_ktm
 
         # Key/chord objects
         self.chord_obj = None
@@ -153,7 +166,7 @@ class State:
         change_index: int,
         log_prob: float,
         pitch_type: PitchType,
-        LABELS: Dict,
+        labels: Dict,
     ) -> "State":
         """
         Perform a chord transition form this State, and return the new State.
@@ -169,18 +182,19 @@ class State:
             absolute chord (CCM) and the chord's index bounds (CTM).
         pitch_type : PitchType
             The pitch type used to store the chord root.
-        LABELS : Dict
+        labels : Dict
             A Dictionary of key and chord labels for the current piece.
 
         Returns
         -------
         new_state : State
-            The state resulting from the given transition.
+            The state resulting from the given transition. None if the transition would
+            result in an invalid State (chord root too far away from key tonic).
         """
-        root, chord_type, inversion = LABELS["chord"][chord]
+        root, chord_type, inversion = labels["chord"][chord]
         bass = hu.get_bass_note(chord_type, root, inversion, pitch_type)
 
-        tonic = self.get_key(pitch_type, LABELS).relative_tonic
+        tonic = self.get_key(pitch_type, labels).relative_tonic
         relative_root = root - tonic
         relative_bass = bass - tonic
 
@@ -236,7 +250,7 @@ class State:
         key: int,
         log_prob: float,
         pitch_type: PitchType,
-        LABELS: Dict,
+        labels: Dict,
     ) -> "State":
         """
         Transition to a new key on the most recent chord.
@@ -250,19 +264,20 @@ class State:
             and the new key (KSM).
         pitch_type : PitchType
             The pitch type used to store the chord root.
-        LABELS : Dict
+        labels : Dict
             A Dictionary of key and chord labels for the current piece.
 
         Returns
         -------
         new_state : State
             Essentially, a replacement of this state (the new state's prev_state is the same),
-            but with a new key.
+            but with a new key. None if the given key transition is invalid (chord root too
+            far away from key tonic).
         """
-        root, chord_type, inversion = LABELS["chord"][self.chord]
+        root, chord_type, inversion = labels["chord"][self.chord]
         bass = hu.get_bass_note(chord_type, root, inversion, pitch_type)
 
-        tonic, _ = LABELS["key"][key]
+        tonic, _ = labels["key"][key]
         relative_root = root - tonic
         relative_bass = bass - tonic
 
@@ -287,7 +302,96 @@ class State:
             csm_log_prior=self.csm_log_prior,
             key_obj=None,
             must_key_transition=False,
+            most_recent_csm=self.most_recent_csm,
+            most_recent_ktm=self.most_recent_ktm,
+            most_recent_ksm=log_prob,
         )
+
+    def rejoin(
+        self,
+        new_range_end: int,
+        log_prob: float,
+        pitch_type: PitchType,
+        labels: Dict,
+    ) -> "State":
+        """
+        Rejoin the most recent range. That is, re-do the previous transition, but with
+        the given new end point. The log_prob to be added should include: (1) the chord's
+        probability in the 2nd half of the range, (2) the probability of the 2nd range,
+        and (3) the difference to be added from swapping the previous "change" to a
+        "no_change".
+
+        This function will automatically revert any key change from the most recent step,
+        and remove any probability associated with the previous step's CSM, KSM, and KTM.
+
+        Parameters
+        ----------
+        new_range_end : int
+            The new end point for the most recent range.
+        log_prob : float
+            The log probability to be added to the state's current log probability. This
+            should include: (1) the chord's probability in the 2nd half of the range,
+            (2) the probability of the 2nd range, and (3) the difference to be added from
+            swapping the previous "change" to a "no_change".
+        pitch_type : PitchType
+            The pitch type used to store the chord root.
+        labels : Dict
+            A Dictionary of key and chord labels for the current piece.
+
+        Return
+        ------
+        The resulting state.
+        """
+        root, chord_type, inversion = labels["chord"][self.chord]
+        bass = hu.get_bass_note(chord_type, root, inversion, pitch_type)
+
+        tonic = self.get_key(pitch_type, labels).relative_tonic
+        relative_root = root - tonic
+        relative_bass = bass - tonic
+
+        must_key_transition = (
+            relative_root < hc.MIN_RELATIVE_TPC
+            or relative_root >= hc.MAX_RELATIVE_TPC
+            or relative_bass < hc.MIN_RELATIVE_TPC
+            or relative_bass >= hc.MAX_RELATIVE_TPC
+        )
+
+        model_adjustment = sum(
+            log_prob
+            for log_prob in [self.most_recent_csm, self.most_recent_ksm, self.most_recent_ktm]
+            if log_prob is not None
+        )
+
+        return State(
+            chord=self.chord,
+            key=self.key,
+            change_index=new_range_end,
+            log_prob=self.log_prob + log_prob - model_adjustment,
+            prev_state=self.prev_state,
+            hash_length=len(self.hash_tuple) if hasattr(self, "hash_tuple") else None,
+            csm_hidden_state=self.prev_state.csm_hidden_state,
+            ktm_hidden_state=self.prev_state.ktm_hidden_state,
+            ksm_hidden_state=self.prev_state.ksm_hidden_state,
+            csm_log_prior=self.prev_state.csm_log_prior,
+            key_obj=self.key_obj,
+            must_key_transition=must_key_transition,
+            most_recent_csm=None,
+            most_recent_ktm=None,
+            most_recent_ksm=None,
+        )
+
+    def add_ktm_log_prob(self, log_prob: float):
+        """
+        Add the given log-probability to this state's current log_prob, and save it
+        as the most recent ktm log-prob.
+
+        Parameters
+        ----------
+        log_prob : float
+            The ktm log-prob to add to this state.
+        """
+        self.most_recent_ktm = log_prob
+        self.log_prob += log_prob
 
     def add_csm_prior(
         self,
@@ -295,7 +399,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[Fraction],
-        LABELS: Dict,
+        labels: Dict,
         use_output_inversions: bool,
         output_reduction: Dict[ChordType, ChordType],
     ):
@@ -315,7 +419,7 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
-        LABELS : Dict
+        labels : Dict
             A Dictionary of key and chord labels for the current piece.
         use_output_inversions : bool
             Whether inversions are used in the state's current csm log prior.
@@ -328,7 +432,7 @@ class State:
             duration_cache,
             onset_cache,
             onset_level_cache,
-            LABELS,
+            labels,
         )
 
         reduced_index = reduce_chord_one_hots(
@@ -342,7 +446,8 @@ class State:
             use_inversions=use_output_inversions,
         )[0]
 
-        self.log_prob += self.csm_log_prior[reduced_index] * range_length
+        self.most_recent_csm = self.csm_log_prior[reduced_index] * range_length
+        self.log_prob += self.most_recent_csm
 
     def get_csm_input(
         self,
@@ -350,7 +455,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
-        LABELS: Dict,
+        labels: Dict,
     ) -> np.array:
         """
         Get the input for the next step of this state's CSM.
@@ -365,7 +470,7 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
-        LABELS : Dict
+        labels : Dict
             A Dictionary of key and chord labels for the current piece.
 
         Returns
@@ -378,8 +483,8 @@ class State:
         if self.prev_state is not None and self.prev_state.key != self.key:
             # Key change
             is_key_change = 1
-            prev_key = self.prev_state.get_key(pitch_type, LABELS)
-            key_change_vector = prev_key.get_key_change_vector(self.get_key(pitch_type, LABELS))
+            prev_key = self.prev_state.get_key(pitch_type, labels)
+            key_change_vector = prev_key.get_key_change_vector(self.get_key(pitch_type, labels))
 
         return np.expand_dims(
             np.concatenate(
@@ -389,7 +494,7 @@ class State:
                         duration_cache,
                         onset_cache,
                         onset_level_cache,
-                        LABELS,
+                        labels,
                     ).to_vec(pad=False),
                     key_change_vector,
                     [is_key_change],
@@ -404,7 +509,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
-        LABELS: Dict,
+        labels: Dict,
     ) -> np.array:
         """
         Get the input for the next step of this state's KTM.
@@ -419,7 +524,7 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
-        LABELS : Dict
+        labels : Dict
             A Dictionary of key and chord labels for the current piece.
 
         Returns
@@ -430,8 +535,8 @@ class State:
         key_change_vector = np.zeros(get_key_change_vector_length(pitch_type, one_hot=False) + 1)
         if self.prev_state is not None and self.key != self.prev_state.key:
             key_change_vector[:-1] = self.prev_state.get_key(
-                pitch_type, LABELS
-            ).get_key_change_vector(self.get_key(pitch_type, LABELS))
+                pitch_type, labels
+            ).get_key_change_vector(self.get_key(pitch_type, labels))
             key_change_vector[-1] = 1
 
         return np.expand_dims(
@@ -442,7 +547,7 @@ class State:
                         duration_cache,
                         onset_cache,
                         onset_level_cache,
-                        LABELS,
+                        labels,
                     ).to_vec(pad=True),
                     key_change_vector,
                 ]
@@ -456,7 +561,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
-        LABELS: Dict,
+        labels: Dict,
         length: int = 0,
     ) -> np.array:
         """
@@ -474,7 +579,7 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
-        LABELS : Dict
+        labels : Dict
             A Dictionary of key and chord labels for the current piece.
         length : int
             The number of input vectors that will be appended to the returned input nd-array.
@@ -519,7 +624,7 @@ class State:
                 duration_cache,
                 onset_cache,
                 onset_level_cache,
-                LABELS,
+                labels,
             )
         )
 
@@ -542,7 +647,7 @@ class State:
             duration_cache,
             onset_cache,
             onset_level_cache,
-            LABELS,
+            labels,
             length=length + 1,
         )
         ksm_input[len(ksm_input) - length - 1] = this_ksm_input
@@ -554,7 +659,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
-        LABELS: Dict,
+        labels: Dict,
     ) -> Chord:
         """
         Get the Chord object of this state.
@@ -569,7 +674,7 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
-        LABELS : Dict
+        labels : Dict
             A Dictionary of key and chord labels for the current piece.
 
         Returns
@@ -578,8 +683,8 @@ class State:
             The chord object of this state, relative to its key.
         """
         if self.chord_obj is None:
-            key = self.get_key(pitch_type, LABELS)
-            root, chord_type, inversion = LABELS["chord"][self.chord]
+            key = self.get_key(pitch_type, labels)
+            root, chord_type, inversion = labels["chord"][self.chord]
 
             prev_index = self.prev_state.change_index
             index = self.change_index
@@ -601,7 +706,7 @@ class State:
 
         return self.chord_obj
 
-    def get_key(self, pitch_type: PitchType, LABELS: Dict) -> Key:
+    def get_key(self, pitch_type: PitchType, labels: Dict) -> Key:
         """
         Get the Key object of this state.
 
@@ -616,13 +721,13 @@ class State:
             The key object of this state.
         """
         if self.key_obj is None:
-            tonic, mode = LABELS["key"][self.key]
+            tonic, mode = labels["key"][self.key]
 
             if self.prev_state is None:
                 global_tonic = tonic
                 global_mode = mode
             else:
-                prev_key = self.prev_state.get_key(pitch_type, LABELS)
+                prev_key = self.prev_state.get_key(pitch_type, labels)
                 global_tonic = prev_key.global_tonic
                 global_mode = prev_key.global_mode
 
@@ -636,7 +741,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
-        LABELS: Dict,
+        labels: Dict,
     ) -> int:
         """
         Get the one-hot index of the chord symbol, relative to the current key.
@@ -651,7 +756,7 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
-        LABELS : Dict
+        labels : Dict
             A Dictionary of key and chord labels for the current piece.
 
         Returns
@@ -664,7 +769,7 @@ class State:
             duration_cache,
             onset_cache,
             onset_level_cache,
-            LABELS,
+            labels,
         ).get_one_hot_index(relative=True, use_inversion=True, pad=False)
 
     def get_chords(self) -> Tuple[List[int], List[int]]:
