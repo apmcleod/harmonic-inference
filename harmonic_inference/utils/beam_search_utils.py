@@ -342,9 +342,6 @@ class State:
         ------
         The resulting state.
         """
-        if self.prev_state.key != self.key:
-            print("Rejoining on key change!")
-
         root, chord_type, inversion = labels["chord"][self.chord]
         bass = hu.get_bass_note(chord_type, root, inversion, pitch_type)
 
