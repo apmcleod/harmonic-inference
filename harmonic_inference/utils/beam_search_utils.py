@@ -342,6 +342,9 @@ class State:
         ------
         The resulting state.
         """
+        if self.prev_state.key != self.key:
+            print("Rejoining on key change!")
+
         root, chord_type, inversion = labels["chord"][self.chord]
         bass = hu.get_bass_note(chord_type, root, inversion, pitch_type)
 
@@ -364,7 +367,7 @@ class State:
 
         return State(
             chord=self.chord,
-            key=self.key,
+            key=self.prev_state.key,
             change_index=new_range_end,
             log_prob=self.log_prob + log_prob - model_adjustment,
             prev_state=self.prev_state,
@@ -373,7 +376,7 @@ class State:
             ktm_hidden_state=self.prev_state.ktm_hidden_state,
             ksm_hidden_state=self.prev_state.ksm_hidden_state,
             csm_log_prior=self.prev_state.csm_log_prior,
-            key_obj=self.key_obj,
+            key_obj=self.prev_state.key_obj,
             must_key_transition=must_key_transition,
             most_recent_csm=None,
             most_recent_ktm=None,

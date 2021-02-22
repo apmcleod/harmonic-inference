@@ -995,12 +995,10 @@ class HarmonicInferenceModel:
             priors_argsort,
             max_indexes,
         ):
-            # Ensure each state branches at least once
-            if max_index == 1 and prior_argsort[0] == state.key:
-                max_index = 2
+            valid_states = 0
 
             # Branch
-            for relative_key_id in prior_argsort[:max_index]:
+            for relative_key_id in prior_argsort:
                 mode, interval = self.LABELS["relative_key"][relative_key_id]
                 tonic = state.get_key(self.KEY_OUTPUT_TYPE, self.LABELS).relative_tonic + interval
 
@@ -1013,7 +1011,7 @@ class HarmonicInferenceModel:
                 key_id = hu.get_key_one_hot_index(mode, tonic, self.KEY_OUTPUT_TYPE)
 
                 if key_id == state.key:
-                    # Disallow self-transitions and illegal keys
+                    # Disallow self-transitions
                     continue
 
                 # Calculate the new state on this key change
@@ -1026,7 +1024,13 @@ class HarmonicInferenceModel:
                 )
 
                 if new_state is not None:
+                    # The transition is valid (chord bass and root are in the proper range)
                     new_states.append(new_state)
+                    valid_states += 1
+
+                    if valid_states >= max_index:
+                        # Exit if we have branched enough times
+                        break
 
         return new_states
 
