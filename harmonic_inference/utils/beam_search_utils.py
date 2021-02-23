@@ -167,7 +167,7 @@ class State:
         log_prob: float,
         pitch_type: PitchType,
         labels: Dict,
-    ) -> "State":
+    ) -> Union["State", None]:
         """
         Perform a chord transition form this State, and return the new State.
 
@@ -251,7 +251,7 @@ class State:
         log_prob: float,
         pitch_type: PitchType,
         labels: Dict,
-    ) -> "State":
+    ) -> Union["State", None]:
         """
         Transition to a new key on the most recent chord.
 
@@ -345,7 +345,7 @@ class State:
         root, chord_type, inversion = labels["chord"][self.chord]
         bass = hu.get_bass_note(chord_type, root, inversion, pitch_type)
 
-        tonic = self.get_key(pitch_type, labels).relative_tonic
+        tonic, _ = labels["key"][self.prev_state.key]
         relative_root = root - tonic
         relative_bass = bass - tonic
 
