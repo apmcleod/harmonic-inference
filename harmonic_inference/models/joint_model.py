@@ -703,6 +703,9 @@ class HarmonicInferenceModel:
                 ) = range_data
                 range_length = range_end - current_start
 
+                if current_start == 712 and range_end == 716:
+                    print("Ready")
+
                 if (
                     current_start != 0
                     and len(all_states[range_end]) > 0
@@ -1152,7 +1155,8 @@ class DebugLogger:
         new_chord_index = bisect.bisect_left(chord_changes, change_index)
         correct_key = keys[new_key_index - 1]
 
-        if chord_changes[new_chord_index] == change_index:
+        if len(chord_changes) < new_chord_index and chord_changes[new_chord_index] == change_index:
+            # Chord change is at the correct location
             if new_chord_index == len(chords):
                 new_chord_index -= 1
             correct_chords = [chords[new_chord_index - 1], chords[new_chord_index]]
@@ -1593,7 +1597,10 @@ class DebugLogger:
                 and range_end in change_indices
             )
             is_classification_correct = is_range_correct and correct_rank[0] == 0
-            is_any_classification_correct = min(correct_rank) == 0
+            if len(correct_rank) > 0:
+                is_any_classification_correct = min(correct_rank) == 0
+            else:
+                is_any_classification_correct = False
 
             if is_range_correct:
                 num_correct_ranges += 1

@@ -274,7 +274,7 @@ class Piece:
         if stop is None:
             return chords[start_index:]
 
-        end_index = bisect.bisect_left(chord_change_indices, stop, lo=start_index)
+        end_index = bisect.bisect_left(chord_change_indices, stop, lo=max(start_index, 0))
 
         return chords[start_index:end_index]
 
