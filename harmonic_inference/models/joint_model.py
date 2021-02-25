@@ -394,7 +394,7 @@ class HarmonicInferenceModel:
 
         # Calculate valid chord ranges and their probabilities
         logging.info("Calculating valid chord ranges")
-        chord_ranges, range_log_probs = self.get_chord_ranges(change_probs)
+        chord_ranges, range_log_probs, rejoin_log_probs = self.get_chord_ranges(change_probs)
 
         # Convert range starting points to new starts based on the note offsets
         chord_change_indices = [start for start, _ in chord_ranges]
@@ -413,7 +413,9 @@ class HarmonicInferenceModel:
 
         # Iterative beam search for other modules
         logging.info("Performing iterative beam search")
-        state = self.beam_search(chord_ranges, range_log_probs, chord_classifications)
+        state = self.beam_search(
+            chord_ranges, range_log_probs, rejoin_log_probs, chord_classifications
+        )
 
         self.current_piece = None
 
@@ -443,7 +445,7 @@ class HarmonicInferenceModel:
     def get_chord_ranges(
         self,
         change_probs: List[float],
-    ) -> Tuple[List[Tuple[int, int]], List[float]]:
+    ) -> Tuple[List[Tuple[int, int]], List[float], List[float]]:
         """
         Get all possible chord ranges and their log-probability, given the chord change
         probabilities for each input in the Piece.
@@ -461,6 +463,9 @@ class HarmonicInferenceModel:
         range_log_probs : List[float]
             For each chord range, it's log-probability, including its end change, but not its
             start change.
+        rejoin_log_probs : List[float]
+            For each chord range, the log-probability to be added if it is rejoined to any
+            previous range.
         """
         chord_ranges = []
         range_log_probs = []
@@ -529,7 +534,11 @@ class HarmonicInferenceModel:
                 chord_ranges.append((start, len(change_probs)))
                 range_log_probs.append(running_log_prob)
 
-        return chord_ranges, range_log_probs
+        rejoin_log_probs = [
+            no_change_log_probs[start] - change_log_probs[start] for start, _ in chord_ranges
+        ]
+
+        return chord_ranges, range_log_probs, rejoin_log_probs
 
     def get_chord_classifications(
         self,
@@ -577,6 +586,7 @@ class HarmonicInferenceModel:
         self,
         chord_ranges: List[Tuple[int, int]],
         range_log_probs: List[float],
+        rejoin_log_probs: List[float],
         chord_classifications: List[np.array],
     ) -> State:
         """
@@ -588,6 +598,8 @@ class HarmonicInferenceModel:
             A List of possible chord ranges, as (start, end) tuples.
         range_log_probs : List[float]
             The log probability of each chord ranges in chord_ranges.
+        rejoin_log_probs : List[float]
+            The log probability to add if each range is rejoined.
         chord_classifications : List[np.array]
             The prior log-probability over all chord symbols for each given range.
 
@@ -614,9 +626,17 @@ class HarmonicInferenceModel:
             1,
             self.max_chord_branching_factor,
         )
-        for (start, end), range_log_prob, log_prior, prior_argsort, max_index in zip(
+        for (
+            (start, end),
+            range_log_prob,
+            rejoin_log_prob,
+            log_prior,
+            prior_argsort,
+            max_index,
+        ) in zip(
             chord_ranges,
             range_log_probs,
+            rejoin_log_probs,
             chord_classifications,
             priors_argsort,
             max_indexes,
@@ -625,6 +645,7 @@ class HarmonicInferenceModel:
                 (
                     end,
                     range_log_prob,
+                    rejoin_log_prob,
                     log_prior,
                     prior_argsort,
                     max_index,
@@ -675,6 +696,7 @@ class HarmonicInferenceModel:
                 (
                     range_end,
                     range_log_prob,
+                    rejoin_log_prob,
                     chord_log_priors,
                     chord_priors_argsort,
                     max_index,
@@ -696,18 +718,29 @@ class HarmonicInferenceModel:
                 # Branch
                 for chord_id in chord_priors_argsort[:max_index]:
                     if chord_id == state.chord:
-                        # Disallow self-transitions
-                        continue
+                        # Same chord as last range: rejoin a split range
+                        new_state = state.rejoin(
+                            range_end,
+                            (
+                                range_log_prob
+                                + chord_log_priors[chord_id] * range_length
+                                + rejoin_log_prob
+                            ),
+                            self.CHORD_OUTPUT_TYPE,
+                            self.LABELS,
+                        )
 
-                    # Calculate the new state on this absolute chord
-                    new_state = state.chord_transition(
-                        chord_id,
-                        range_end,
-                        range_log_prob + chord_log_priors[chord_id] * range_length,
-                        self.CHORD_OUTPUT_TYPE,
-                        self.LABELS,
-                    )
+                    else:
+                        # New chord here: transition
+                        new_state = state.chord_transition(
+                            chord_id,
+                            range_end,
+                            range_log_prob + chord_log_priors[chord_id] * range_length,
+                            self.CHORD_OUTPUT_TYPE,
+                            self.LABELS,
+                        )
 
+                    # Invalid transitions return None
                     if new_state is not None:
                         if current_start == 0 or all_states[range_end].fits_in_beam(
                             new_state,
@@ -715,7 +748,8 @@ class HarmonicInferenceModel:
                         ):
                             to_check_for_key_change.append(new_state)
                         else:
-                            # No other chord will fit in beam
+                            # No other chord will fit in beam, since we are searching
+                            # through chords by probability
                             break
 
             # Check for key changes
@@ -740,7 +774,7 @@ class HarmonicInferenceModel:
                 change_state = state.copy() if can_change and can_not_change else state
 
                 if can_change:
-                    change_state.log_prob += change_log_prob * range_length
+                    change_state.add_ktm_log_prob(change_log_prob * range_length)
                     if current_start == 0 or all_states[change_state.change_index].fits_in_beam(
                         change_state,
                         check_hash=False,
@@ -748,7 +782,7 @@ class HarmonicInferenceModel:
                         to_ksm_states.append(change_state)
 
                 if can_not_change:
-                    state.log_prob += no_change_log_prob * range_length
+                    change_state.add_ktm_log_prob(no_change_log_prob * range_length)
                     if current_start == 0 or all_states[state.change_index].fits_in_beam(
                         state, check_hash=True
                     ):
@@ -961,12 +995,10 @@ class HarmonicInferenceModel:
             priors_argsort,
             max_indexes,
         ):
-            # Ensure each state branches at least once
-            if max_index == 1 and prior_argsort[0] == state.key:
-                max_index = 2
+            valid_states = 0
 
             # Branch
-            for relative_key_id in prior_argsort[:max_index]:
+            for relative_key_id in prior_argsort:
                 mode, interval = self.LABELS["relative_key"][relative_key_id]
                 tonic = state.get_key(self.KEY_OUTPUT_TYPE, self.LABELS).relative_tonic + interval
 
@@ -979,7 +1011,7 @@ class HarmonicInferenceModel:
                 key_id = hu.get_key_one_hot_index(mode, tonic, self.KEY_OUTPUT_TYPE)
 
                 if key_id == state.key:
-                    # Disallow self-transitions and illegal keys
+                    # Disallow self-transitions
                     continue
 
                 # Calculate the new state on this key change
@@ -992,7 +1024,13 @@ class HarmonicInferenceModel:
                 )
 
                 if new_state is not None:
+                    # The transition is valid (chord bass and root are in the proper range)
                     new_states.append(new_state)
+                    valid_states += 1
+
+                    if valid_states >= max_index:
+                        # Exit if we have branched enough times
+                        break
 
         return new_states
 

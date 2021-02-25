@@ -44,6 +44,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "-c",
+        "--corpus",
+        type=str,
+        nargs="*",
+        help="Only include pieces whose corpus name contains any of these strings",
+    )
+
+    parser.add_argument(
         "-l", "--log", type=str, default=sys.stderr, help="The log file to print messages to."
     )
 
@@ -80,11 +88,16 @@ if __name__ == "__main__":
     if ARGS.log is not sys.stderr:
         os.makedirs(Path(ARGS.log).parent, exist_ok=True)
         logging.basicConfig(filename=ARGS.log, level=logging.INFO, filemode="w")
+
     files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(ARGS.input)
 
     if ARGS.seed is None:
         ARGS.seed = np.random.randint(0, 2 ** 32)
         logging.info("Using seed %s", ARGS.seed)
+
+    if ARGS.corpus:
+        logging.info("Only using pieces whose corpus contains the string(s): %s", ARGS.corpus)
+        files_df = files_df[files_df["corpus_name"].str.contains("|".join(ARGS.corpus))]
 
     dataset_splits, split_ids, split_pieces = ds.get_dataset_splits(
         files_df[:5] if ARGS.debug else files_df,

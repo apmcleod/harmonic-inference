@@ -5,7 +5,7 @@ model_jsons/**
 *.old/**
 .idea/**
 data/**
-h5_data/**
+h5_data*/**
 results/**
 .pytest_cache/**
 .vscode/**
