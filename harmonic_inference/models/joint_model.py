@@ -1,6 +1,7 @@
 """Combined models that output a key/chord sequence given an input score, midi, or audio."""
 import bisect
 import heapq
+import inspect
 import itertools
 import logging
 from argparse import ArgumentParser, Namespace
@@ -233,6 +234,10 @@ class HarmonicInferenceModel:
             assert isinstance(
                 models[model], model_class
             ), f"`{model}` in models dict is not of type {model_class.__name__}."
+
+        logging.info("Joint Model parameters:")
+        for arg_name in inspect.getfullargspec(HarmonicInferenceModel.__init__).args[1:]:
+            logging.info("    %s = %s", arg_name, locals()[arg_name])
 
         self.chord_classifier: ccm.ChordClassifierModel = models["ccm"]
         self.chord_sequence_model: csm.ChordSequenceModel = models["csm"]
