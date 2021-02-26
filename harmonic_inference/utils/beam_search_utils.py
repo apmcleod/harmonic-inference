@@ -426,6 +426,13 @@ class State:
         output_reduction : Dict[ChordType, ChordType]
             The reduction used in the state's current csm log prior.
         """
+        if self.prev_state.change_index == 0:
+            # Here, the prior is from the ICM.
+            # The ICM automatically loads by spreading probability mass out according
+            # to its own use_inversions and reduction, so we set them to True and None
+            use_output_inversions = True
+            output_reduction = None
+
         range_length = self.change_index - self.prev_state.change_index
         relative_index = self.get_relative_chord_index(
             pitch_type,

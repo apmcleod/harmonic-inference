@@ -708,9 +708,6 @@ class HarmonicInferenceModel:
                 ) = range_data
                 range_length = range_end - current_start
 
-                if current_start == 712 and range_end == 716:
-                    print("Ready")
-
                 if (
                     current_start != 0
                     and len(all_states[range_end]) > 0
@@ -808,16 +805,6 @@ class HarmonicInferenceModel:
             if current_start != 0 and logging.getLogger().isEnabledFor(logging.DEBUG):
                 self.debugger.debug_chord_sequence_priors(to_csm_prior_states)
 
-            # Get output vocabulary from ICM or CSM
-            if current_start == 0:
-                # The ICM automatically loads by spreading probability mass out according
-                # to its own use_inversions and reduction
-                use_inversions = True
-                reduction = None
-            else:
-                use_inversions = self.chord_sequence_model.use_output_inversions
-                reduction = self.chord_sequence_model.output_reduction
-
             # Add CSM prior and add to beam (CSM is run at the start of each iteration)
             for state in to_csm_prior_states:
                 state.add_csm_prior(
@@ -826,8 +813,8 @@ class HarmonicInferenceModel:
                     self.onset_cache,
                     self.onset_level_cache,
                     self.LABELS,
-                    use_inversions,
-                    reduction,
+                    self.chord_sequence_model.use_output_inversions,
+                    self.chord_sequence_model.output_reduction,
                 )
 
                 # Add state to its beam, if it fits
