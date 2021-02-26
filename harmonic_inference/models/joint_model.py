@@ -810,8 +810,10 @@ class HarmonicInferenceModel:
 
             # Get output vocabulary from ICM or CSM
             if current_start == 0:
-                use_inversions = self.initial_chord_model.use_inversions
-                reduction = self.initial_chord_model.reduction
+                # The ICM automatically loads by spreading probability mass out according
+                # to its own use_inversions and reduction
+                use_inversions = True
+                reduction = None
             else:
                 use_inversions = self.chord_sequence_model.use_output_inversions
                 reduction = self.chord_sequence_model.output_reduction
