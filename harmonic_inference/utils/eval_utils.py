@@ -701,7 +701,7 @@ def average_results(results_path: Union[Path, str], split_on: str = " = ") -> Di
             key = key.strip()
 
             if "accuracy" in key:
-                averages[key].append(value)
+                averages[key].append(float(value))
 
     return {key: np.mean(value_list) for key, value_list in averages.items()}
 
