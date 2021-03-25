@@ -102,7 +102,7 @@ class Note:
         if pitch_type == self.pitch_type:
             return Note(**self.params)
 
-        # Convert relative, local, and global tonic
+        # Convert pitch
         new_params["pitch_class"] = get_pitch_from_string(
             get_pitch_string(new_params["pitch_class"], self.pitch_type), pitch_type
         )
@@ -116,6 +116,7 @@ class Note:
         chord_duration: Union[float, Fraction] = None,
         measures_df: pd.DataFrame = None,
         min_pitch: Tuple[int, int] = None,
+        max_pitch: Tuple[int, int] = None,
         note_onset: Fraction = None,
         dur_from_prev: Union[float, Fraction] = None,
         dur_to_next: Union[float, Fraction] = None,
@@ -146,8 +147,14 @@ class Note:
             vector.
 
         min_pitch : Tuple[int, int]
-            The minimum pitch of any note in this set of notes, expressed as a (octave, pitch)
-            tuple. None to not include the binary is_lowest vector entry.
+            The minimum pitch of any note in this set of notes, expressed as an (octave, pitch)
+            tuple. None to not include the binary is_lowest vector entry, or any other relative
+            pitch height measures.
+
+        max_pitch : Tuple[int, int]
+            The maximum pitch of any note in this set of notes, expressed as an (octave, pitch)
+            tuple. If this or min_pitch is None, the chord-relative normalized pitch height
+            will not be available.
 
         note_onset : Fraction
             The duration from the chord onset to the note's onset. If given, this speeds up
@@ -172,7 +179,8 @@ class Note:
         vectors.append(pitch)
 
         # Octave as one-hot
-        octave = np.zeros(127 // NUM_PITCHES[PitchType.MIDI], dtype=np.float16)
+        num_octaves = 127 // NUM_PITCHES[PitchType.MIDI]
+        octave = np.zeros(num_octaves, dtype=np.float16)
         octave[self.octave] = 1
         vectors.append(octave)
 
@@ -228,6 +236,45 @@ class Note:
             1 if min_pitch is not None and (self.octave, self.pitch_class) == min_pitch else 0
         ]
         vectors.append(min_pitch)
+
+        # Octave related to surrounding notes as one-hot
+        relative_octave = np.zeros(num_octaves, dtype=np.float16)
+        lowest_octave = 0 if min_pitch is None else min_pitch[0]
+        relative_octave[self.octave - lowest_octave] = 1
+        vectors.append(relative_octave)
+
+        # Normalized pitch height
+        midi_note = self.to_pitch_type(PitchType.MIDI)
+        midi_note_number = midi_note.octave * NUM_PITCHES[PitchType.MIDI] + midi_note.pitch_class
+        norm_pitch_height = [midi_note_number / 127]
+        vectors.append(norm_pitch_height)
+
+        # Relative to surrounding notes
+        if min_pitch is not None and max_pitch is not None:
+            if self.pitch_type == PitchType.TPC:
+                min_pitch[1] = get_pitch_from_string(
+                    get_pitch_string(min_pitch[1], self.pitch_type), PitchType.MIDI
+                )
+
+                max_pitch[1] = get_pitch_from_string(
+                    get_pitch_string(max_pitch[1], self.pitch_type), PitchType.MIDI
+                )
+
+            min_midi_note_number = min_pitch[0] * NUM_PITCHES[PitchType.MIDI] + min_pitch[1]
+            max_midi_note_number = max_pitch[0] * NUM_PITCHES[PitchType.MIDI] + max_pitch[1]
+            range_size = max_midi_note_number - min_midi_note_number
+
+            # If min pitch equals max pitch, we set the range to 1 and every note will have
+            # norm_relative = 0 (as if they were all the bass note).
+            if range_size == 0:
+                range_size = 1
+                max_midi_note_number += 1
+
+            relative_norm_pitch_height = [(midi_note_number - min_pitch) / range_size]
+            vectors.append(relative_norm_pitch_height)
+
+        else:
+            vectors.append([0])
 
         return np.concatenate(vectors).astype(np.float16)
 
@@ -368,8 +415,18 @@ def get_note_vector_length(pitch_type: PitchType) -> int:
     length : int
         The length of a single note vector of the given pitch type.
     """
+    num_octaves = 127 // NUM_PITCHES[PitchType.MIDI]
+    # 4 onset level
+    # 4 offset level
+    # 3 onset, offset, duration relative to chord
+    # 2 durations to next and from prev
+    # 1 is_lowest
+    # 1 pitch height relative to window
+    extra = 15
+
     return (
         NUM_PITCHES[pitch_type]  # Pitch class
-        + 127 // NUM_PITCHES[PitchType.MIDI]  # Octave
-        + 14  # 4 onset level, 4 offset level, onset, offset, durations, is_lowest
+        + num_octaves  # Absolute octave
+        + num_octaves  # Relative octave (above lowest note in chord window)
+        + extra
     )
