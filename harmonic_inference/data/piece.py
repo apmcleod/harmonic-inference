@@ -111,8 +111,10 @@ def get_chord_note_input(
     chord_notes = notes[first_note_index:last_note_index]
 
     # Get all note vectors within the window
-    min_pitch = min([(note.octave, note.pitch_class) for note in chord_notes])
-    max_pitch = max([(note.octave, note.pitch_class) for note in chord_notes])
+    pitch_list = [(note.octave, note.get_midi_note_number()) for note in chord_notes]
+    min_pitch = min(pitch_list)
+    max_pitch = max(pitch_list)
+
     if duration_cache is None or not chord_onset_aligns:
         note_onsets = np.full(len(chord_notes), None)
     else:

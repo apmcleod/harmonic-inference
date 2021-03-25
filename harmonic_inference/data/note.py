@@ -97,7 +97,7 @@ class Note:
             A copy of this note, with the given pitch type.
         """
         new_params = {key: getattr(self, key) for key in self.params}
-        new_params["tonic_type"] = pitch_type
+        new_params["pitch_type"] = pitch_type
 
         if pitch_type == self.pitch_type:
             return Note(**self.params)
@@ -108,6 +108,23 @@ class Note:
         )
 
         return Note(**new_params)
+
+    def get_midi_note_number(self) -> int:
+        """
+        Get the MIDI note number of this note, where 0 == C0.
+
+        Returns
+        -------
+        midi : int
+            The MIDI note number of this Note's pitch.
+        """
+        if self.pitch_type == PitchType.MIDI:
+            return NUM_PITCHES[PitchType.TPC] * self.octave + self.pitch_class
+
+        midi_pitch_class = get_pitch_from_string(
+            get_pitch_string(self.pitch_class, self.pitch_type), PitchType.MIDI
+        )
+        return NUM_PITCHES[PitchType.MIDI] * self.octave + midi_pitch_class
 
     def to_vec(
         self,
@@ -147,14 +164,14 @@ class Note:
             vector.
 
         min_pitch : Tuple[int, int]
-            The minimum pitch of any note in this set of notes, expressed as an (octave, pitch)
-            tuple. None to not include the binary is_lowest vector entry, or any other relative
-            pitch height measures.
+            The minimum pitch of any note in this set of notes, expressed as an (octave,
+            MIDI note number) tuple. None to not include the binary is_lowest vector entry,
+            or any other relative pitch height measures.
 
         max_pitch : Tuple[int, int]
-            The maximum pitch of any note in this set of notes, expressed as an (octave, pitch)
-            tuple. If this or min_pitch is None, the chord-relative normalized pitch height
-            will not be available.
+            The maximum pitch of any note in this set of notes, expressed as an (octave,
+            MIDI note number) tuple. If this or min_pitch is None, the chord-relative
+            normalized pitch height will not be available.
 
         note_onset : Fraction
             The duration from the chord onset to the note's onset. If given, this speeds up
@@ -232,10 +249,9 @@ class Note:
         vectors.append(durations)
 
         # Binary -- is this the lowest note in this set of notes
-        min_pitch = [
-            1 if min_pitch is not None and (self.octave, self.pitch_class) == min_pitch else 0
-        ]
-        vectors.append(min_pitch)
+        midi_note_number = self.get_midi_note_number()
+        is_min = [1 if min_pitch is not None and midi_note_number == min_pitch[1] else 0]
+        vectors.append(is_min)
 
         # Octave related to surrounding notes as one-hot
         relative_octave = np.zeros(num_octaves, dtype=np.float16)
@@ -244,33 +260,20 @@ class Note:
         vectors.append(relative_octave)
 
         # Normalized pitch height
-        midi_note = self.to_pitch_type(PitchType.MIDI)
-        midi_note_number = midi_note.octave * NUM_PITCHES[PitchType.MIDI] + midi_note.pitch_class
         norm_pitch_height = [midi_note_number / 127]
         vectors.append(norm_pitch_height)
 
         # Relative to surrounding notes
         if min_pitch is not None and max_pitch is not None:
-            if self.pitch_type == PitchType.TPC:
-                min_pitch[1] = get_pitch_from_string(
-                    get_pitch_string(min_pitch[1], self.pitch_type), PitchType.MIDI
-                )
-
-                max_pitch[1] = get_pitch_from_string(
-                    get_pitch_string(max_pitch[1], self.pitch_type), PitchType.MIDI
-                )
-
-            min_midi_note_number = min_pitch[0] * NUM_PITCHES[PitchType.MIDI] + min_pitch[1]
-            max_midi_note_number = max_pitch[0] * NUM_PITCHES[PitchType.MIDI] + max_pitch[1]
-            range_size = max_midi_note_number - min_midi_note_number
+            range_size = max_pitch[1] - min_pitch[1]
 
             # If min pitch equals max pitch, we set the range to 1 and every note will have
             # norm_relative = 0 (as if they were all the bass note).
             if range_size == 0:
                 range_size = 1
-                max_midi_note_number += 1
+                max_pitch = (max_pitch[0], max_pitch[1] + 1)
 
-            relative_norm_pitch_height = [(midi_note_number - min_pitch) / range_size]
+            relative_norm_pitch_height = [(midi_note_number - min_pitch[1]) / range_size]
             vectors.append(relative_norm_pitch_height)
 
         else:
