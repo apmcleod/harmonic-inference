@@ -438,7 +438,7 @@ class ChordClassificationDataset(HarmonicDataset):
         """
         root, chord_type, inversion = get_chord_from_one_hot_index(
             target,
-            self.target_pitch_type,
+            PitchType(self.target_pitch_type[0]),
             use_inversions=self.use_inversions,
             relative=False,
             pad=False,
@@ -447,8 +447,17 @@ class ChordClassificationDataset(HarmonicDataset):
 
         return {
             "root": root,
-            "bass": get_bass_note(chord_type, root, inversion, self.target_pitch_type),
-            "pitches": get_vector_from_chord_type(chord_type, self.target_pitch_type, root),
+            "bass": get_bass_note(
+                chord_type,
+                root,
+                inversion,
+                PitchType(self.target_pitch_type[0]),
+            ),
+            "pitches": get_vector_from_chord_type(
+                chord_type,
+                PitchType(self.target_pitch_type[0]),
+                root,
+            ),
         }
 
     def reduce(self, data: Dict):
@@ -460,7 +469,7 @@ class ChordClassificationDataset(HarmonicDataset):
         """
         if not self.dummy_targets:
             data["targets"] = reduce_chord_one_hots(
-                data["targets"],
+                data["targets"] if isinstance(data["targets"], np.ndarray) else [data["targets"]],
                 False,
                 PitchType(self.target_pitch_type[0]),
                 inversions_present=True,
