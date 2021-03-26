@@ -424,8 +424,9 @@ def get_note_vector_length(pitch_type: PitchType) -> int:
     # 3 onset, offset, duration relative to chord
     # 2 durations to next and from prev
     # 1 is_lowest
-    # 1 pitch height relative to window
-    extra = 15
+    # 1 normalized pitch height
+    # 1 normalized pitch height relative to window
+    extra = 16
 
     return (
         NUM_PITCHES[pitch_type]  # Pitch class
