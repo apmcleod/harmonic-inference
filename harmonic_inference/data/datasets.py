@@ -18,6 +18,11 @@ from harmonic_inference.data.vector_decoding import (
     reduce_chord_types,
     remove_chord_inversions,
 )
+from harmonic_inference.utils.harmonic_utils import (
+    get_bass_note,
+    get_chord_from_one_hot_index,
+    get_vector_from_chord_type,
+)
 
 
 class HarmonicDataset(Dataset):
@@ -412,7 +417,47 @@ class ChordClassificationDataset(HarmonicDataset):
         self.reduction = reduction
         self.use_inversions = use_inversions
 
+    def generate_intermediate_targets(self, target: int) -> Dict[str, Union[int, List]]:
+        """
+        For the given target index (already reduced), generate the intermediate targets of:
+            - a "pitches" presence vector (length num_pitches)
+            - a "bass" note pitch index (one-hot).
+            - a "root" note pitch index (one-hot).
+
+        Parameters
+        ----------
+        target : int
+            The target chord index, already reduced according to use_inversions, reduction,
+            and pitch_type.
+
+        Returns
+        -------
+        intermediate_targets : Dict[str, Union[int, List]]
+            A dictionary containing a "pitches" presence vector, "bass" one-hot, and "root"
+            one-hot for the given target.
+        """
+        root, chord_type, inversion = get_chord_from_one_hot_index(
+            target,
+            self.target_pitch_type,
+            use_inversions=self.use_inversions,
+            relative=False,
+            pad=False,
+            reduction=self.reduction,
+        )
+
+        return {
+            "root": root,
+            "bass": get_bass_note(chord_type, root, inversion, self.target_pitch_type),
+            "pitches": get_vector_from_chord_type(chord_type, self.target_pitch_type, root),
+        }
+
     def reduce(self, data: Dict):
+        """
+        Reduce the targets using the chord type, inversion, and pitch type reductions.
+
+        Also, generate and save the intermediate targets in the dictionary, if we are not
+        using dummy targets.
+        """
         if not self.dummy_targets:
             data["targets"] = reduce_chord_one_hots(
                 data["targets"],
@@ -424,6 +469,8 @@ class ChordClassificationDataset(HarmonicDataset):
                 reduction=self.reduction,
                 use_inversions=self.use_inversions,
             )[0]
+
+            data["intermediate_targets"] = self.generate_intermediate_targets(data["targets"])
 
 
 class ChordSequenceDataset(HarmonicDataset):

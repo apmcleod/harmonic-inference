@@ -113,7 +113,7 @@ def get_chord_from_one_hot_index(
     -------
     root : int
         The root pitch of the chord.
-    chord_type : ChorType
+    chord_type : ChordType
         The chord type of the corresponding chord.
     inversion : int
         The inversion of the corresponding chord.
@@ -487,7 +487,6 @@ def transpose_chord_vector(
     chord_vector : List[int]
         A binary vector representation of the given chord type, where 1 indicates
         the presence of a pitch in the given chord type, and 0 represents non-presence.
-        The vector is length 12.
 
     interval : int
         The interval to transpose the given chord vector by, either in semitones (if pitch_type
@@ -520,9 +519,13 @@ def transpose_chord_vector(
     return result
 
 
-def get_vector_from_chord_type(chord_type: ChordType, pitch_type: PitchType) -> List[int]:
+def get_vector_from_chord_type(
+    chord_type: ChordType,
+    pitch_type: PitchType,
+    root: int = None,
+) -> List[int]:
     """
-    Convert a chord type string into a one-hot vector representation of pitch presence.
+    Convert a chord type into a one-hot vector representation of pitch presence.
 
     Parameters
     ----------
@@ -530,15 +533,22 @@ def get_vector_from_chord_type(chord_type: ChordType, pitch_type: PitchType) -> 
         The type of chord whose pitch vector to return.
     pitch_type : PitchType
         The type of pitch vector to return.
+    root : int
+        If given, transpose the vector to this root. Otherwise, the returned vector
+        will have a root of C.
 
     Returns
     -------
     chord_vector : List[int]
-        A one-hot vector of the pitches present in a chord of the given chord type
-        with root C in the given pitch representation.
+        A one-hot vector of the pitches present in a chord of the given chord type,
+        with a specified root (if given), or root C (default, if root=None).
     """
     chord_vector = np.zeros(hc.NUM_PITCHES[pitch_type], dtype=int)
     chord_vector[hc.CHORD_PITCHES[pitch_type][chord_type]] = 1
+
+    if root is not None:
+        chord_vector = transpose_chord_vector(chord_vector, root - hc.C[pitch_type], pitch_type)
+
     return chord_vector
 
 
