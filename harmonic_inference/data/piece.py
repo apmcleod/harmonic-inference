@@ -368,150 +368,48 @@ class ScorePiece(Piece):
 
     def __init__(
         self,
-        notes_df: pd.DataFrame,
-        chords_df: pd.DataFrame,
         measures_df: pd.DataFrame,
-        piece_dict: Dict = None,
-        chord_reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
-        use_inversions: bool = True,
-        use_relative: bool = True,
+        notes: List[Note],
+        chords: List[Chord],
+        keys: List[Key],
+        chord_changes: List[int],
+        chord_ranges: List[Tuple[int, int]],
+        key_changes: List[int],
         name: str = None,
     ):
         """
-        Create a ScorePiece object from the given 3 pandas DataFrames.
+        Create a new ScorePiece.
 
         Parameters
         ----------
-        notes_df : pd.DataFrame
-            A DataFrame containing information about the notes contained in the piece.
-        chords_df : pd.DataFrame
-            A DataFrame containing information about the chords contained in the piece.
         measures_df : pd.DataFrame
             A DataFrame containing information about the measures in the piece.
-        piece_dict : Dict
-            An optional dict, to load data from instead of calculating everything from the dfs.
-            If given, only measures_df must also be given. The rest can be None.
-        chord_reduction : Dict[ChordType, ChordType]
-            A mapping from every possible ChordType to a reduced ChordType: the type that chord
-            should be stored as. This can be used, for example, to store each chord as its triad.
-        use_inversions : bool
-            True to store inversions in the chord symbols. False to ignore them.
-        use_relative : bool
-            True to treat relative roots as new local keys. False to treat them as chord symbols
-            within the annotated local key.
+        notes : List[Note]
+            A list of the notes of the piece.
+        chords : List[Chord]
+            A list of the chords of the piece.
+        keys : List[Key]
+            A list of the keys of the piece.
+        chord_changes : List[int]
+            A list of the indexes at which there are chord changes in the piece.
+        chord_ranges : List[Tuple[int, int]]
+            A list of the [start, end) indexes of the chords of the piece.
+        key_changes : List[int]
+            A list of the indexes at which there are key changes in the piece.
         name : str
             A string identifier for this piece.
         """
         super().__init__(PieceType.SCORE, name=name)
-        self.measures_df = measures_df
         self.duration_cache = None
 
-        if piece_dict is None:
-            levels_cache = defaultdict(dict)
-            notes = np.array(
-                [
-                    [note, note_id]
-                    for note_id, note in enumerate(
-                        notes_df.apply(
-                            Note.from_series,
-                            axis="columns",
-                            measures_df=measures_df,
-                            pitch_type=PitchType.TPC,
-                            levels_cache=levels_cache,
-                        )
-                    )
-                    if note is not None
-                ]
-            )
-            self.notes, self.note_ilocs = np.hsplit(notes, 2)
-            self.notes = np.squeeze(self.notes)
-            self.note_ilocs = np.squeeze(self.note_ilocs).astype(int)
+        self.measures_df = measures_df
 
-            chords = np.array(
-                [
-                    [chord, chord_id]
-                    for chord_id, chord in enumerate(
-                        chords_df.apply(
-                            Chord.from_series,
-                            axis="columns",
-                            measures_df=measures_df,
-                            pitch_type=PitchType.TPC,
-                            levels_cache=levels_cache,
-                            reduction=chord_reduction,
-                            use_inversion=use_inversions,
-                            use_relative=use_relative,
-                        )
-                    )
-                    if chord is not None
-                ]
-            )
-            chords, chord_ilocs = np.hsplit(chords, 2)
-            chords = np.squeeze(chords)
-            chord_ilocs = np.squeeze(chord_ilocs).astype(int)
-
-            # Remove accidentally repeated chords
-            non_repeated_mask = get_reduction_mask(chords, kwargs={"use_inversion": use_inversions})
-            self.chords = []
-            for chord, mask in zip(chords, non_repeated_mask):
-                if mask:
-                    self.chords.append(chord)
-                else:
-                    self.chords[-1].merge_with(chord)
-            self.chords = np.array(self.chords)
-            self.chord_ilocs = chord_ilocs[non_repeated_mask]
-
-            # The index of the notes where there is a chord change
-            self.chord_changes = np.zeros(len(self.chords), dtype=int)
-            note_index = 0
-            for chord_index, chord in enumerate(self.chords):
-                while (
-                    note_index + 1 < len(self.notes) and self.notes[note_index].onset < chord.onset
-                ):
-                    note_index += 1
-                self.chord_changes[chord_index] = note_index
-
-            # The note input ranges for each chord
-            self.chord_ranges = [
-                (get_range_start(chord.onset, self.notes), end)
-                for chord, end in zip(self.chords, list(self.chord_changes[1:]) + [len(self.notes)])
-            ]
-
-            key_cols = chords_df.loc[
-                chords_df.index[self.chord_ilocs],
-                [
-                    "globalkey",
-                    "globalkey_is_minor",
-                    "localkey_is_minor",
-                    "localkey",
-                    "relativeroot",
-                ],
-            ]
-            key_cols = key_cols.fillna("-1")
-            changes = key_cols.ne(key_cols.shift()).fillna(True)
-
-            key_changes = np.arange(len(changes))[changes.any(axis=1)]
-            keys = np.array(
-                [
-                    key
-                    for key in chords_df.loc[chords_df.index[self.chord_ilocs[key_changes]]].apply(
-                        Key.from_series, axis="columns", tonic_type=PitchType.TPC
-                    )
-                    if key is not None
-                ]
-            )
-
-            # Remove accidentally repeated keys
-            non_repeated_mask = get_reduction_mask(keys, kwargs={"use_relative": use_relative})
-            self.keys = keys[non_repeated_mask]
-            self.key_changes = key_changes[non_repeated_mask]
-
-        else:
-            self.notes = np.array([Note(**note) for note in piece_dict["notes"]])
-            self.chords = np.array([Chord(**chord) for chord in piece_dict["chords"]])
-            self.keys = np.array([Key(**key) for key in piece_dict["keys"]])
-            self.chord_changes = np.array(piece_dict["chord_changes"])
-            self.chord_ranges = np.array(piece_dict["chord_ranges"])
-            self.key_changes = np.array(piece_dict["key_changes"])
+        self.notes = np.array(notes)
+        self.chords = np.array(chords)
+        self.keys = np.array(keys)
+        self.chord_changes = np.array(chord_changes)
+        self.chord_ranges = np.array(chord_ranges)
+        self.key_changes = np.array(key_changes)
 
     def get_duration_cache(self):
         if self.duration_cache is None:
@@ -604,6 +502,15 @@ class ScorePiece(Piece):
         return self.keys
 
     def to_dict(self) -> Dict[str, List]:
+        """
+        Return a dictionary of this ScorePiece, that can be used to load it quickly
+        from json, for example.
+
+        Returns
+        -------
+        piece : Dict[str, List]
+            A dictionary of this Piece.
+        """
         return {
             "notes": [note.to_dict() for note in self.get_inputs()],
             "chords": [chord.to_dict() for chord in self.get_chords()],
@@ -612,3 +519,176 @@ class ScorePiece(Piece):
             "chord_ranges": self.get_chord_ranges(),
             "key_changes": self.get_key_change_indices(),
         }
+
+
+def get_score_piece_from_dict(
+    measures_df: pd.DataFrame,
+    piece_dict: Dict,
+    name: str = None,
+) -> ScorePiece:
+    """
+    Create and return a ScorePiece from a dictionary, create by ScorePiece.to_dict().
+
+    Parameters
+    ----------
+    measures_df : pd.DataFrame
+        A measures_df is required for metrical information when getting chord note inputs.
+    piece_dict : Dict
+        The dictionary created by ScorePiece.to_dict().
+    name : str
+        A string identifier for this piece.
+
+    Returns
+    -------
+    piece : ScorePiece
+        The ScorePiece, loaded from the dict.
+    """
+    return ScorePiece(
+        measures_df,
+        [Note(**note) for note in piece_dict["notes"]],
+        [Chord(**chord) for chord in piece_dict["chords"]],
+        [Key(**key) for key in piece_dict["keys"]],
+        piece_dict["chord_changes"],
+        piece_dict["chord_ranges"],
+        piece_dict["key_changes"],
+        name=name,
+    )
+
+
+def get_score_piece_from_data_frames(
+    notes_df: pd.DataFrame,
+    chords_df: pd.DataFrame,
+    measures_df: pd.DataFrame,
+    chord_reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+    use_inversions: bool = True,
+    use_relative: bool = True,
+    name: str = None,
+) -> ScorePiece:
+    """
+    Create a ScorePiece object from the given 3 pandas DataFrames.
+
+    Parameters
+    ----------
+    notes_df : pd.DataFrame
+        A DataFrame containing information about the notes contained in the piece.
+    chords_df : pd.DataFrame
+        A DataFrame containing information about the chords contained in the piece.
+    measures_df : pd.DataFrame
+        A DataFrame containing information about the measures in the piece.
+    chord_reduction : Dict[ChordType, ChordType]
+        A mapping from every possible ChordType to a reduced ChordType: the type that chord
+        should be stored as. This can be used, for example, to store each chord as its triad.
+    use_inversions : bool
+        True to store inversions in the chord symbols. False to ignore them.
+    use_relative : bool
+        True to treat relative roots as new local keys. False to treat them as chord symbols
+        within the annotated local key.
+    name : str
+        A string identifier for this piece.
+    """
+    levels_cache = defaultdict(dict)
+    notes_list = np.array(
+        [
+            [note, note_id]
+            for note_id, note in enumerate(
+                notes_df.apply(
+                    Note.from_series,
+                    axis="columns",
+                    measures_df=measures_df,
+                    pitch_type=PitchType.TPC,
+                    levels_cache=levels_cache,
+                )
+            )
+            if note is not None
+        ]
+    )
+    notes, note_ilocs = np.hsplit(notes_list, 2)
+    notes = np.squeeze(notes)
+    note_ilocs = np.squeeze(note_ilocs).astype(int)
+
+    chords_list = np.array(
+        [
+            [chord, chord_id]
+            for chord_id, chord in enumerate(
+                chords_df.apply(
+                    Chord.from_series,
+                    axis="columns",
+                    measures_df=measures_df,
+                    pitch_type=PitchType.TPC,
+                    levels_cache=levels_cache,
+                    reduction=chord_reduction,
+                    use_inversion=use_inversions,
+                    use_relative=use_relative,
+                )
+            )
+            if chord is not None
+        ]
+    )
+    chords_list, chord_ilocs = np.hsplit(chords_list, 2)
+    chords_list = np.squeeze(chords_list)
+    chord_ilocs = np.squeeze(chord_ilocs).astype(int)
+
+    # Remove accidentally repeated chords
+    non_repeated_mask = get_reduction_mask(chords_list, kwargs={"use_inversion": use_inversions})
+    chords = []
+    for chord, mask in zip(chords_list, non_repeated_mask):
+        if mask:
+            chords.append(chord)
+        else:
+            chords[-1].merge_with(chord)
+    chords = np.array(chords)
+    chord_ilocs = chord_ilocs[non_repeated_mask]
+
+    # The index of the notes where there is a chord change
+    chord_changes = np.zeros(len(chords), dtype=int)
+    note_index = 0
+    for chord_index, chord in enumerate(chords):
+        while note_index + 1 < len(notes) and notes[note_index].onset < chord.onset:
+            note_index += 1
+        chord_changes[chord_index] = note_index
+
+    # The note input ranges for each chord
+    chord_ranges = [
+        (get_range_start(chord.onset, notes), end)
+        for chord, end in zip(chords, list(chord_changes[1:]) + [len(notes)])
+    ]
+
+    key_cols = chords_df.loc[
+        chords_df.index[chord_ilocs],
+        [
+            "globalkey",
+            "globalkey_is_minor",
+            "localkey_is_minor",
+            "localkey",
+            "relativeroot",
+        ],
+    ]
+    key_cols = key_cols.fillna("-1")
+    changes = key_cols.ne(key_cols.shift()).fillna(True)
+
+    key_changes = np.arange(len(changes))[changes.any(axis=1)]
+    keys_list = np.array(
+        [
+            key
+            for key in chords_df.loc[chords_df.index[chord_ilocs[key_changes]]].apply(
+                Key.from_series, axis="columns", tonic_type=PitchType.TPC
+            )
+            if key is not None
+        ]
+    )
+
+    # Remove accidentally repeated keys
+    non_repeated_mask = get_reduction_mask(keys_list, kwargs={"use_relative": use_relative})
+    keys = keys_list[non_repeated_mask]
+    key_changes = key_changes[non_repeated_mask]
+
+    return ScorePiece(
+        measures_df,
+        notes,
+        chords,
+        keys,
+        chord_changes,
+        chord_ranges,
+        key_changes,
+        name=name,
+    )

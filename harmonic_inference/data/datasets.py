@@ -12,7 +12,7 @@ from tqdm import tqdm
 import h5py
 from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.key import get_key_change_vector_length
-from harmonic_inference.data.piece import Piece, ScorePiece
+from harmonic_inference.data.piece import Piece, get_score_piece_from_data_frames
 from harmonic_inference.data.vector_decoding import (
     reduce_chord_one_hots,
     reduce_chord_types,
@@ -1091,7 +1091,7 @@ def get_split_file_ids_and_pieces(
             continue
 
         try:
-            piece = ScorePiece(notes.loc[i], chords.loc[i], measures.loc[i])
+            piece = get_score_piece_from_data_frames(notes.loc[i], chords.loc[i], measures.loc[i])
             pieces.append(piece)
             df_indexes.append(i)
         except Exception:

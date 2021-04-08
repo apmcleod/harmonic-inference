@@ -21,7 +21,10 @@ import harmonic_inference.models.key_transition_models as ktm
 import pytorch_lightning as pl
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 from harmonic_inference.data.data_types import PieceType, PitchType
-from harmonic_inference.data.piece import ScorePiece
+from harmonic_inference.data.piece import (
+    get_score_piece_from_data_frames,
+    get_score_piece_from_dict,
+)
 from harmonic_inference.models.joint_model import MODEL_CLASSES
 from harmonic_inference.utils.data_utils import load_kwargs_from_json
 from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
@@ -186,7 +189,7 @@ if __name__ == "__main__":
             with open(pkl_path, "rb") as pkl_file:
                 piece_dicts = pickle.load(pkl_file)
             pieces = [
-                ScorePiece(None, None, measures_df.loc[file_id], piece_dict=piece_dict)
+                get_score_piece_from_dict(measures_df.loc[file_id], piece_dict)
                 for file_id, piece_dict in zip(file_ids, piece_dicts)
             ]
 
@@ -195,7 +198,7 @@ if __name__ == "__main__":
             pieces = []
             for file_id in tqdm(file_ids, desc="Loading Pieces"):
                 pieces.append(
-                    ScorePiece(
+                    get_score_piece_from_data_frames(
                         notes_df.loc[file_id], chords_df.loc[file_id], measures_df.loc[file_id]
                     )
                 )

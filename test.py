@@ -8,15 +8,19 @@ from glob import glob
 from pathlib import Path
 from typing import List, Union
 
-import h5py
 import torch
 from tqdm import tqdm
 
+import h5py
 import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.utils.eval_utils as eu
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 from harmonic_inference.data.data_types import NO_REDUCTION, TRIAD_REDUCTION, PitchType
-from harmonic_inference.data.piece import Piece, ScorePiece
+from harmonic_inference.data.piece import (
+    Piece,
+    get_score_piece_from_data_frames,
+    get_score_piece_from_dict,
+)
 from harmonic_inference.models.joint_model import (
     MODEL_CLASSES,
     HarmonicInferenceModel,
@@ -430,11 +434,19 @@ if __name__ == "__main__":
         piece_dicts = [piece_dicts[index]]
 
     pieces = [
-        ScorePiece(
+        get_score_piece_from_data_frames(
             notes_df.loc[file_id],
             chords_df.loc[file_id],
             measures_df.loc[file_id],
-            piece_dict=piece_dict,
+            name=(
+                f"{file_id}: {files_df.loc[file_id, 'corpus_name']}/"
+                f"{files_df.loc[file_id, 'file_name']}"
+            ),
+        )
+        if piece_dict is None
+        else get_score_piece_from_dict(
+            measures_df.loc[file_id],
+            piece_dict,
             name=(
                 f"{file_id}: {files_df.loc[file_id, 'corpus_name']}/"
                 f"{files_df.loc[file_id, 'file_name']}"
