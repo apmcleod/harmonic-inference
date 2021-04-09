@@ -2,10 +2,13 @@
 import bisect
 from collections import defaultdict
 from fractions import Fraction
+from pathlib import Path
 from typing import Dict, List, Tuple, Union
 
+import music21
 import numpy as np
 import pandas as pd
+from music21.converter import parse
 from tqdm import tqdm
 
 import harmonic_inference.utils.rhythmic_utils as ru
@@ -585,6 +588,11 @@ def get_score_piece_from_data_frames(
         within the annotated local key.
     name : str
         A string identifier for this piece.
+
+    Returns
+    -------
+    score_piece : ScorePiece
+        The ScorePiece, loaded from the dataframes.
     """
     levels_cache = defaultdict(dict)
     notes_list = np.array(
@@ -692,3 +700,158 @@ def get_score_piece_from_data_frames(
         key_changes,
         name=name,
     )
+
+
+def get_measures_df_from_music21_score(m21_score: music21.stream.Score) -> pd.DataFrame:
+    """
+    Compute and return a measures_df (that can be used to create a ScorePiece) from a
+    parsed music21 Score.
+
+    Parameters
+    ----------
+    m21_score : music21.stream.Score
+        A music21 Score that has been parsed already.
+
+    Returns
+    -------
+    measures_df : pd.DataFrame
+        A measures_df with the following columns:
+            'mc' (int): The measure index.
+            'timesig' (str): The time signature of each measure.
+            'start' (Fraction): The "offset" position at the start of each measure, in
+                                whole notes since the beginning of the piece.
+            'act_dur' (Fraction): The duration of the measure, in whole notes.
+            'offset' (Fraction): The starting position of this measure, in whole notes
+                                 after the most recent downbeat.
+            'next' (int): The measure index of the measure that follows each one.
+    """
+    # Lists to compute and add to measures_df
+    time_signatures = []
+    starts = []
+    lengths = []
+    df_offsets = []
+    mns = []
+
+    # Lists that we can pre-compute
+    mcs = list(range(len(m21_score.measureOffsetMap())))
+    nexts = mcs[1:] + [pd.NA]
+
+    # The start of the 2nd measure (the first full measure in the case of an anacrusis)
+    ts_epoch = Fraction(list(m21_score.measureOffsetMap().keys())[1] / 4)
+
+    # Default time signature
+    time_signature = "4/4"
+    ts_duration = Fraction(time_signature)
+
+    # Go through the measures and add them to the tracking lists
+    for mc, (offset, measures_list) in enumerate(m21_score.measureOffsetMap().items()):
+        offset = Fraction(offset) / 4
+        measure = measures_list[0]
+
+        if measure.timeSignature is not None:
+            if measure.timeSignature.ratioString != time_signature:
+                # Time Signature change
+                time_signature = measure.timeSignature.ratioString
+                ts_duration = Fraction(time_signature)
+
+                # Reset the ts_epoch to this location
+                if mc != 0:
+                    ts_epoch = offset
+
+        if lengths:
+            # Set the length of each bar to the difference between consecutive measure offsets
+            lengths[-1] = offset - starts[-1]
+        # Default (used only for the last measure)
+        lengths.append(Fraction(measure.duration.quarterLength) / 4)
+
+        starts.append(offset)
+        time_signatures.append(time_signature)
+        df_offsets.append((offset - ts_epoch) % ts_duration)
+        mns.append(measure.measureNumber)
+
+    return pd.DataFrame(
+        {
+            "mc": mcs,
+            "mn": mns,
+            "timesig": time_signatures,
+            "start": starts,
+            "act_dur": lengths,
+            "offset": df_offsets,
+            "next": nexts,
+        }
+    )
+
+
+def get_score_piece_from_music_xml(
+    music_xml_path: Union[str, Path],
+    label_csv_path: Union[str, Path],
+    name: str = None,
+) -> ScorePiece:
+    """
+    Create a ScorePiece object from the given 3 pandas DataFrames.
+
+    Parameters
+    ----------
+    music_xml_path : Union[str, Path]
+        The path to a music XML score file.
+    label_csv_path : Union[str, Path]
+        The path to the csv label file for the given XML score.
+    name : str
+        A string identifier for this piece.
+
+    Returns
+    -------
+    score_piece : ScorePiece
+        The ScorePiece, loaded from the xml and label csv.
+    """
+    levels_cache = defaultdict(dict)
+    if isinstance(music_xml_path, str):
+        music_xml_path = Path(music_xml_path)
+    if isinstance(label_csv_path, str):
+        label_csv_path = Path(label_csv_path)
+
+    # Parse score
+    m21_score = parse(music_xml_path)
+    m21_score = m21_score.flattenParts()
+    m21_score = m21_score.stripTies()
+
+    measures_df = get_measures_df_from_music21_score(m21_score)
+
+    notes = []
+
+    for mc, measures_list in enumerate(m21_score.measureOffsetMap().values()):
+        measure = measures_list[0]
+
+        for note in measure.recurse().notes:
+            if note.isChord:
+                chord = note
+                for chord_note in chord.notes:
+                    notes.append(
+                        Note.from_music21(
+                            chord_note,
+                            measures_df,
+                            mc,
+                            pitch_type=PitchType.TPC,
+                            m21_chord=chord,
+                            levels_cache=levels_cache,
+                        )
+                    )
+            else:
+                notes.append(
+                    Note.from_music21(
+                        note, measures_df, mc, pitch_type=PitchType.TPC, levels_cache=levels_cache
+                    )
+                )
+
+    return notes, measures_df
+
+    # return ScorePiece(
+    #     measures_df,
+    #     notes,
+    #     chords,
+    #     keys,
+    #     chord_changes,
+    #     chord_ranges,
+    #     key_changes,
+    #     name=name,
+    # )
