@@ -782,6 +782,69 @@ def get_measures_df_from_music21_score(m21_score: music21.stream.Score) -> pd.Da
     )
 
 
+def get_notes_from_music_xml(
+    m21_score: music21.stream.Score,
+    measures_df: pd.DataFrame,
+) -> List[Note]:
+    """
+    Get a list of Note objects from a music21 score that has already been parsed.
+    This function will flatten and remove ties.
+
+    Parameters
+    ----------
+    m21_score : music21.stream.Score
+        A music21 Score that has been parsed already.
+    measures_df : pd.DataFrame
+        A measures_df with the following columns (from get_measures_df_from_music21_score):
+            'mc' (int): The measure index.
+            'timesig' (str): The time signature of each measure.
+            'start' (Fraction): The "offset" position at the start of each measure, in
+                                whole notes since the beginning of the piece.
+            'act_dur' (Fraction): The duration of the measure, in whole notes.
+            'offset' (Fraction): The starting position of this measure, in whole notes
+                                 after the most recent downbeat.
+            'next' (int): The measure index of the measure that follows each one.
+
+    Returns
+    -------
+    notes : List[Note]
+        A List of the Notes present in the given music21 score.
+    """
+    m21_score = m21_score.flattenParts()
+    m21_score = m21_score.stripTies()
+
+    levels_cache = defaultdict(dict)
+    notes = []
+
+    for measure_mc, measures_list in enumerate(m21_score.measureOffsetMap().values()):
+        measure = measures_list[0]
+
+        for note in measure.recurse().notes:
+            if note.isChord:
+                chord = note
+                for chord_note in chord.notes:
+                    notes.append(
+                        Note.from_music21(
+                            chord_note,
+                            measures_df,
+                            measure_mc,
+                            pitch_type=PitchType.TPC,
+                            m21_chord=chord,
+                            levels_cache=levels_cache,
+                        )
+                    )
+            else:
+                notes.append(
+                    Note.from_music21(
+                        note,
+                        measures_df,
+                        measure_mc,
+                        pitch_type=PitchType.TPC,
+                        levels_cache=levels_cache,
+                    )
+                )
+
+
 def get_score_piece_from_music_xml(
     music_xml_path: Union[str, Path],
     label_csv_path: Union[str, Path],
@@ -804,46 +867,40 @@ def get_score_piece_from_music_xml(
     score_piece : ScorePiece
         The ScorePiece, loaded from the xml and label csv.
     """
-    levels_cache = defaultdict(dict)
+    # Turn all paths into Path objects
     if isinstance(music_xml_path, str):
         music_xml_path = Path(music_xml_path)
     if isinstance(label_csv_path, str):
         label_csv_path = Path(label_csv_path)
 
-    # Parse score
+    # Parse the score
     m21_score = parse(music_xml_path)
-    m21_score = m21_score.flattenParts()
-    m21_score = m21_score.stripTies()
-
     measures_df = get_measures_df_from_music21_score(m21_score)
+    notes = get_notes_from_music_xml(m21_score, measures_df)
 
-    notes = []
+    # Parse the labels csv
+    labels_df = pd.read_csv(
+        label_csv_path,
+        header=None,
+        names=["on", "off", "key", "degree", "type", "inv"],
+        dtype={"on": Fraction, "off": Fraction, "degree": str},
+    )
 
-    for mc, measures_list in enumerate(m21_score.measureOffsetMap().values()):
-        measure = measures_list[0]
+    # Labels are in quarter notes, but the rest of the code uses whole notes
+    labels_df["on"] /= 4
+    labels_df["off"] /= 4
 
-        for note in measure.recurse().notes:
-            if note.isChord:
-                chord = note
-                for chord_note in chord.notes:
-                    notes.append(
-                        Note.from_music21(
-                            chord_note,
-                            measures_df,
-                            mc,
-                            pitch_type=PitchType.TPC,
-                            m21_chord=chord,
-                            levels_cache=levels_cache,
-                        )
-                    )
-            else:
-                notes.append(
-                    Note.from_music21(
-                        note, measures_df, mc, pitch_type=PitchType.TPC, levels_cache=levels_cache
-                    )
-                )
+    levels_cache = defaultdict(dict)
+    chords = [
+        Chord.from_labels_csv_row(row, measures_df, PitchType.TPC, levels_cache=levels_cache)
+        for _, row in labels_df.iterrows()
+    ]
 
-    return notes, measures_df
+    keys = [
+        Key.from_labels_csv_row(row, measures_df, PitchType.TPC) for _, row in labels_df.iterrows()
+    ]
+
+    return notes, measures_df, chords, keys
 
     # return ScorePiece(
     #     measures_df,

@@ -15,6 +15,7 @@ from harmonic_inference.utils.harmonic_constants import (
 from harmonic_inference.utils.harmonic_utils import (
     absolute_to_relative,
     get_interval_from_numeral,
+    get_interval_from_scale_degree,
     get_key_one_hot_index,
     get_pitch_from_string,
     get_pitch_string,
@@ -349,6 +350,95 @@ class Key:
             logging.error("Error parsing key from row %s", chord_row)
             logging.exception(exception)
             return None
+
+    @staticmethod
+    def from_labels_csv(
+        chord_row: pd.Series,
+        tonic_type: PitchType,
+        global_key: "Key" = None,
+    ) -> "Key":
+        """
+        Create a Key object of the given pitch_type from the given pd.Series taken
+        from a labels csv file.
+
+        Parameters
+        ----------
+        chord_row : pd.Series
+            The chord row from which to make our Key object. It must contain at least the rows:
+                'key' (str): The local key at the time of the given label. Flats and sharps
+                             are represented with - and +, and major/minor is represented
+                             by upper/lower-case.
+                'degree' (str): The degree of the chord's root, relative to the local key,
+                                and including applied chords with / notation. Flats and sharps
+                                are represented with - and +.
+        tonic_type : PitchType
+            The pitch type to use for the Key's tonic.
+        global_key : Key
+            A Key which contains the global key for this piece (since the labels csv does
+            not explicitly list the global key). If None, it is assumed that this key is
+            the glboal key.
+
+        Returns
+        -------
+        key : Key, or None
+            The created Key object.
+        """
+        # Get local key
+        key_str = chord_row["key"].replace("-", "b")
+        key_str = key_str.replace("+", "#")
+
+        local_tonic = get_pitch_from_string(key_str, tonic_type)
+        local_mode = KeyMode.MAJOR if key_str[0].isupper() else KeyMode.MINOR
+
+        # Get global key
+        if global_key is None:
+            global_tonic = local_tonic
+            global_mode = local_mode
+        else:
+            global_tonic = global_key.global_tonic
+            global_mode = global_key.global_mode
+
+        # Get relative key
+        relative_tonic = local_tonic
+        relative_mode = local_mode
+
+        degree_str = chord_row["degree"].replace("-", "b")
+        degree_str = degree_str.replace("+", "#")
+
+        if "/" in degree_str:
+            key, degree_str = degree_str.split("/")
+
+            relative_transposition = get_interval_from_scale_degree(
+                relative_tonic,
+                False,
+                relative_mode,
+                pitch_type=tonic_type,
+            )
+            relative_tonic = transpose_pitch(
+                relative_tonic,
+                relative_transposition,
+                pitch_type=tonic_type,
+            )
+
+            # TODO: Figure out relative mode
+            if key in ["5"]:
+                relative_mode = KeyMode.MAJOR
+            elif key in ["7"]:
+                relative_mode = KeyMode.MINOR
+            elif key in ["1"]:
+                relative_mode = relative_mode
+            else:
+                raise ValueError(f"Unknown mode for applied root in row: {chord_row}")
+
+        return Key(
+            relative_tonic,
+            local_tonic,
+            global_tonic,
+            relative_mode,
+            local_mode,
+            global_mode,
+            tonic_type,
+        )
 
 
 def get_key_change_vector_length(pitch_type: PitchType, one_hot: bool = True) -> int:
