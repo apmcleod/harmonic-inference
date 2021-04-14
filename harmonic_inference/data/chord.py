@@ -611,11 +611,13 @@ class Chord:
         chord_type = {
             "D7": ChordType.MAJ_MIN7,
             "M": ChordType.MAJOR,
+            "M7": ChordType.MAJ_MAJ7,
             "d": ChordType.DIMINISHED,
             "d7": ChordType.DIM7,
             "m": ChordType.MINOR,
             "m7": ChordType.MIN_MIN7,
             "Gr+6": ChordType.DIM7,
+            "Fr+6": ChordType.DIM7,
             "h7": ChordType.HALF_DIM7,
         }[chord_row["type"]]
 
@@ -627,7 +629,7 @@ class Chord:
             degree = degree.split("/")[-1]
 
         interval = get_interval_from_scale_degree(
-            degree, False, key.relative_mode, pitch_type=pitch_type
+            degree, True, key.relative_mode, pitch_type=pitch_type
         )
         root = transpose_pitch(key.relative_tonic, interval, pitch_type=pitch_type)
 

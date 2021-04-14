@@ -885,7 +885,8 @@ def get_score_piece_from_music_xml(
         label_csv_path,
         header=None,
         names=["on", "off", "key", "degree", "type", "inv"],
-        dtype={"on": Fraction, "off": Fraction, "degree": str},
+        dtype={"degree": str},
+        converters={"on": Fraction, "off": Fraction},
     )
 
     # Labels are in quarter notes, but the rest of the code uses whole notes
