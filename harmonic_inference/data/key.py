@@ -352,7 +352,7 @@ class Key:
             return None
 
     @staticmethod
-    def from_labels_csv(
+    def from_labels_csv_row(
         chord_row: pd.Series,
         tonic_type: PitchType,
         global_key: "Key" = None,
@@ -406,10 +406,10 @@ class Key:
         degree_str = degree_str.replace("+", "#")
 
         if "/" in degree_str:
-            key, degree_str = degree_str.split("/")
+            degree_str, relative_root = degree_str.split("/")
 
             relative_transposition = get_interval_from_scale_degree(
-                relative_tonic,
+                relative_root,
                 False,
                 relative_mode,
                 pitch_type=tonic_type,
@@ -421,14 +421,32 @@ class Key:
             )
 
             # TODO: Figure out relative mode
-            if key in ["5"]:
-                relative_mode = KeyMode.MAJOR
-            elif key in ["7"]:
-                relative_mode = KeyMode.MINOR
-            elif key in ["1"]:
-                relative_mode = relative_mode
+            if relative_mode == KeyMode.MAJOR:
+                try:
+                    relative_mode = {
+                        "1": KeyMode.MAJOR,
+                        "2": KeyMode.MINOR,
+                        "3": KeyMode.MINOR,
+                        "4": KeyMode.MAJOR,
+                        "5": KeyMode.MAJOR,
+                        "6": KeyMode.MINOR,
+                        "7": KeyMode.MINOR,
+                    }[relative_root]
+                except KeyError:
+                    ValueError(f"Unknown mode for relative root in a major key: {chord_row}")
             else:
-                raise ValueError(f"Unknown mode for applied root in row: {chord_row}")
+                try:
+                    relative_mode = {
+                        "1": KeyMode.MINOR,
+                        "2": KeyMode.MINOR,
+                        "3": KeyMode.MAJOR,
+                        "4": KeyMode.MINOR,
+                        "5": KeyMode.MINOR,
+                        "6": KeyMode.MAJOR,
+                        "7": KeyMode.MAJOR,
+                    }[relative_root]
+                except KeyError:
+                    ValueError(f"Unknown mode for relative root in a minor key: {chord_row}")
 
         return Key(
             relative_tonic,

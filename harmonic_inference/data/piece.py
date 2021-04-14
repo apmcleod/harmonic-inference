@@ -844,6 +844,8 @@ def get_notes_from_music_xml(
                     )
                 )
 
+    return notes
+
 
 def get_score_piece_from_music_xml(
     music_xml_path: Union[str, Path],
@@ -891,24 +893,47 @@ def get_score_piece_from_music_xml(
     labels_df["off"] /= 4
 
     levels_cache = defaultdict(dict)
-    chords = [
-        Chord.from_labels_csv_row(row, measures_df, PitchType.TPC, levels_cache=levels_cache)
-        for _, row in labels_df.iterrows()
+    chords = np.array(
+        [
+            Chord.from_labels_csv_row(row, measures_df, PitchType.TPC, levels_cache=levels_cache)
+            for _, row in labels_df.iterrows()
+        ]
+    )
+
+    chord_changes = np.zeros(len(chords), dtype=int)
+    note_index = 0
+    for chord_index, chord in enumerate(chords):
+        while note_index + 1 < len(notes) and notes[note_index].onset < chord.onset:
+            note_index += 1
+        chord_changes[chord_index] = note_index
+
+    # The note input ranges for each chord
+    chord_ranges = [
+        (get_range_start(chord.onset, notes), end)
+        for chord, end in zip(chords, list(chord_changes[1:]) + [len(notes)])
     ]
 
-    keys = [
-        Key.from_labels_csv_row(row, measures_df, PitchType.TPC) for _, row in labels_df.iterrows()
-    ]
+    global_key = Key.from_labels_csv_row(labels_df.iloc[0], measures_df, PitchType.TPC)
+    keys = np.array(
+        [
+            Key.from_labels_csv_row(row, PitchType.TPC, global_key=global_key)
+            for _, row in labels_df.iterrows()
+        ]
+    )
+    key_changes = np.arange(len(keys))
 
-    return notes, measures_df, chords, keys
+    # Remove accidentally repeated keys
+    non_repeated_mask = get_reduction_mask(keys, kwargs={"use_relative": True})
+    keys = keys[non_repeated_mask]
+    key_changes = key_changes[non_repeated_mask]
 
-    # return ScorePiece(
-    #     measures_df,
-    #     notes,
-    #     chords,
-    #     keys,
-    #     chord_changes,
-    #     chord_ranges,
-    #     key_changes,
-    #     name=name,
-    # )
+    return ScorePiece(
+        measures_df,
+        notes,
+        chords,
+        keys,
+        chord_changes,
+        chord_ranges,
+        key_changes,
+        name=name,
+    )
