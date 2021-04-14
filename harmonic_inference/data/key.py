@@ -408,9 +408,16 @@ class Key:
         if "/" in degree_str:
             degree_str, relative_root = degree_str.split("/")
 
+            # Fix for labels_csv use #7 as standard in minor keys
+            if "7" in relative_root and relative_mode == KeyMode.MINOR:
+                if relative_root[0] == "b":
+                    relative_root = relative_root[1:]
+                else:
+                    relative_root = "#" + relative_root
+
             relative_transposition = get_interval_from_scale_degree(
                 relative_root,
-                False,
+                True,
                 relative_mode,
                 pitch_type=tonic_type,
             )

@@ -604,79 +604,97 @@ class Chord:
         chord : Chord, or None
             The created Note object. If an error occurs, None is returned and the error is logged.
         """
-        if key is None:
-            key = Key.from_labels_csv_row(chord_row, pitch_type)
+        try:
+            if key is None:
+                key = Key.from_labels_csv_row(chord_row, pitch_type)
 
-        # Categorical info
-        chord_type = {
-            "D7": ChordType.MAJ_MIN7,
-            "M": ChordType.MAJOR,
-            "M7": ChordType.MAJ_MAJ7,
-            "d": ChordType.DIMINISHED,
-            "d7": ChordType.DIM7,
-            "m": ChordType.MINOR,
-            "m7": ChordType.MIN_MIN7,
-            "Gr+6": ChordType.DIM7,
-            "Fr+6": ChordType.DIM7,
-            "h7": ChordType.HALF_DIM7,
-        }[chord_row["type"]]
+            # Categorical info
+            chord_type = {
+                "D7": ChordType.MAJ_MIN7,
+                "M": ChordType.MAJOR,
+                "M7": ChordType.MAJ_MAJ7,
+                "d": ChordType.DIMINISHED,
+                "a": ChordType.AUGMENTED,
+                "d7": ChordType.DIM7,
+                "m": ChordType.MINOR,
+                "m7": ChordType.MIN_MIN7,
+                "Gr+6": ChordType.MAJOR,
+                "Fr+6": ChordType.MAJOR,
+                "It+6": ChordType.MAJOR,
+                "h7": ChordType.HALF_DIM7,
+            }[chord_row["type"]]
 
-        # Harmonic info (root pitch)
-        degree = chord_row["degree"].replace("-", "b")
-        degree = degree.replace("+", "#")
+            # Harmonic info (root pitch)
+            degree = chord_row["degree"].replace("-", "b")
+            degree = degree.replace("+", "#")
 
-        if "/" in degree:
-            degree = degree.split("/")[-1]
+            if "/" in degree:
+                degree = degree.split("/")[0]
 
-        interval = get_interval_from_scale_degree(
-            degree, True, key.relative_mode, pitch_type=pitch_type
-        )
-        root = transpose_pitch(key.relative_tonic, interval, pitch_type=pitch_type)
-
-        # Metrical info
-        onset_measure = measures_df.loc[measures_df["start"] <= chord_row["on"]].iloc[-1]
-        offset_measure = measures_df.loc[measures_df["start"] >= chord_row["off"]].iloc[0]
-
-        onset_beat = onset_measure["offset"] + chord_row["on"] - onset_measure["start"]
-        offset_beat = offset_measure["offset"] + chord_row["off"] - offset_measure["start"]
-
-        levels = [None, None]
-
-        for i, (beat, measure) in enumerate(
-            zip(
-                [onset_beat, offset_beat],
-                [onset_measure, offset_measure],
-            )
-        ):
-            if levels_cache is None:
-                level = get_metrical_level(beat, measure)
-
-            else:
-                time_sig_cache = levels_cache[measure["timesig"]]
-                if beat in time_sig_cache:
-                    level = time_sig_cache[beat]
+            # Fix for labels_csv use #7 as standard in minor keys
+            if key.relative_mode == KeyMode.MINOR and "7" in degree:
+                if degree[0] == "b":
+                    degree = degree[1:]
                 else:
+                    degree = "#" + degree
+
+            interval = get_interval_from_scale_degree(
+                degree, True, key.relative_mode, pitch_type=pitch_type
+            )
+            root = transpose_pitch(key.relative_tonic, interval, pitch_type=pitch_type)
+
+            # How we handle augmented 6th chords
+            inversion = chord_row["inv"]
+            if chord_row["type"] in ["Gr+6", "Fr+6", "It+6"]:
+                inversion = 0
+
+            # Metrical info
+            onset_measure = measures_df.loc[measures_df["start"] <= chord_row["on"]].iloc[-1]
+            offset_measure = measures_df.loc[measures_df["start"] <= chord_row["off"]].iloc[-1]
+
+            onset_beat = onset_measure["offset"] + chord_row["on"] - onset_measure["start"]
+            offset_beat = offset_measure["offset"] + chord_row["off"] - offset_measure["start"]
+
+            levels = [None, None]
+
+            for i, (beat, measure) in enumerate(
+                zip(
+                    [onset_beat, offset_beat],
+                    [onset_measure, offset_measure],
+                )
+            ):
+                if levels_cache is None:
                     level = get_metrical_level(beat, measure)
-                    time_sig_cache[beat] = level
 
-            levels[i] = level
+                else:
+                    time_sig_cache = levels_cache[measure["timesig"]]
+                    if beat in time_sig_cache:
+                        level = time_sig_cache[beat]
+                    else:
+                        level = get_metrical_level(beat, measure)
+                        time_sig_cache[beat] = level
 
-        onset_level, offset_level = levels
+                levels[i] = level
 
-        return Chord(
-            root,
-            get_bass_note(chord_type, root, chord_row["inv"], pitch_type),
-            key.relative_tonic if use_relative else key.local_tonic,
-            key.relative_mode if use_relative else key.local_mode,
-            reduction[chord_type],
-            chord_row["inv"],
-            (onset_measure["mc"], onset_beat),
-            onset_level,
-            (offset_measure["mc"], offset_beat),
-            offset_level,
-            chord_row["off"] - chord_row["on"],
-            pitch_type,
-        )
+            onset_level, offset_level = levels
+
+            return Chord(
+                root,
+                get_bass_note(chord_type, root, inversion, pitch_type, modulo=True),
+                key.relative_tonic if use_relative else key.local_tonic,
+                key.relative_mode if use_relative else key.local_mode,
+                reduction[chord_type],
+                inversion if use_inversion else 0,
+                (onset_measure["mc"], onset_beat),
+                onset_level,
+                (offset_measure["mc"], offset_beat),
+                offset_level,
+                chord_row["off"] - chord_row["on"],
+                pitch_type,
+            )
+        except Exception as e:
+            print(chord_row)
+            raise e
 
 
 def get_chord_vector_length(

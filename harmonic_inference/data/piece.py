@@ -893,6 +893,9 @@ def get_score_piece_from_music_xml(
     labels_df["on"] /= 4
     labels_df["off"] /= 4
 
+    # Bugfix for some pieces that start with negative numbers
+    labels_df = labels_df.loc[(labels_df["on"] >= 0) & (labels_df["off"] > 0)]
+
     levels_cache = defaultdict(dict)
     chords = np.array(
         [
@@ -914,7 +917,7 @@ def get_score_piece_from_music_xml(
         for chord, end in zip(chords, list(chord_changes[1:]) + [len(notes)])
     ]
 
-    global_key = Key.from_labels_csv_row(labels_df.iloc[0], measures_df, PitchType.TPC)
+    global_key = Key.from_labels_csv_row(labels_df.iloc[0], PitchType.TPC)
     keys = np.array(
         [
             Key.from_labels_csv_row(row, PitchType.TPC, global_key=global_key)
