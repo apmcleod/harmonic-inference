@@ -415,6 +415,10 @@ class Key:
                 else:
                     relative_root = "#" + relative_root
 
+            # Fix for some labels adding to many sharps to 6 in minor
+            if relative_mode == KeyMode.MINOR and "#6" in relative_root:
+                relative_root = relative_root.replace("#6", "6")
+
             relative_transposition = get_interval_from_scale_degree(
                 relative_root,
                 True,
@@ -432,28 +436,39 @@ class Key:
                 try:
                     relative_mode = {
                         "1": KeyMode.MAJOR,
+                        "#1": KeyMode.MINOR,
+                        "b2": KeyMode.MAJOR,
                         "2": KeyMode.MINOR,
+                        "b3": KeyMode.MAJOR,
                         "3": KeyMode.MINOR,
                         "4": KeyMode.MAJOR,
+                        "#4": KeyMode.MAJOR,
                         "5": KeyMode.MAJOR,
+                        "#5": KeyMode.MAJOR,
                         "6": KeyMode.MINOR,
+                        "b7": KeyMode.MAJOR,
                         "7": KeyMode.MINOR,
                     }[relative_root]
                 except KeyError:
-                    ValueError(f"Unknown mode for relative root in a major key: {chord_row}")
+                    raise ValueError(f"Unknown mode for relative root in a major key: {chord_row}")
             else:
                 try:
                     relative_mode = {
+                        "b1": KeyMode.MAJOR,
                         "1": KeyMode.MINOR,
+                        "b2": KeyMode.MAJOR,
                         "2": KeyMode.MINOR,
                         "3": KeyMode.MAJOR,
+                        "b4": KeyMode.MINOR,
                         "4": KeyMode.MINOR,
                         "5": KeyMode.MINOR,
                         "6": KeyMode.MAJOR,
+                        "b7": KeyMode.MINOR,
                         "7": KeyMode.MAJOR,
+                        "#7": KeyMode.MAJOR,
                     }[relative_root]
                 except KeyError:
-                    ValueError(f"Unknown mode for relative root in a minor key: {chord_row}")
+                    raise ValueError(f"Unknown mode for relative root in a minor key: {chord_row}")
 
         return Key(
             relative_tonic,

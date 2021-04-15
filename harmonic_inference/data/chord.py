@@ -638,6 +638,10 @@ class Chord:
                 else:
                     degree = "#" + degree
 
+            # Fix for some labels which have too many sharps on the 6th scale degree in minor
+            if key.relative_mode == KeyMode.MINOR and "##6" in degree:
+                degree = degree.replace("##6", "#6")
+
             interval = get_interval_from_scale_degree(
                 degree, True, key.relative_mode, pitch_type=pitch_type
             )

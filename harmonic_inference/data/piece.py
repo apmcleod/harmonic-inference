@@ -896,6 +896,9 @@ def get_score_piece_from_music_xml(
     # Bugfix for some pieces that start with negative numbers
     labels_df = labels_df.loc[(labels_df["on"] >= 0) & (labels_df["off"] > 0)]
 
+    # Bugfix for an encoded 1+ instead of +1
+    labels_df.loc[labels_df["degree"] == "1+", ["degree"]] = "+1"
+
     levels_cache = defaultdict(dict)
     chords = np.array(
         [
