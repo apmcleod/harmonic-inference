@@ -4,6 +4,7 @@ import logging
 import os
 import pickle
 import sys
+from glob import glob
 from pathlib import Path
 
 import numpy as np
@@ -32,7 +33,17 @@ if __name__ == "__main__":
         "--input",
         type=Path,
         default=Path("corpus_data"),
-        help="The directory containing the raw corpus_data tsv files.",
+        help="The directory containing the raw corpus files.",
+    )
+
+    parser.add_argument(
+        "-x",
+        "--xml",
+        action="store_true",
+        help=(
+            "The --input data comes from the funtional-harmony repository, as MusicXML "
+            "files and labels CSV files."
+        ),
     )
 
     parser.add_argument(
@@ -89,22 +100,54 @@ if __name__ == "__main__":
         os.makedirs(Path(ARGS.log).parent, exist_ok=True)
         logging.basicConfig(filename=ARGS.log, level=logging.INFO, filemode="w")
 
-    files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(ARGS.input)
+    xmls_and_csvs = None
+    dfs = None
+    if ARGS.xml:
+        xmls = []
+        csvs = []
+
+        for file_path in glob(os.path.join(ARGS.input, "**", "*.mxl"), recursive=True):
+            music_xml_path = Path(file_path)
+            label_csv_path = (
+                music_xml_path.parent.parent / "chords" / Path(str(music_xml_path.stem) + ".csv")
+            )
+
+            if music_xml_path.exists() and label_csv_path.exists():
+                xmls.append(music_xml_path)
+                csvs.append(label_csv_path)
+
+        xmls_and_csvs = {"xmls": xmls, "csvs": csvs}
+
+    else:
+        files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(ARGS.input)
+
+        dfs = {
+            "files": files_df,
+            "measures": measures_df,
+            "chords": chords_df,
+            "notes": notes_df,
+        }
+
+        if ARGS.debug:
+            dfs["files"] = dfs["files"].iloc[:5]
 
     if ARGS.seed is None:
         ARGS.seed = np.random.randint(0, 2 ** 32)
         logging.info("Using seed %s", ARGS.seed)
 
     if ARGS.corpus:
-        logging.info("Only using pieces whose corpus contains the string(s): %s", ARGS.corpus)
-        files_df = files_df[files_df["corpus_name"].str.contains("|".join(ARGS.corpus))]
+        if ARGS.xml:
+            logging.info("--corpus not implemented for MusicXML files yet. Ignoring.")
+        else:
+            logging.info("Only using pieces whose corpus contains the string(s): %s", ARGS.corpus)
+            dfs["files"] = dfs["files"][
+                dfs["files"]["corpus_name"].str.contains("|".join(ARGS.corpus))
+            ]
 
     dataset_splits, split_ids, split_pieces = ds.get_dataset_splits(
-        files_df[:5] if ARGS.debug else files_df,
-        measures_df,
-        chords_df,
-        notes_df,
         DATASET_CLASSES,
+        data_dfs=dfs,
+        xml_and_csv_paths=xmls_and_csvs,
         splits=ARGS.splits,
         seed=ARGS.seed,
     )

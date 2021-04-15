@@ -461,6 +461,7 @@ class Key:
                         "3": KeyMode.MAJOR,
                         "b4": KeyMode.MINOR,
                         "4": KeyMode.MINOR,
+                        "b5": KeyMode.MINOR,
                         "5": KeyMode.MINOR,
                         "6": KeyMode.MAJOR,
                         "b7": KeyMode.MINOR,
