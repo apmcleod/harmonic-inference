@@ -2,13 +2,11 @@
 import argparse
 import logging
 import os
-import pickle
 import sys
 from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 
 import h5py
 import harmonic_inference.data.datasets as ds
@@ -19,14 +17,9 @@ import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
 import pytorch_lightning as pl
-from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 from harmonic_inference.data.data_types import PieceType, PitchType
-from harmonic_inference.data.piece import (
-    get_score_piece_from_data_frames,
-    get_score_piece_from_dict,
-)
 from harmonic_inference.models.joint_model import MODEL_CLASSES
-from harmonic_inference.utils.data_utils import load_kwargs_from_json
+from harmonic_inference.utils.data_utils import load_kwargs_from_json, load_pieces
 from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
 from pytorch_lightning.profiler import AdvancedProfiler
 
@@ -59,6 +52,17 @@ if __name__ == "__main__":
         type=Path,
         default=Path("corpus_data"),
         help="The directory containing the raw corpus_data tsv files. Used only for -m icm",
+    )
+
+    parser.add_argument(
+        "-x",
+        "--xml",
+        action="store_true",
+        help=(
+            "The --input data comes from the funtional-harmony repository, as MusicXML "
+            "files and labels CSV files. Only important for --model icm. Other models load "
+            "h5 data directly."
+        ),
     )
 
     parser.add_argument(
@@ -180,28 +184,12 @@ if __name__ == "__main__":
 
             file_ids = list(h5_file["file_ids"])
 
-        # Load pieces
-        files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(ARGS.input)
-
-        # Load from pkl if available
-        pkl_path = Path(ARGS.h5_dir / f"pieces_train_seed_{ARGS.seed}.pkl")
-        if pkl_path.exists():
-            with open(pkl_path, "rb") as pkl_file:
-                piece_dicts = pickle.load(pkl_file)
-            pieces = [
-                get_score_piece_from_dict(measures_df.loc[file_id], piece_dict)
-                for file_id, piece_dict in zip(file_ids, piece_dicts)
-            ]
-
-        # Generate from dfs
-        else:
-            pieces = []
-            for file_id in tqdm(file_ids, desc="Loading Pieces"):
-                pieces.append(
-                    get_score_piece_from_data_frames(
-                        notes_df.loc[file_id], chords_df.loc[file_id], measures_df.loc[file_id]
-                    )
-                )
+        pieces = load_pieces(
+            xml=ARGS.xml,
+            input_path=ARGS.input,
+            piece_dicts_path=Path(ARGS.h5_dir / f"pieces_train_seed_{ARGS.seed}.pkl"),
+            file_ids=file_ids,
+        )
 
         chords = [piece.get_chords()[0] for piece in pieces]
         icm.train_icm(
