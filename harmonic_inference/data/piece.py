@@ -899,9 +899,9 @@ def get_score_piece_from_music_xml(
     # Bugfix for duration 0 symbols
     labels_df = labels_df.loc[labels_df["off"] > labels_df["on"]]
 
-    # Bugfix for some accidentals encoded backwards
+    # Bugfix for some augmented chords adding "+" to scale degree
     for degree in range(1, 6):
-        labels_df.loc[labels_df["degree"] == f"{degree}+", ["degree"]] = f"+{degree}"
+        labels_df.loc[labels_df["degree"] == f"{degree}+", ["degree"]] = str(degree)
 
     levels_cache = defaultdict(dict)
     chords = np.array(
