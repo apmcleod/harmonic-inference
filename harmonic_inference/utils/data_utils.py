@@ -5,7 +5,7 @@ from glob import glob
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
-from music21 import parse
+from music21.converter import parse
 from tqdm import tqdm
 
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
