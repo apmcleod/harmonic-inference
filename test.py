@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List, Union
 
 import torch
+from music21 import parse
 from tqdm import tqdm
 
 import h5py
@@ -18,8 +19,10 @@ from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 from harmonic_inference.data.data_types import NO_REDUCTION, TRIAD_REDUCTION, PitchType
 from harmonic_inference.data.piece import (
     Piece,
+    get_measures_df_from_music21_score,
     get_score_piece_from_data_frames,
     get_score_piece_from_dict,
+    get_score_piece_from_music_xml,
 )
 from harmonic_inference.models.joint_model import (
     MODEL_CLASSES,
@@ -233,6 +236,16 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "-x",
+        "--xml",
+        action="store_true",
+        help=(
+            "The --input data comes from the funtional-harmony repository, as MusicXML "
+            "files and labels CSV files."
+        ),
+    )
+
+    parser.add_argument(
         "--scores",
         action="store_true",
         help="Write the output label TSVs onto annotated scores in the output directory.",
@@ -414,7 +427,22 @@ if __name__ == "__main__":
         file_ids = list(h5_file["file_ids"])
 
     # Load pieces
-    files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(ARGS.input)
+    xmls = []
+    csvs = []
+
+    if ARGS.xml:
+        for file_path in glob(os.path.join(ARGS.input, "**", "*.mxl"), recursive=True):
+            music_xml_path = Path(file_path)
+            label_csv_path = (
+                music_xml_path.parent.parent / "chords" / Path(str(music_xml_path.stem) + ".csv")
+            )
+
+            if music_xml_path.exists() and label_csv_path.exists():
+                xmls.append(music_xml_path)
+                csvs.append(label_csv_path)
+
+    else:
+        files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(ARGS.input)
 
     # Load from pkl if available
     pkl_path = Path(ARGS.h5_dir / f"pieces_valid_seed_{ARGS.seed}.pkl")
@@ -433,31 +461,51 @@ if __name__ == "__main__":
         file_ids = [file_ids[index]]
         piece_dicts = [piece_dicts[index]]
 
-    pieces = [
-        get_score_piece_from_data_frames(
-            notes_df.loc[file_id],
-            chords_df.loc[file_id],
-            measures_df.loc[file_id],
-            name=(
-                f"{file_id}: {files_df.loc[file_id, 'corpus_name']}/"
-                f"{files_df.loc[file_id, 'file_name']}"
-            ),
-        )
-        if piece_dict is None
-        else get_score_piece_from_dict(
-            measures_df.loc[file_id],
-            piece_dict,
-            name=(
-                f"{file_id}: {files_df.loc[file_id, 'corpus_name']}/"
-                f"{files_df.loc[file_id, 'file_name']}"
-            ),
-        )
-        for file_id, piece_dict in tqdm(
-            zip(file_ids, piece_dicts),
-            total=len(file_ids),
-            desc="Loading pieces",
-        )
-    ]
+    if ARGS.xml:
+        pieces = [
+            get_score_piece_from_music_xml(
+                xmls[file_id],
+                csvs[file_id],
+                name=str(xmls[file_id]),
+            )
+            if piece_dict is None
+            else get_score_piece_from_dict(
+                get_measures_df_from_music21_score(parse(xmls[file_id])),
+                piece_dict,
+                name=str(xmls[file_id]),
+            )
+            for file_id, piece_dict in tqdm(
+                zip(file_ids, piece_dicts),
+                total=len(file_ids),
+                desc="Loading pieces",
+            )
+        ]
+    else:
+        pieces = [
+            get_score_piece_from_data_frames(
+                notes_df.loc[file_id],
+                chords_df.loc[file_id],
+                measures_df.loc[file_id],
+                name=(
+                    f"{file_id}: {files_df.loc[file_id, 'corpus_name']}/"
+                    f"{files_df.loc[file_id, 'file_name']}"
+                ),
+            )
+            if piece_dict is None
+            else get_score_piece_from_dict(
+                measures_df.loc[file_id],
+                piece_dict,
+                name=(
+                    f"{file_id}: {files_df.loc[file_id, 'corpus_name']}/"
+                    f"{files_df.loc[file_id, 'file_name']}"
+                ),
+            )
+            for file_id, piece_dict in tqdm(
+                zip(file_ids, piece_dicts),
+                total=len(file_ids),
+                desc="Loading pieces",
+            )
+        ]
 
     evaluate(
         from_args(models, ARGS),
