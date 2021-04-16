@@ -10,6 +10,7 @@ import pandas as pd
 from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, KeyMode, PitchType
 from harmonic_inference.data.key import Key
 from harmonic_inference.utils.harmonic_constants import (
+    CHORD_PITCHES,
     MAX_RELATIVE_TPC,
     MIN_RELATIVE_TPC,
     NUM_PITCHES,
@@ -651,6 +652,9 @@ class Chord:
             inversion = chord_row["inv"]
             if chord_row["type"] in ["Gr+6", "Fr+6", "It+6"]:
                 inversion = 0
+
+            # Bugfix for triads in 3rd inversion
+            inversion = inversion % len(CHORD_PITCHES[PitchType.TPC][chord_type])
 
             # Metrical info
             onset_measure = measures_df.loc[measures_df["start"] <= chord_row["on"]].iloc[-1]
