@@ -228,6 +228,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Run tests on the actual test set, rather than the validation set.",
+    )
+
+    parser.add_argument(
         "-x",
         "--xml",
         action="store_true",
@@ -409,8 +415,10 @@ if __name__ == "__main__":
     logging.info("Loading checkpoint %s for icm.", ARGS.icm_json)
     models["icm"] = icm.SimpleInitialChordModel(ARGS.icm_json)
 
-    # Load validation data for ctm
-    h5_path = Path(ARGS.h5_dir / f"ChordTransitionDataset_valid_seed_{ARGS.seed}.h5")
+    data_type = "test" if ARGS.test else "valid"
+
+    # Load data for ctm
+    h5_path = Path(ARGS.h5_dir / f"ChordTransitionDataset_{data_type}_seed_{ARGS.seed}.h5")
     with h5py.File(h5_path, "r") as h5_file:
         if "file_ids" not in h5_file:
             logging.error("file_ids not found in %s. Re-create with create_h5_data.py", h5_path)
@@ -422,7 +430,7 @@ if __name__ == "__main__":
     pieces = load_pieces(
         xml=ARGS.xml,
         input_path=ARGS.input,
-        piece_dicts_path=Path(ARGS.h5_dir / f"pieces_valid_seed_{ARGS.seed}.pkl"),
+        piece_dicts_path=Path(ARGS.h5_dir / f"pieces_{data_type}_seed_{ARGS.seed}.pkl"),
         file_ids=file_ids,
         specific_id=ARGS.id,
     )
