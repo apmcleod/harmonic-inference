@@ -142,15 +142,21 @@ class Key:
         )
 
         # Relative tonic
-        change_vector[
-            absolute_to_relative(
-                next_key.relative_tonic,
-                self.relative_tonic,
-                self.tonic_type,
-                True,
-                pad=False,
+        try:
+            change_vector[
+                absolute_to_relative(
+                    next_key.relative_tonic,
+                    self.relative_tonic,
+                    self.tonic_type,
+                    True,
+                    pad=False,
+                )
+            ] = 1
+        except ValueError:
+            logging.warning(
+                "Key change from {prev_key} to {key} falls outside of TPC key change range. "
+                "This key change target vector will not have a 1 for the key tonic."
             )
-        ] = 1
 
         # Absolute mode of next key
         change_vector[-2 + next_key.relative_mode.value] = 1

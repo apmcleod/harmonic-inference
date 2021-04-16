@@ -938,6 +938,9 @@ def get_score_piece_from_music_xml(
     keys = keys[non_repeated_mask]
     key_changes = key_changes[non_repeated_mask]
 
+    for prev_key, key in zip(keys[:-1], keys[1:]):
+        prev_key.get_key_change_vector(key)
+
     return ScorePiece(
         measures_df,
         notes,
