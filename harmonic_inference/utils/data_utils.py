@@ -188,4 +188,4 @@ def load_pieces(
             )
         ]
 
-        return pieces
+    return pieces
