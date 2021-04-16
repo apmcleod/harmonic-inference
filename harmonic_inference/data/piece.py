@@ -896,6 +896,9 @@ def get_score_piece_from_music_xml(
     # Bugfix for some pieces that start with negative numbers
     labels_df = labels_df.loc[(labels_df["on"] >= 0) & (labels_df["off"] > 0)]
 
+    # Bugfix for duration 0 symbols
+    labels_df = labels_df.loc[labels_df["off"] > labels_df["on"]]
+
     # Bugfix for some accidentals encoded backwards
     for degree in range(1, 6):
         labels_df.loc[labels_df["degree"] == f"{degree}+", ["degree"]] = f"+{degree}"
