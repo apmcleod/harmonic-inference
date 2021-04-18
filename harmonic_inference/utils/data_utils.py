@@ -61,7 +61,7 @@ def load_pieces_from_xml(input_path: Union[str, Path]):
     xmls = []
     csvs = []
 
-    for file_path in glob(os.path.join(str(input_path), "**", "*.mxl"), recursive=True):
+    for file_path in sorted(glob(os.path.join(str(input_path), "**", "*.mxl"), recursive=True)):
         music_xml_path = Path(file_path)
         label_csv_path = (
             music_xml_path.parent.parent / "chords" / Path(str(music_xml_path.stem) + ".csv")
@@ -111,7 +111,7 @@ def load_pieces(
         xmls = []
         csvs = []
 
-        for file_path in glob(os.path.join(str(input_path), "**", "*.mxl"), recursive=True):
+        for file_path in sorted(glob(os.path.join(str(input_path), "**", "*.mxl"), recursive=True)):
             music_xml_path = Path(file_path)
             label_csv_path = (
                 music_xml_path.parent.parent / "chords" / Path(str(music_xml_path.stem) + ".csv")
