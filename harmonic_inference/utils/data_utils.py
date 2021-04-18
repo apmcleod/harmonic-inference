@@ -57,21 +57,6 @@ def load_kwargs_from_json(json_path: Union[Path, str, None]) -> Dict[str, Any]:
     return parsed_kwargs
 
 
-def load_pieces_from_xml(input_path: Union[str, Path]):
-    xmls = []
-    csvs = []
-
-    for file_path in sorted(glob(os.path.join(str(input_path), "**", "*.mxl"), recursive=True)):
-        music_xml_path = Path(file_path)
-        label_csv_path = (
-            music_xml_path.parent.parent / "chords" / Path(str(music_xml_path.stem) + ".csv")
-        )
-
-        if music_xml_path.exists() and label_csv_path.exists():
-            xmls.append(music_xml_path)
-            csvs.append(label_csv_path)
-
-
 def load_pieces(
     xml: bool = False,
     input_path: Union[str, Path] = "corpus_data",
