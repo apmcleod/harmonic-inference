@@ -449,8 +449,8 @@ class Note:
 
         Returns
         -------
-        note : Note, or None
-            The created Note object. If an error occurs, None is returned and the error is logged.
+        note : Note
+            The created Note object.
         """
         m21_rhythmic = m21_note if m21_chord is None else m21_chord
 

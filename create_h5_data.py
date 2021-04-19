@@ -106,7 +106,7 @@ if __name__ == "__main__":
         xmls = []
         csvs = []
 
-        for file_path in glob(os.path.join(ARGS.input, "**", "*.mxl"), recursive=True):
+        for file_path in sorted(glob(os.path.join(ARGS.input, "**", "*.mxl"), recursive=True)):
             music_xml_path = Path(file_path)
             label_csv_path = (
                 music_xml_path.parent.parent / "chords" / Path(str(music_xml_path.stem) + ".csv")
