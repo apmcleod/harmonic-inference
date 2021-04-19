@@ -297,10 +297,21 @@ if __name__ == "__main__":
             "`--checkpoint`", model, "lightning_logs", "version_*", "checkpoints", "*.ckpt"
         )
         parser.add_argument(
-            f"--{model}-checkpoint",
+            f"--{model}",
             type=str,
             default=DEFAULT_PATH,
-            help=f"The checkpoint file to load the {model} from.",
+            help=f"A checkpoint file to load the {model} from.",
+        )
+
+        parser.add_argument(
+            f"--{model}-version",
+            type=int,
+            default=None,
+            help=(
+                f"Specify a version number to load the model from. If given, --{model} is ignored"
+                f" and the {model} will be loaded from "
+                + DEFAULT_PATH.replace("_*", f"_`--{model}-version`")
+            ),
         )
 
     parser.add_argument(
@@ -390,10 +401,15 @@ if __name__ == "__main__":
         DEFAULT_PATH = os.path.join(
             "`--checkpoint`", model_name, "lightning_logs", "version_*", "checkpoints", "*.ckpt"
         )
-        checkpoint_arg = getattr(ARGS, f"{model_name}_checkpoint")
+        checkpoint_arg = getattr(ARGS, model_name)
+        version_arg = getattr(ARGS, f"{model_name}_version")
 
-        if checkpoint_arg == DEFAULT_PATH:
+        if checkpoint_arg == DEFAULT_PATH or version_arg is not None:
+            checkpoint_arg = DEFAULT_PATH
             checkpoint_arg = checkpoint_arg.replace("`--checkpoint`", ARGS.checkpoint)
+
+            if version_arg is not None:
+                checkpoint_arg = checkpoint_arg.replace("_*", f"_{version_arg}")
 
         possible_checkpoints = sorted(glob(checkpoint_arg))
         if len(possible_checkpoints) == 0:

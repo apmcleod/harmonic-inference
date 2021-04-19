@@ -558,7 +558,7 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
         ]
         if any(merged_out_dups):
             with pd.option_context("display.max_rows", None, "display.max_columns", None):
-                logging.warning(
+                logging.debug(
                     "Some tied_out notes matched multiple tied_in notes and could not"
                     " be disambiguated with voice and staff. Choosing arbitrarily:\n"
                     f"{merged.loc[merged_out_dups, cols_to_log]}"
@@ -569,7 +569,7 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
         merged_in_dups = merged.set_index(["file_id", "note_id_in"]).index.duplicated(keep=False)
         if any(merged_in_dups):
             with pd.option_context("display.max_rows", None, "display.max_columns", None):
-                logging.warning(
+                logging.debug(
                     "Some tied_in notes matched multiple tied_out notes and could not"
                     " be disambiguated with voice and staff. Choosing arbitrarily:\n"
                     f"{merged.loc[merged_in_dups, cols_to_log]}"
@@ -760,17 +760,17 @@ def merge_ties(notes: pd.DataFrame) -> pd.DataFrame:
             tied_both_errors = error_notes.loc[error_notes.tied == 0, columns]
 
             if len(tied_out_errors) > 0:
-                logging.warning(
+                logging.debug(
                     "The following merged notes are tied out but matched with no tie"
                     f" ending:\n{tied_out_errors}"
                 )
             if len(tied_in_errors) > 0:
-                logging.warning(
+                logging.debug(
                     "The following merged notes are tied in, but matched with no tie"
                     f" beginning:\n{tied_in_errors}"
                 )
             if len(tied_both_errors) > 0:
-                logging.warning(
+                logging.debug(
                     "The following merged notes are tied in and out, but matched with"
                     f" no tie ending or beginning:\n{tied_both_errors}"
                 )
