@@ -132,13 +132,13 @@ def load_pieces(
             get_score_piece_from_music_xml(
                 xmls[file_id],
                 csvs[file_id],
-                name=str(xmls[file_id]),
+                name=f"{file_id}: {xmls[file_id].relative_to(input_path)}",
             )
             if piece_dict is None
             else get_score_piece_from_dict(
                 get_measures_df_from_music21_score(parse(xmls[file_id])),
                 piece_dict,
-                name=str(xmls[file_id]),
+                name=f"{file_id}: {xmls[file_id].relative_to(input_path)}",
             )
             for file_id, piece_dict in tqdm(
                 zip(file_ids, piece_dicts),

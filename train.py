@@ -38,6 +38,16 @@ if __name__ == "__main__":
         required=True,
     )
 
+    parser.add_argument(
+        "--gpu",
+        type=str,
+        default=None,
+        help=(
+            "The device number for the GPU to train on. "
+            "If not given, the model will be trained on CPU."
+        ),
+    )
+
     DEFAULT_CHECKPOINT_PATH = os.path.join("checkpoints", "`model`")
     parser.add_argument(
         "--checkpoint",
@@ -251,5 +261,6 @@ if __name__ == "__main__":
         default_root_dir=ARGS.checkpoint,
         profiler=ARGS.profile,
         callbacks=[early_stopping_callback, lr_logger],
+        gpus=ARGS.gpu,
     )
     trainer.fit(model, dl_train, dl_valid)
