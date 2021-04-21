@@ -48,12 +48,14 @@ if __name__ == "__main__":
         ),
     )
 
-    DEFAULT_CHECKPOINT_PATH = os.path.join("checkpoints", "`model`")
     parser.add_argument(
         "--checkpoint",
         type=str,
-        default=DEFAULT_CHECKPOINT_PATH,
-        help="The directory to save model checkpoints into.",
+        default="checkpoints",
+        help=(
+            "The directory to save model checkpoints into, within a subdirectory of the model's "
+            "name (e.g., CSM checkpoints will be saved into `--checkpoint`/csm).",
+        ),
     )
 
     parser.add_argument(
@@ -129,8 +131,7 @@ if __name__ == "__main__":
 
     ARGS = parser.parse_args()
 
-    if ARGS.checkpoint == DEFAULT_CHECKPOINT_PATH:
-        ARGS.checkpoint = os.path.join("checkpoints", ARGS.model)
+    ARGS.checkpoint = os.path.join(ARGS.checkpoint, ARGS.model)
 
     os.makedirs(ARGS.checkpoint, exist_ok=True)
 
