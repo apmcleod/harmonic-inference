@@ -1,6 +1,9 @@
 import json
+import logging
 import os
 import pickle
+import sys
+from argparse import Namespace
 from glob import glob
 from pathlib import Path
 from typing import Any, Dict, List, Union
@@ -8,6 +11,7 @@ from typing import Any, Dict, List, Union
 from music21.converter import parse
 from tqdm import tqdm
 
+import harmonic_inference.models.initial_chord_models as icm
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.piece import (
@@ -17,6 +21,7 @@ from harmonic_inference.data.piece import (
     get_score_piece_from_dict,
     get_score_piece_from_music_xml,
 )
+from harmonic_inference.models.joint_model import MODEL_CLASSES
 
 
 def load_kwargs_from_json(json_path: Union[Path, str, None]) -> Dict[str, Any]:
@@ -174,3 +179,61 @@ def load_pieces(
         ]
 
     return pieces
+
+
+def load_models_from_argparse(ARGS: Namespace) -> Dict:
+    """
+    Get a Dictionary of loaded models from command line arguments.
+
+    Parameters
+    ----------
+    ARGS : Namespace
+        The parsed argparse Namespace from command line arguments including model information.
+
+    Returns
+    -------
+    models : Dict
+        A dictionary mapping each model abbreviation (csm, ccm, etc.) to a loaded
+        instance of a model of that type.
+    """
+    models = {}
+    for model_name, model_class in MODEL_CLASSES.items():
+        if model_name == "icm":
+            continue
+
+        DEFAULT_PATH = os.path.join(
+            "`--checkpoint`", model_name, "lightning_logs", "version_*", "checkpoints", "*.ckpt"
+        )
+        checkpoint_arg = getattr(ARGS, model_name)
+        version_arg = getattr(ARGS, f"{model_name}_version")
+
+        if checkpoint_arg == DEFAULT_PATH or version_arg is not None:
+            checkpoint_arg = DEFAULT_PATH
+            checkpoint_arg = checkpoint_arg.replace("`--checkpoint`", ARGS.checkpoint)
+
+            if version_arg is not None:
+                checkpoint_arg = checkpoint_arg.replace("_*", f"_{version_arg}")
+
+        possible_checkpoints = sorted(glob(checkpoint_arg))
+        if len(possible_checkpoints) == 0:
+            logging.error("No checkpoints found for %s in %s.", model_name, checkpoint_arg)
+            sys.exit(2)
+
+        if len(possible_checkpoints) == 1:
+            checkpoint = possible_checkpoints[0]
+            logging.info("Loading checkpoint %s for %s.", checkpoint, model_name)
+
+        else:
+            checkpoint = possible_checkpoints[-1]
+            logging.info("Multiple checkpoints found for %s. Loading %s.", model_name, checkpoint)
+
+        models[model_name] = model_class.load_from_checkpoint(checkpoint)
+        models[model_name].freeze()
+
+    # Load icm json differently
+    logging.info("Loading checkpoint %s for icm.", ARGS.icm_json)
+    models["icm"] = icm.SimpleInitialChordModel(
+        load_kwargs_from_json(ARGS.icm_json.replace("`--checkpoint`", ARGS.checkpoint))
+    )
+
+    return models

@@ -11,7 +11,6 @@ import torch
 from tqdm import tqdm
 
 import h5py
-import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.utils.eval_utils as eu
 from harmonic_inference.data.data_types import NO_REDUCTION, TRIAD_REDUCTION, PitchType
 from harmonic_inference.data.piece import Piece
@@ -21,7 +20,7 @@ from harmonic_inference.models.joint_model import (
     add_joint_model_args,
     from_args,
 )
-from harmonic_inference.utils.data_utils import load_pieces
+from harmonic_inference.utils.data_utils import load_models_from_argparse, load_pieces
 
 SPLITS = ["train", "valid", "test"]
 
@@ -317,7 +316,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--icm-json",
         type=str,
-        default=os.path.join("checkpoints", "icm", "initial_chord_prior.json"),
+        default=os.path.join("`--checkpoint`", "icm", "initial_chord_prior.json"),
         help="The json file to load the icm from.",
     )
 
@@ -393,43 +392,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     # Load models
-    models = {}
-    for model_name, model_class in MODEL_CLASSES.items():
-        if model_name == "icm":
-            continue
-
-        DEFAULT_PATH = os.path.join(
-            "`--checkpoint`", model_name, "lightning_logs", "version_*", "checkpoints", "*.ckpt"
-        )
-        checkpoint_arg = getattr(ARGS, model_name)
-        version_arg = getattr(ARGS, f"{model_name}_version")
-
-        if checkpoint_arg == DEFAULT_PATH or version_arg is not None:
-            checkpoint_arg = DEFAULT_PATH
-            checkpoint_arg = checkpoint_arg.replace("`--checkpoint`", ARGS.checkpoint)
-
-            if version_arg is not None:
-                checkpoint_arg = checkpoint_arg.replace("_*", f"_{version_arg}")
-
-        possible_checkpoints = sorted(glob(checkpoint_arg))
-        if len(possible_checkpoints) == 0:
-            logging.error("No checkpoints found for %s in %s.", model_name, checkpoint_arg)
-            sys.exit(2)
-
-        if len(possible_checkpoints) == 1:
-            checkpoint = possible_checkpoints[0]
-            logging.info("Loading checkpoint %s for %s.", checkpoint, model_name)
-
-        else:
-            checkpoint = possible_checkpoints[-1]
-            logging.info("Multiple checkpoints found for %s. Loading %s.", model_name, checkpoint)
-
-        models[model_name] = model_class.load_from_checkpoint(checkpoint)
-        models[model_name].freeze()
-
-    # Load icm json differently
-    logging.info("Loading checkpoint %s for icm.", ARGS.icm_json)
-    models["icm"] = icm.SimpleInitialChordModel(ARGS.icm_json)
+    models = load_models_from_argparse(ARGS)
 
     data_type = "test" if ARGS.test else "valid"
 
