@@ -2,27 +2,25 @@
 import argparse
 import logging
 import os
-import pickle
 import sys
 from glob import glob
 from pathlib import Path
 from typing import List, Union
 
-import h5py
 import torch
 from tqdm import tqdm
 
-import harmonic_inference.models.initial_chord_models as icm
+import h5py
 import harmonic_inference.utils.eval_utils as eu
-from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 from harmonic_inference.data.data_types import NO_REDUCTION, TRIAD_REDUCTION, PitchType
-from harmonic_inference.data.piece import Piece, ScorePiece
+from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import (
     MODEL_CLASSES,
     HarmonicInferenceModel,
     add_joint_model_args,
     from_args,
 )
+from harmonic_inference.utils.data_utils import load_models_from_argparse, load_pieces
 
 SPLITS = ["train", "valid", "test"]
 
@@ -229,6 +227,22 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Run tests on the actual test set, rather than the validation set.",
+    )
+
+    parser.add_argument(
+        "-x",
+        "--xml",
+        action="store_true",
+        help=(
+            "The --input data comes from the funtional-harmony repository, as MusicXML "
+            "files and labels CSV files."
+        ),
+    )
+
+    parser.add_argument(
         "--scores",
         action="store_true",
         help="Write the output label TSVs onto annotated scores in the output directory.",
@@ -282,16 +296,27 @@ if __name__ == "__main__":
             "`--checkpoint`", model, "lightning_logs", "version_*", "checkpoints", "*.ckpt"
         )
         parser.add_argument(
-            f"--{model}-checkpoint",
+            f"--{model}",
             type=str,
             default=DEFAULT_PATH,
-            help=f"The checkpoint file to load the {model} from.",
+            help=f"A checkpoint file to load the {model} from.",
+        )
+
+        parser.add_argument(
+            f"--{model}-version",
+            type=int,
+            default=None,
+            help=(
+                f"Specify a version number to load the model from. If given, --{model} is ignored"
+                f" and the {model} will be loaded from "
+                + DEFAULT_PATH.replace("_*", f"_`--{model}-version`")
+            ),
         )
 
     parser.add_argument(
         "--icm-json",
         type=str,
-        default=os.path.join("checkpoints", "icm", "initial_chord_prior.json"),
+        default=os.path.join("`--checkpoint`", "icm", "initial_chord_prior.json"),
         help="The json file to load the icm from.",
     )
 
@@ -367,41 +392,12 @@ if __name__ == "__main__":
         sys.exit(0)
 
     # Load models
-    models = {}
-    for model_name, model_class in MODEL_CLASSES.items():
-        if model_name == "icm":
-            continue
+    models = load_models_from_argparse(ARGS)
 
-        DEFAULT_PATH = os.path.join(
-            "`--checkpoint`", model_name, "lightning_logs", "version_*", "checkpoints", "*.ckpt"
-        )
-        checkpoint_arg = getattr(ARGS, f"{model_name}_checkpoint")
+    data_type = "test" if ARGS.test else "valid"
 
-        if checkpoint_arg == DEFAULT_PATH:
-            checkpoint_arg = checkpoint_arg.replace("`--checkpoint`", ARGS.checkpoint)
-
-        possible_checkpoints = sorted(glob(checkpoint_arg))
-        if len(possible_checkpoints) == 0:
-            logging.error("No checkpoints found for %s in %s.", model_name, checkpoint_arg)
-            sys.exit(2)
-
-        if len(possible_checkpoints) == 1:
-            checkpoint = possible_checkpoints[0]
-            logging.info("Loading checkpoint %s for %s.", checkpoint, model_name)
-
-        else:
-            checkpoint = possible_checkpoints[-1]
-            logging.info("Multiple checkpoints found for %s. Loading %s.", model_name, checkpoint)
-
-        models[model_name] = model_class.load_from_checkpoint(checkpoint)
-        models[model_name].freeze()
-
-    # Load icm json differently
-    logging.info("Loading checkpoint %s for icm.", ARGS.icm_json)
-    models["icm"] = icm.SimpleInitialChordModel(ARGS.icm_json)
-
-    # Load validation data for ctm
-    h5_path = Path(ARGS.h5_dir / f"ChordTransitionDataset_valid_seed_{ARGS.seed}.h5")
+    # Load data for ctm
+    h5_path = Path(ARGS.h5_dir / f"ChordTransitionDataset_{data_type}_seed_{ARGS.seed}.h5")
     with h5py.File(h5_path, "r") as h5_file:
         if "file_ids" not in h5_file:
             logging.error("file_ids not found in %s. Re-create with create_h5_data.py", h5_path)
@@ -410,42 +406,13 @@ if __name__ == "__main__":
         file_ids = list(h5_file["file_ids"])
 
     # Load pieces
-    files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(ARGS.input)
-
-    # Load from pkl if available
-    pkl_path = Path(ARGS.h5_dir / f"pieces_valid_seed_{ARGS.seed}.pkl")
-    if pkl_path.exists():
-        with open(pkl_path, "rb") as pkl_file:
-            piece_dicts = pickle.load(pkl_file)
-    else:
-        piece_dicts = [None] * len(file_ids)
-
-    # Run only on a specific file
-    if ARGS.id is not None:
-        if ARGS.id not in file_ids:
-            raise ValueError("Given id not in the validation set.")
-
-        index = file_ids.index(ARGS.id)
-        file_ids = [file_ids[index]]
-        piece_dicts = [piece_dicts[index]]
-
-    pieces = [
-        ScorePiece(
-            notes_df.loc[file_id],
-            chords_df.loc[file_id],
-            measures_df.loc[file_id],
-            piece_dict=piece_dict,
-            name=(
-                f"{file_id}: {files_df.loc[file_id, 'corpus_name']}/"
-                f"{files_df.loc[file_id, 'file_name']}"
-            ),
-        )
-        for file_id, piece_dict in tqdm(
-            zip(file_ids, piece_dicts),
-            total=len(file_ids),
-            desc="Loading pieces",
-        )
-    ]
+    pieces = load_pieces(
+        xml=ARGS.xml,
+        input_path=ARGS.input,
+        piece_dicts_path=Path(ARGS.h5_dir / f"pieces_{data_type}_seed_{ARGS.seed}.pkl"),
+        file_ids=file_ids,
+        specific_id=ARGS.id,
+    )
 
     evaluate(
         from_args(models, ARGS),

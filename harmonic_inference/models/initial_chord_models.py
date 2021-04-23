@@ -9,7 +9,6 @@ import numpy as np
 from harmonic_inference.data.chord import Chord, get_chord_vector_length
 from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, KeyMode
 from harmonic_inference.data.piece import Piece
-from harmonic_inference.utils.data_utils import load_kwargs_from_json
 from harmonic_inference.utils.harmonic_utils import (
     get_chord_from_one_hot_index,
     get_chord_label_list,
@@ -25,7 +24,7 @@ class SimpleInitialChordModel:
 
     def __init__(
         self,
-        json_path: Union[Path, str],
+        data: Dict,
         use_inversions: bool = True,
         reduction: Dict[ChordType, ChordType] = None,
     ):
@@ -34,15 +33,14 @@ class SimpleInitialChordModel:
 
         Parameters
         ----------
-        json_path : Union[Path, str]
-            The path of a json config file written using the InitialChordModel.train method.
+        data : Dict
+            A loaded json config file, written using the InitialChordModel.train method, and loaded
+            using the data_utils.load_kwargs_from_json method.
         use_inversion : bool
             True to use inversions. False to collaps all inversions of a chord to root position.
         reduction : Dict[ChordType, ChordType]
             A reduction mapping for chord types.
         """
-        data = load_kwargs_from_json(json_path)
-
         self.PITCH_TYPE = data["pitch_type"]
 
         self.major_prior = data["major"]

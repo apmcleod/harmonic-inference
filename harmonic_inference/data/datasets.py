@@ -12,7 +12,11 @@ from tqdm import tqdm
 import h5py
 from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.key import get_key_change_vector_length
-from harmonic_inference.data.piece import Piece, ScorePiece
+from harmonic_inference.data.piece import (
+    Piece,
+    get_score_piece_from_data_frames,
+    get_score_piece_from_music_xml,
+)
 from harmonic_inference.data.vector_decoding import (
     reduce_chord_one_hots,
     reduce_chord_types,
@@ -1033,10 +1037,8 @@ def pad_array(array: List[np.array]) -> Tuple[np.array, np.array]:
 
 
 def get_split_file_ids_and_pieces(
-    files: pd.DataFrame,
-    measures: pd.DataFrame,
-    chords: pd.DataFrame,
-    notes: pd.DataFrame,
+    data_dfs: Dict[str, pd.DataFrame] = None,
+    xml_and_csv_paths: Dict[str, List[Union[str, Path]]] = None,
     splits: Iterable[float] = (0.8, 0.1, 0.1),
     seed: int = None,
 ) -> Tuple[Iterable[Iterable[int]], Iterable[Piece]]:
@@ -1045,14 +1047,11 @@ def get_split_file_ids_and_pieces(
 
     Parameters
     ----------
-    files : pd.DataFrame
-        A DataFrame with data about all of the files in the DataFrames.
-    measures : pd.DataFrame
-        A DataFrame with information about the measures of the pieces in the data.
-    chords : pd.DataFrame
-        A DataFrame with information about the chords of the pieces in the data.
-    notes : pd.DataFrame
-        A DataFrame with information about the notes of the pieces in the data.
+    data_dfs : Dict[str, pd.DataFrame]
+        If using dataframes, a mapping of 'files', 'measures', 'chords', and 'notes' dfs.
+    xml_and_csv_paths : Dict[str, List[Union[str, Path]]]
+        If using the MusicXML ('xmls') and label csvs ('csvs'), a list of paths of the
+        matching xml and csv files.
     splits : Iterable[float]
         An Iterable of floats representing the proportion of pieces which will go into each split.
         This will be normalized to sum to 1.
@@ -1073,36 +1072,53 @@ def get_split_file_ids_and_pieces(
     if seed is not None:
         np.random.seed(seed)
 
-    df_indexes = []
+    indexes = []
     pieces = []
 
-    for i in tqdm(files.index):
-        file_name = f"{files.loc[i].corpus_name}/{files.loc[i].file_name}"
-        logging.info("Parsing %s (id %s)", file_name, i)
+    if data_dfs is not None:
+        for i in tqdm(data_dfs["files"].index):
+            file_name = (
+                f"{data_dfs['files'].loc[i].corpus_name}/{data_dfs['files'].loc[i].file_name}"
+            )
+            logging.info("Parsing %s (id %s)", file_name, i)
 
-        dfs = [chords, measures, notes]
-        names = ["chords", "measures", "notes"]
-        exists = [i in df.index.get_level_values(0) for df in dfs]
+            dfs = [data_dfs["chords"], data_dfs["measures"], data_dfs["notes"]]
+            names = ["chords", "measures", "notes"]
+            exists = [i in df.index.get_level_values(0) for df in dfs]
 
-        if not all(exists):
-            for exist, name in zip(exists, names):
-                if not exist:
-                    logging.warning("%s_df does not contain %s data (id %s).", name, file_name, i)
-            continue
+            if not all(exists):
+                for exist, name in zip(exists, names):
+                    if not exist:
+                        logging.warning(
+                            "%s_df does not contain %s data (id %s).", name, file_name, i
+                        )
+                continue
 
-        try:
-            piece = ScorePiece(notes.loc[i], chords.loc[i], measures.loc[i])
+            try:
+                piece = get_score_piece_from_data_frames(
+                    data_dfs["notes"].loc[i], data_dfs["chords"].loc[i], data_dfs["measures"].loc[i]
+                )
+                pieces.append(piece)
+                indexes.append(i)
+            except Exception:
+                logging.exception("Error parsing index %s", i)
+                continue
+
+    elif xml_and_csv_paths is not None:
+        for i, (xml_path, csv_path) in tqdm(
+            enumerate(zip(xml_and_csv_paths["xmls"], xml_and_csv_paths["csvs"])),
+            desc="Parsing MusicXML files",
+            total=len(xml_and_csv_paths["xmls"]),
+        ):
+            piece = get_score_piece_from_music_xml(xml_path, csv_path)
             pieces.append(piece)
-            df_indexes.append(i)
-        except Exception:
-            logging.exception("Error parsing index %s", i)
-            continue
+            indexes.append(i)
 
     # Shuffle the pieces and the df_indexes the same way
-    shuffled_indexes = np.arange(len(df_indexes))
+    shuffled_indexes = np.arange(len(indexes))
     np.random.shuffle(shuffled_indexes)
     pieces = np.array(pieces)[shuffled_indexes]
-    df_indexes = np.array(df_indexes)[shuffled_indexes]
+    indexes = np.array(indexes)[shuffled_indexes]
 
     split_pieces = []
     split_indexes = []
@@ -1118,20 +1134,18 @@ def get_split_file_ids_and_pieces(
             split_indexes.append([])
         elif length == 1:
             split_pieces.append([pieces[start]])
-            split_indexes.append([df_indexes[start]])
+            split_indexes.append([indexes[start]])
         else:
             split_pieces.append(pieces[start:end])
-            split_indexes.append(df_indexes[start:end])
+            split_indexes.append(indexes[start:end])
 
     return split_indexes, split_pieces
 
 
 def get_dataset_splits(
-    files: pd.DataFrame,
-    measures: pd.DataFrame,
-    chords: pd.DataFrame,
-    notes: pd.DataFrame,
     datasets: Iterable[HarmonicDataset],
+    data_dfs: Dict[str, pd.DataFrame] = None,
+    xml_and_csv_paths: Dict[str, List[Union[str, Path]]] = None,
     splits: Iterable[float] = (0.8, 0.1, 0.1),
     seed: int = None,
 ) -> Tuple[List[List[HarmonicDataset]], List[List[int]], List[List[Piece]]]:
@@ -1140,18 +1154,15 @@ def get_dataset_splits(
 
     Parameters
     ----------
-    files : pd.DataFrame
-        A DataFrame with data about all of the files in the DataFrames.
-    measures : pd.DataFrame
-        A DataFrame with information about the measures of the pieces in the data.
-    chords : pd.DataFrame
-        A DataFrame with information about the chords of the pieces in the data.
-    notes : pd.DataFrame
-        A DataFrame with information about the notes of the pieces in the data.
     datasets : Iterable[HarmonicDataset]
         An Iterable of HarmonicDataset class objects, each representing a different type of
         HarmonicDataset subclass to make a Dataset from. These are all passed so that they will
         have identical splits.
+    data_dfs : Dict[str, pd.DataFrame]
+        If using dataframes, a mapping of 'files', 'measures', 'chords', and 'notes' dfs.
+    xml_and_csv_paths : Dict[str, List[Union[str, Path]]]
+        If using the MusicXML ('xmls') and label csvs ('csvs'), a list of paths of the
+        matching xml and csv files.
     splits : Iterable[float]
         An Iterable of floats representing the proportion of pieces which will go into each split.
         This will be normalized to sum to 1.
@@ -1169,10 +1180,8 @@ def get_dataset_splits(
         A list of the pieces in each split.
     """
     split_ids, split_pieces = get_split_file_ids_and_pieces(
-        files,
-        measures,
-        chords,
-        notes,
+        data_dfs=data_dfs,
+        xml_and_csv_paths=xml_and_csv_paths,
         splits=splits,
         seed=seed,
     )

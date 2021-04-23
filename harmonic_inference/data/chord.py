@@ -10,6 +10,7 @@ import pandas as pd
 from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, KeyMode, PitchType
 from harmonic_inference.data.key import Key
 from harmonic_inference.utils.harmonic_constants import (
+    CHORD_PITCHES,
     MAX_RELATIVE_TPC,
     MIN_RELATIVE_TPC,
     NUM_PITCHES,
@@ -23,6 +24,7 @@ from harmonic_inference.utils.harmonic_utils import (
     get_chord_one_hot_index,
     get_chord_string,
     get_chord_type_from_string,
+    get_interval_from_scale_degree,
     get_pitch_from_string,
     get_pitch_string,
     tpc_interval_to_midi_interval,
@@ -457,7 +459,7 @@ class Chord:
             True to store the chord's inversion. False to use inversion = 0 for all chords.
         use_relative : bool
             True to store the chord's key tonic and mode while treated relative roots as new keys.
-            Flase to only use the annotated local keys.
+            False to only use the annotated local keys.
         key : Key
             The key during this Chord. If not given, it will be calculated from chord_row.
         levels_cache : DefaultDict[str, Dict[Fraction, int]]
@@ -545,6 +547,162 @@ class Chord:
             logging.error("Error parsing chord from row %s", chord_row)
             logging.exception(exception)
             return None
+
+    @staticmethod
+    def from_labels_csv_row(
+        chord_row: pd.Series,
+        measures_df: pd.DataFrame,
+        pitch_type: PitchType,
+        reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+        use_inversion: bool = True,
+        use_relative: bool = True,
+        key: "Key" = None,
+        levels_cache: DefaultDict[str, Dict[Fraction, int]] = None,
+    ) -> "Chord":
+        """
+        Create a Chord object of the given pitch_type from the given pd.Series.
+
+        Parameters
+        ----------
+        chord_row : pd.Series
+            The chord row from which to make our chord object, from a labels csv file.
+            It must contain at least the rows:
+                'on' (Fraction): The onset of the chord label, measured in whole notes since
+                                 the beginning of the piece.
+                'off' (Fraction): The offset of the chord label, measured in whole notes since
+                                  the beginning of the piece.
+                'key' (str): The local key at the time of the given label. Flats and sharps
+                             are represented with - and +, and major/minor is represented
+                             by upper/lower-case.
+                'degree' (str): The degree of the chord's root, relative to the local key,
+                                and including applied chords with / notation. Flats and sharps
+                                are represented with - and +.
+                'type' (str): A string representing the chord type.
+                'inv' (int): The inversion of the chord.
+        measures_df : pd.DataFrame
+            A pd.DataFrame of the measures in the piece of the chord. It is used to get metrical
+            levels of the chord's onset and offset. Must have at least the columns:
+                'mc' (int): The measure number, to match with the chord's onset and offset.
+                'timesig' (str): The time signature of the measure.
+        pitch_type : PitchType
+            The pitch type to use for the Chord.
+        reduction : Dict[ChordType, ChordType]
+            A reduction mapping each possible ChordType to a reduced ChordType.
+        use_inversion : bool
+            True to store the chord's inversion. False to use inversion = 0 for all chords.
+        use_relative : bool
+            True to store the chord's key tonic and mode while treated relative roots as new keys.
+            False to only use the annotated local keys.
+        key : Key
+            The key during this Chord. If not given, it will be calculated from chord_row.
+        levels_cache : DefaultDict[str, Dict[Fraction, int]]
+            If given, a dictionary-based cache mapping time signatures to a 2nd dictionary mapping
+            beat positions to metrical levels. The outer-most dictionary should be a default-dict
+            returning by default an empty dict.
+
+        Returns
+        -------
+        chord : Chord, or None
+            The created Note object. If an error occurs, None is returned and the error is logged.
+        """
+        try:
+            if key is None:
+                key = Key.from_labels_csv_row(chord_row, pitch_type)
+
+            # Categorical info
+            chord_type = {
+                "D7": ChordType.MAJ_MIN7,
+                "M": ChordType.MAJOR,
+                "M7": ChordType.MAJ_MAJ7,
+                "d": ChordType.DIMINISHED,
+                "a": ChordType.AUGMENTED,
+                "d7": ChordType.DIM7,
+                "m": ChordType.MINOR,
+                "m7": ChordType.MIN_MIN7,
+                "Gr+6": ChordType.MAJOR,
+                "Fr+6": ChordType.MAJOR,
+                "It+6": ChordType.MAJOR,
+                "h7": ChordType.HALF_DIM7,
+            }[chord_row["type"]]
+
+            # Harmonic info (root pitch)
+            degree = chord_row["degree"].replace("-", "b")
+            degree = degree.replace("+", "#")
+
+            if "/" in degree:
+                degree = degree.split("/")[0]
+
+            # Fix for labels_csv use #7 as standard in minor keys
+            if key.relative_mode == KeyMode.MINOR and "7" in degree:
+                if degree[0] == "b":
+                    degree = degree[1:]
+                else:
+                    degree = "#" + degree
+
+            # Fix for some labels which have too many sharps on the 6th scale degree in minor
+            if key.relative_mode == KeyMode.MINOR and "##6" in degree:
+                degree = degree.replace("##6", "#6")
+
+            interval = get_interval_from_scale_degree(
+                degree, True, key.relative_mode, pitch_type=pitch_type
+            )
+            root = transpose_pitch(key.relative_tonic, interval, pitch_type=pitch_type)
+
+            # How we handle augmented 6th chords
+            inversion = chord_row["inv"]
+            if chord_row["type"] in ["Gr+6", "Fr+6", "It+6"]:
+                inversion = 0
+
+            # Bugfix for triads in 3rd inversion
+            inversion = inversion % len(CHORD_PITCHES[PitchType.TPC][chord_type])
+
+            # Metrical info
+            onset_measure = measures_df.loc[measures_df["start"] <= chord_row["on"]].iloc[-1]
+            offset_measure = measures_df.loc[measures_df["start"] <= chord_row["off"]].iloc[-1]
+
+            onset_beat = onset_measure["offset"] + chord_row["on"] - onset_measure["start"]
+            offset_beat = offset_measure["offset"] + chord_row["off"] - offset_measure["start"]
+
+            levels = [None, None]
+
+            for i, (beat, measure) in enumerate(
+                zip(
+                    [onset_beat, offset_beat],
+                    [onset_measure, offset_measure],
+                )
+            ):
+                if levels_cache is None:
+                    level = get_metrical_level(beat, measure)
+
+                else:
+                    time_sig_cache = levels_cache[measure["timesig"]]
+                    if beat in time_sig_cache:
+                        level = time_sig_cache[beat]
+                    else:
+                        level = get_metrical_level(beat, measure)
+                        time_sig_cache[beat] = level
+
+                levels[i] = level
+
+            onset_level, offset_level = levels
+
+            return Chord(
+                root,
+                get_bass_note(chord_type, root, inversion, pitch_type, modulo=True),
+                key.relative_tonic if use_relative else key.local_tonic,
+                key.relative_mode if use_relative else key.local_mode,
+                reduction[chord_type],
+                inversion if use_inversion else 0,
+                (onset_measure["mc"], onset_beat),
+                onset_level,
+                (offset_measure["mc"], offset_beat),
+                offset_level,
+                chord_row["off"] - chord_row["on"],
+                pitch_type,
+            )
+        except Exception as e:
+            print(chord_row)
+            raise e
 
 
 def get_chord_vector_length(

@@ -4,6 +4,7 @@ import logging
 from fractions import Fraction
 from typing import Dict, Tuple, Union
 
+import music21
 import numpy as np
 import pandas as pd
 
@@ -162,6 +163,14 @@ class Note:
             The measures DataFrame for this piece, to be used for getting metrical range
             information. None to not include chord-relative metrical information in the
             vector.
+            Otherwise, this needs:
+                'mc' (int): The measure number of each measure.
+                'timesig' (str): The time signature of the measure.
+                'act_dur' (Fraction): The duration of the measure in whole notes.
+                'offset' (Fraction): The starting position of the measure in whole notes.
+                                    Should be 0 except for incomplete pick-up measures.
+                'next' (int): The mc of the measure that follows each measure
+                              (or None for the last measure).
 
         min_pitch : Tuple[int, int]
             The minimum pitch of any note in this set of notes, expressed as an (octave,
@@ -402,6 +411,100 @@ class Note:
             logging.error("Error parsing note from row %s", note_row)
             logging.exception(exception)
             return None
+
+    @staticmethod
+    def from_music21(
+        m21_note: music21.note.Note,
+        measures_df: pd.DataFrame,
+        mc: int,
+        pitch_type: PitchType,
+        m21_chord: music21.chord.Chord = None,
+        levels_cache: Dict[str, Dict[Fraction, int]] = None,
+    ) -> "Note":
+        """
+        Create a new Note object from a pd.Series, and return it.
+
+        Parameters
+        ----------
+        m21_note : music21.note.Note
+            A music21 Note object to turn into our Note.
+        measures_df : pd.DataFrame
+            A pd.DataFrame of the measures in the piece of the note. It is used to get metrical
+            levels of the note's onset and offset. Must have at least the columns:
+                'mc' (int): The measure number, to match with the note's onset and offset.
+                'timesig' (str): The time signature of each measure.
+                'start' (Fraction): The position at the start of each measure, in whole notes
+                                    since the beginning of the piece.
+        mc : int
+            The mc of the measure containing the note's onset.
+        pitch_type : PitchType
+            The pitch type to use for the Note.
+        m21_chord : music21.chord.Chord
+            If a note is in a chord, it doesn't have rhythmic attributes. Rather, these belong to
+            a chord object in music21. This is that chord object.
+        levels_cache : Dict[str, Dict[Fraction, int]]
+            If given, a dictionary-based cache mapping time signatures to a 2nd dictionary mapping
+            beat positions to metrical levels. The outer-most dictionary should be a default-dict
+            returning by default an empty dict.
+
+        Returns
+        -------
+        note : Note
+            The created Note object.
+        """
+        m21_rhythmic = m21_note if m21_chord is None else m21_chord
+
+        note_start = Fraction(m21_rhythmic.offset) / 4
+        note_duration = Fraction(m21_rhythmic.quarterLength) / 4
+
+        onset_measure = measures_df.loc[measures_df["mc"] == mc].iloc[0]
+
+        # Find the offset measure
+        offset_measure = onset_measure
+        tmp_duration = note_duration + note_start - onset_measure["offset"]
+        while tmp_duration >= offset_measure["act_dur"] and not pd.isna(offset_measure["next"]):
+            tmp_duration -= offset_measure["act_dur"]
+            offset_measure = measures_df.loc[measures_df["mc"] == offset_measure["next"]].iloc[0]
+
+        onset_beat = note_start
+        offset_beat = tmp_duration + offset_measure["offset"]
+
+        onset_beat += onset_measure["offset"]
+        offset_beat += offset_measure["offset"]
+
+        levels = [None, None]
+
+        for i, (beat, measure) in enumerate(
+            zip(
+                [onset_beat, offset_beat],
+                [onset_measure, offset_measure],
+            )
+        ):
+            if levels_cache is None:
+                level = get_metrical_level(beat, measure)
+
+            else:
+                time_sig_cache = levels_cache[measure["timesig"]]
+                if beat in time_sig_cache:
+                    level = time_sig_cache[beat]
+                else:
+                    level = get_metrical_level(beat, measure)
+                    time_sig_cache[beat] = level
+
+            levels[i] = level
+
+        onset_level, offset_level = levels
+
+        return Note(
+            get_pitch_from_string(m21_note.pitch.name.replace("-", "b"), pitch_type),
+            m21_note.octave,
+            (onset_measure["mc"], onset_beat),
+            onset_level,
+            note_duration,
+            (offset_measure["mc"], offset_beat),
+            offset_level,
+            pitch_type,
+        )
 
 
 def get_note_vector_length(pitch_type: PitchType) -> int:
