@@ -1,6 +1,6 @@
 **/__pycache__
 **/.ipynb_checkpoints
-checkpoints/**
+checkpoints*/**
 model_jsons/**
 *.old/**
 .idea/**

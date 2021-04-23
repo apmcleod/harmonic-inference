@@ -321,8 +321,12 @@ class SimpleChordSequenceModel(ChordSequenceModel):
             The batch size.
         """
         return (
-            Variable(torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim)),
-            Variable(torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim)),
+            Variable(
+                torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim, device=self.device)
+            ),
+            Variable(
+                torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim, device=self.device)
+            ),
         )
 
     def forward(self, inputs, lengths, hidden=None):

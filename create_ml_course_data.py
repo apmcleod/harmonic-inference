@@ -7,7 +7,7 @@ from tqdm import tqdm
 import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 from harmonic_inference.data.data_types import TRIAD_REDUCTION, KeyMode, PitchType
-from harmonic_inference.data.piece import ScorePiece
+from harmonic_inference.data.piece import get_score_piece_from_data_frames
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -42,7 +42,7 @@ for composer in composers:
         total=len(composer_df),
     ):
         try:
-            piece = ScorePiece(
+            piece = get_score_piece_from_data_frames(
                 notes_df.loc[file_id],
                 chords_df.loc[file_id],
                 measures_df.loc[file_id],

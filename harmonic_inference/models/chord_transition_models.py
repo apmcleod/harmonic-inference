@@ -240,8 +240,16 @@ class SimpleChordTransitionModel(ChordTransitionModel):
             The batch size.
         """
         return (
-            Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden_dim)),
-            Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden_dim)),
+            Variable(
+                torch.zeros(
+                    2 * self.lstm_layers, batch_size, self.lstm_hidden_dim, device=self.device
+                )
+            ),
+            Variable(
+                torch.zeros(
+                    2 * self.lstm_layers, batch_size, self.lstm_hidden_dim, device=self.device
+                )
+            ),
         )
 
     def forward(self, inputs, lengths):

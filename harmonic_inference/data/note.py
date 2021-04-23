@@ -4,6 +4,7 @@ import logging
 from fractions import Fraction
 from typing import Dict, Tuple, Union
 
+import music21
 import numpy as np
 import pandas as pd
 
@@ -97,17 +98,34 @@ class Note:
             A copy of this note, with the given pitch type.
         """
         new_params = {key: getattr(self, key) for key in self.params}
-        new_params["tonic_type"] = pitch_type
+        new_params["pitch_type"] = pitch_type
 
         if pitch_type == self.pitch_type:
             return Note(**self.params)
 
-        # Convert relative, local, and global tonic
+        # Convert pitch
         new_params["pitch_class"] = get_pitch_from_string(
             get_pitch_string(new_params["pitch_class"], self.pitch_type), pitch_type
         )
 
         return Note(**new_params)
+
+    def get_midi_note_number(self) -> int:
+        """
+        Get the MIDI note number of this note, where 0 == C0.
+
+        Returns
+        -------
+        midi : int
+            The MIDI note number of this Note's pitch.
+        """
+        if self.pitch_type == PitchType.MIDI:
+            return NUM_PITCHES[PitchType.TPC] * self.octave + self.pitch_class
+
+        midi_pitch_class = get_pitch_from_string(
+            get_pitch_string(self.pitch_class, self.pitch_type), PitchType.MIDI
+        )
+        return NUM_PITCHES[PitchType.MIDI] * self.octave + midi_pitch_class
 
     def to_vec(
         self,
@@ -116,6 +134,7 @@ class Note:
         chord_duration: Union[float, Fraction] = None,
         measures_df: pd.DataFrame = None,
         min_pitch: Tuple[int, int] = None,
+        max_pitch: Tuple[int, int] = None,
         note_onset: Fraction = None,
         dur_from_prev: Union[float, Fraction] = None,
         dur_to_next: Union[float, Fraction] = None,
@@ -144,10 +163,24 @@ class Note:
             The measures DataFrame for this piece, to be used for getting metrical range
             information. None to not include chord-relative metrical information in the
             vector.
+            Otherwise, this needs:
+                'mc' (int): The measure number of each measure.
+                'timesig' (str): The time signature of the measure.
+                'act_dur' (Fraction): The duration of the measure in whole notes.
+                'offset' (Fraction): The starting position of the measure in whole notes.
+                                    Should be 0 except for incomplete pick-up measures.
+                'next' (int): The mc of the measure that follows each measure
+                              (or None for the last measure).
 
         min_pitch : Tuple[int, int]
-            The minimum pitch of any note in this set of notes, expressed as a (octave, pitch)
-            tuple. None to not include the binary is_lowest vector entry.
+            The minimum pitch of any note in this set of notes, expressed as an (octave,
+            MIDI note number) tuple. None to not include the binary is_lowest vector entry,
+            or any other relative pitch height measures.
+
+        max_pitch : Tuple[int, int]
+            The maximum pitch of any note in this set of notes, expressed as an (octave,
+            MIDI note number) tuple. If this or min_pitch is None, the chord-relative
+            normalized pitch height will not be available.
 
         note_onset : Fraction
             The duration from the chord onset to the note's onset. If given, this speeds up
@@ -172,7 +205,8 @@ class Note:
         vectors.append(pitch)
 
         # Octave as one-hot
-        octave = np.zeros(127 // NUM_PITCHES[PitchType.MIDI], dtype=np.float16)
+        num_octaves = 127 // NUM_PITCHES[PitchType.MIDI]
+        octave = np.zeros(num_octaves, dtype=np.float16)
         octave[self.octave] = 1
         vectors.append(octave)
 
@@ -224,10 +258,35 @@ class Note:
         vectors.append(durations)
 
         # Binary -- is this the lowest note in this set of notes
-        min_pitch = [
-            1 if min_pitch is not None and (self.octave, self.pitch_class) == min_pitch else 0
-        ]
-        vectors.append(min_pitch)
+        midi_note_number = self.get_midi_note_number()
+        is_min = [1 if min_pitch is not None and midi_note_number == min_pitch[1] else 0]
+        vectors.append(is_min)
+
+        # Octave related to surrounding notes as one-hot
+        relative_octave = np.zeros(num_octaves, dtype=np.float16)
+        lowest_octave = 0 if min_pitch is None else min_pitch[0]
+        relative_octave[self.octave - lowest_octave] = 1
+        vectors.append(relative_octave)
+
+        # Normalized pitch height
+        norm_pitch_height = [midi_note_number / 127]
+        vectors.append(norm_pitch_height)
+
+        # Relative to surrounding notes
+        if min_pitch is not None and max_pitch is not None:
+            range_size = max_pitch[1] - min_pitch[1]
+
+            # If min pitch equals max pitch, we set the range to 1 and every note will have
+            # norm_relative = 0 (as if they were all the bass note).
+            if range_size == 0:
+                range_size = 1
+                max_pitch = (max_pitch[0], max_pitch[1] + 1)
+
+            relative_norm_pitch_height = [(midi_note_number - min_pitch[1]) / range_size]
+            vectors.append(relative_norm_pitch_height)
+
+        else:
+            vectors.append([0])
 
         return np.concatenate(vectors).astype(np.float16)
 
@@ -353,6 +412,100 @@ class Note:
             logging.exception(exception)
             return None
 
+    @staticmethod
+    def from_music21(
+        m21_note: music21.note.Note,
+        measures_df: pd.DataFrame,
+        mc: int,
+        pitch_type: PitchType,
+        m21_chord: music21.chord.Chord = None,
+        levels_cache: Dict[str, Dict[Fraction, int]] = None,
+    ) -> "Note":
+        """
+        Create a new Note object from a pd.Series, and return it.
+
+        Parameters
+        ----------
+        m21_note : music21.note.Note
+            A music21 Note object to turn into our Note.
+        measures_df : pd.DataFrame
+            A pd.DataFrame of the measures in the piece of the note. It is used to get metrical
+            levels of the note's onset and offset. Must have at least the columns:
+                'mc' (int): The measure number, to match with the note's onset and offset.
+                'timesig' (str): The time signature of each measure.
+                'start' (Fraction): The position at the start of each measure, in whole notes
+                                    since the beginning of the piece.
+        mc : int
+            The mc of the measure containing the note's onset.
+        pitch_type : PitchType
+            The pitch type to use for the Note.
+        m21_chord : music21.chord.Chord
+            If a note is in a chord, it doesn't have rhythmic attributes. Rather, these belong to
+            a chord object in music21. This is that chord object.
+        levels_cache : Dict[str, Dict[Fraction, int]]
+            If given, a dictionary-based cache mapping time signatures to a 2nd dictionary mapping
+            beat positions to metrical levels. The outer-most dictionary should be a default-dict
+            returning by default an empty dict.
+
+        Returns
+        -------
+        note : Note
+            The created Note object.
+        """
+        m21_rhythmic = m21_note if m21_chord is None else m21_chord
+
+        note_start = Fraction(m21_rhythmic.offset) / 4
+        note_duration = Fraction(m21_rhythmic.quarterLength) / 4
+
+        onset_measure = measures_df.loc[measures_df["mc"] == mc].iloc[0]
+
+        # Find the offset measure
+        offset_measure = onset_measure
+        tmp_duration = note_duration + note_start - onset_measure["offset"]
+        while tmp_duration >= offset_measure["act_dur"] and not pd.isna(offset_measure["next"]):
+            tmp_duration -= offset_measure["act_dur"]
+            offset_measure = measures_df.loc[measures_df["mc"] == offset_measure["next"]].iloc[0]
+
+        onset_beat = note_start
+        offset_beat = tmp_duration + offset_measure["offset"]
+
+        onset_beat += onset_measure["offset"]
+        offset_beat += offset_measure["offset"]
+
+        levels = [None, None]
+
+        for i, (beat, measure) in enumerate(
+            zip(
+                [onset_beat, offset_beat],
+                [onset_measure, offset_measure],
+            )
+        ):
+            if levels_cache is None:
+                level = get_metrical_level(beat, measure)
+
+            else:
+                time_sig_cache = levels_cache[measure["timesig"]]
+                if beat in time_sig_cache:
+                    level = time_sig_cache[beat]
+                else:
+                    level = get_metrical_level(beat, measure)
+                    time_sig_cache[beat] = level
+
+            levels[i] = level
+
+        onset_level, offset_level = levels
+
+        return Note(
+            get_pitch_from_string(m21_note.pitch.name.replace("-", "b"), pitch_type),
+            m21_note.octave,
+            (onset_measure["mc"], onset_beat),
+            onset_level,
+            note_duration,
+            (offset_measure["mc"], offset_beat),
+            offset_level,
+            pitch_type,
+        )
+
 
 def get_note_vector_length(pitch_type: PitchType) -> int:
     """
@@ -368,8 +521,19 @@ def get_note_vector_length(pitch_type: PitchType) -> int:
     length : int
         The length of a single note vector of the given pitch type.
     """
+    num_octaves = 127 // NUM_PITCHES[PitchType.MIDI]
+    # 4 onset level
+    # 4 offset level
+    # 3 onset, offset, duration relative to chord
+    # 2 durations to next and from prev
+    # 1 is_lowest
+    # 1 normalized pitch height
+    # 1 normalized pitch height relative to window
+    extra = 16
+
     return (
         NUM_PITCHES[pitch_type]  # Pitch class
-        + 127 // NUM_PITCHES[PitchType.MIDI]  # Octave
-        + 14  # 4 onset level, 4 offset level, onset, offset, durations, is_lowest
+        + num_octaves  # Absolute octave
+        + num_octaves  # Relative octave (above lowest note in chord window)
+        + extra
     )

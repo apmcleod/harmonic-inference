@@ -276,8 +276,16 @@ class SimpleKeySequenceModel(KeySequenceModel):
             The batch size.
         """
         return (
-            Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden_dim)),
-            Variable(torch.zeros(2 * self.lstm_layers, batch_size, self.lstm_hidden_dim)),
+            Variable(
+                torch.zeros(
+                    2 * self.lstm_layers, batch_size, self.lstm_hidden_dim, device=self.device
+                )
+            ),
+            Variable(
+                torch.zeros(
+                    2 * self.lstm_layers, batch_size, self.lstm_hidden_dim, device=self.device
+                )
+            ),
         )
 
     def forward(self, inputs, lengths, hidden=None):
@@ -298,7 +306,7 @@ class SimpleKeySequenceModel(KeySequenceModel):
         # Get lengths in proper format
         lstm_out_lengths_tensor = (
             lstm_out_lengths.unsqueeze(1).unsqueeze(2).expand((-1, 1, lstm_out_forward.shape[2]))
-        )
+        ).to(self.device)
         last_forward = torch.gather(lstm_out_forward, 1, lstm_out_lengths_tensor - 1).squeeze(dim=1)
         last_backward = lstm_out_backward[:, 0, :]
         lstm_out = torch.cat((last_forward, last_backward), 1)

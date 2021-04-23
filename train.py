@@ -2,13 +2,11 @@
 import argparse
 import logging
 import os
-import pickle
 import sys
 from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 
 import h5py
 import harmonic_inference.data.datasets as ds
@@ -19,11 +17,9 @@ import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
 import pytorch_lightning as pl
-from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 from harmonic_inference.data.data_types import PieceType, PitchType
-from harmonic_inference.data.piece import ScorePiece
 from harmonic_inference.models.joint_model import MODEL_CLASSES
-from harmonic_inference.utils.data_utils import load_kwargs_from_json
+from harmonic_inference.utils.data_utils import load_kwargs_from_json, load_pieces
 from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
 from pytorch_lightning.profiler import AdvancedProfiler
 
@@ -42,12 +38,24 @@ if __name__ == "__main__":
         required=True,
     )
 
-    DEFAULT_CHECKPOINT_PATH = os.path.join("checkpoints", "`model`")
+    parser.add_argument(
+        "--gpu",
+        type=str,
+        default=None,
+        help=(
+            "The device number for the GPU to train on. "
+            "If not given, the model will be trained on CPU."
+        ),
+    )
+
     parser.add_argument(
         "--checkpoint",
         type=str,
-        default=DEFAULT_CHECKPOINT_PATH,
-        help="The directory to save model checkpoints into.",
+        default="checkpoints",
+        help=(
+            "The directory to save model checkpoints into, within a subdirectory of the model's "
+            "name (e.g., CSM checkpoints will be saved into `--checkpoint`/csm).",
+        ),
     )
 
     parser.add_argument(
@@ -56,6 +64,17 @@ if __name__ == "__main__":
         type=Path,
         default=Path("corpus_data"),
         help="The directory containing the raw corpus_data tsv files. Used only for -m icm",
+    )
+
+    parser.add_argument(
+        "-x",
+        "--xml",
+        action="store_true",
+        help=(
+            "The --input data comes from the funtional-harmony repository, as MusicXML "
+            "files and labels CSV files. Only important for --model icm. Other models load "
+            "h5 data directly."
+        ),
     )
 
     parser.add_argument(
@@ -112,8 +131,7 @@ if __name__ == "__main__":
 
     ARGS = parser.parse_args()
 
-    if ARGS.checkpoint == DEFAULT_CHECKPOINT_PATH:
-        ARGS.checkpoint = os.path.join("checkpoints", ARGS.model)
+    ARGS.checkpoint = os.path.join(ARGS.checkpoint, ARGS.model)
 
     os.makedirs(ARGS.checkpoint, exist_ok=True)
 
@@ -177,28 +195,12 @@ if __name__ == "__main__":
 
             file_ids = list(h5_file["file_ids"])
 
-        # Load pieces
-        files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(ARGS.input)
-
-        # Load from pkl if available
-        pkl_path = Path(ARGS.h5_dir / f"pieces_train_seed_{ARGS.seed}.pkl")
-        if pkl_path.exists():
-            with open(pkl_path, "rb") as pkl_file:
-                piece_dicts = pickle.load(pkl_file)
-            pieces = [
-                ScorePiece(None, None, measures_df.loc[file_id], piece_dict=piece_dict)
-                for file_id, piece_dict in zip(file_ids, piece_dicts)
-            ]
-
-        # Generate from dfs
-        else:
-            pieces = []
-            for file_id in tqdm(file_ids, desc="Loading Pieces"):
-                pieces.append(
-                    ScorePiece(
-                        notes_df.loc[file_id], chords_df.loc[file_id], measures_df.loc[file_id]
-                    )
-                )
+        pieces = load_pieces(
+            xml=ARGS.xml,
+            input_path=ARGS.input,
+            piece_dicts_path=Path(ARGS.h5_dir / f"pieces_train_seed_{ARGS.seed}.pkl"),
+            file_ids=file_ids,
+        )
 
         chords = [piece.get_chords()[0] for piece in pieces]
         icm.train_icm(
@@ -260,5 +262,6 @@ if __name__ == "__main__":
         default_root_dir=ARGS.checkpoint,
         profiler=ARGS.profile,
         callbacks=[early_stopping_callback, lr_logger],
+        gpus=ARGS.gpu,
     )
     trainer.fit(model, dl_train, dl_valid)
