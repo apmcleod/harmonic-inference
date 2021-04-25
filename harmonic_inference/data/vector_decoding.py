@@ -364,7 +364,7 @@ def reduce_chord_one_hots(
 
     for one_hot, (root, chord_type, inversion) in zip(unique_one_hots, old_labels):
         if relative:
-            # If relatived, returned root is on the range [MIN_RELATIVE_TPC, MAX_RELATIVE_TPC]
+            # If relative, returned root is on the range [MIN_RELATIVE_TPC, MAX_RELATIVE_TPC]
             # However, it is expected to be [0, ...]
             # This absolute to relative call with key=0 converts this correctly.
             root = absolute_to_relative(root, 0, pitch_type, False, pad=pad)
@@ -520,3 +520,29 @@ def decode_chord_and_key_change_vector(
             raise ValueError("No key change, but key change vector is not empty.")
 
     return chord, key
+
+
+def transpose_note_vector(
+    note_vec: List[float],
+    interval: int,
+    pitch_type: PitchType,
+) -> List[float]:
+    """
+    Transpose the given note vector by the given interval.
+
+    Parameters
+    ----------
+    note_vec : List[float]
+        The note vector to transpose.
+    interval : int
+        The interval by which to transpose the given note vector.
+    pitch_type : PitchType
+        The pitch type used by both the note vector and the given interval.
+
+    Returns
+    -------
+    note_vector : List[float]
+        The given note vector, transposed by the given interval.
+    """
+    # TODO
+    pass
