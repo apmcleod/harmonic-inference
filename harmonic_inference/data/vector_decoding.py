@@ -523,9 +523,9 @@ def decode_chord_and_key_change_vector(
 
 
 def transpose_note_vector(
-    note_vec: List[float],
+    note_vector: List[float],
     interval: int,
-    pitch_type: PitchType,
+    pitch_type: PitchType = None,
 ) -> List[float]:
     """
     Transpose the given note vector by the given interval.
@@ -538,11 +538,36 @@ def transpose_note_vector(
         The interval by which to transpose the given note vector.
     pitch_type : PitchType
         The pitch type used by both the note vector and the given interval.
+        Will speed up computation slightly if given, but this can also be inferred
+        from the length of the note vector.
 
     Returns
     -------
-    note_vector : List[float]
+    new_note_vector : List[float]
         The given note vector, transposed by the given interval.
     """
-    # TODO
-    pass
+    # Infer pitch_type from vector length
+    if pitch_type is None:
+        for check_pitch_type in PitchType:
+            if len(note_vector) == get_note_vector_length(check_pitch_type):
+                pitch_type = check_pitch_type
+                break
+
+        if pitch_type is None:
+            raise ValueError("Key change vector is not a valid length for any PitchType.")
+
+    new_note_vector = [i for i in note_vector]
+
+    old_pitch = np.arange(NUM_PITCHES[pitch_type])[np.where(note_vector == 1)[0][0]]
+    new_pitch = old_pitch + interval
+
+    if not (0 <= old_pitch < NUM_PITCHES[pitch_type]):
+        raise ValueError(
+            f"Transposed note {decode_note_vector(note_vector)} + {interval} "
+            f"outside of valid range (0 - {NUM_PITCHES[pitch_type]}"
+        )
+
+    new_note_vector[old_pitch] = 0
+    new_note_vector[new_pitch] = 1
+
+    return new_note_vector
