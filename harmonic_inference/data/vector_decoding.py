@@ -1,4 +1,5 @@
 """Functions for decoding data vectors."""
+from copy import copy
 from typing import Dict, List, Tuple, Union
 
 import numpy as np
@@ -556,7 +557,7 @@ def transpose_note_vector(
         if pitch_type is None:
             raise ValueError("Key change vector is not a valid length for any PitchType.")
 
-    new_note_vector = [i for i in note_vector]
+    new_note_vector = copy(note_vector)
 
     old_pitch = np.arange(NUM_PITCHES[pitch_type])[np.where(note_vector == 1)[0][0]]
     new_pitch = old_pitch + interval

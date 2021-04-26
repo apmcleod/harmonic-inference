@@ -1,6 +1,7 @@
 """Module containing datasets for the various models."""
 import logging
 import shutil
+from copy import copy
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Tuple, Union
 
@@ -508,6 +509,7 @@ class ChordClassificationDataset(HarmonicDataset):
                 use_inversions=self.use_inversions,
             )[0]
 
+            self.transposition_range = (-1, 1)
             if self.transposition_range != (0, 0):
                 root, chord_type, inversion = get_chord_from_one_hot_index(
                     data["targets"],
@@ -526,17 +528,38 @@ class ChordClassificationDataset(HarmonicDataset):
                         inversion=inversion,
                         use_inversion=self.use_inversions,
                         relative=False,
-                        pas=False,
+                        pad=False,
                         reduction=self.reduction,
                     )
                     for trans in range(self.transposition_range[0], self.transposition_range[1] + 1)
                 ]
 
-                data["inputs"] = [
-                    transpose_note_vector(note_vec, trans, PitchType(self.target_pitch_type[0]))
-                    for trans in range(self.transposition_range[0], self.transposition_range[1] + 1)
-                    for note_vec in data["inputs"]
-                ]
+                new_inputs = [copy(data["inputs"])] * (
+                    self.transposition_range[1] - self.transposition_range[0] + 1
+                )
+
+                for i, (trans, chord_input) in enumerate(
+                    zip(
+                        range(self.transposition_range[0], self.transposition_range[1] + 1),
+                        new_inputs,
+                    )
+                ):
+                    if trans == 0:
+                        continue
+
+                    for note_index, note_vector in enumerate(chord_input[: data["input_lengths"]]):
+                        if sum(note_vector) == 0:
+                            # Some vectors are empty because of the chord window
+                            continue
+
+                        new_inputs[i][note_index] = transpose_note_vector(
+                            note_vector, trans, pitch_type=PitchType(self.target_pitch_type[0])
+                        )
+                data["inputs"] = new_inputs
+
+                data["input_lengths"] = [data["input_lengths"]] * (
+                    self.transposition_range[1] - self.transposition_range[0] + 1
+                )
 
             data["intermediate_targets"] = self.generate_intermediate_targets(data["targets"])
 
