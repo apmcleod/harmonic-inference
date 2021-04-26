@@ -509,6 +509,7 @@ class ChordClassificationDataset(HarmonicDataset):
                 use_inversions=self.use_inversions,
             )[0]
 
+            # TODO: remove this
             self.transposition_range = (-1, 1)
             if self.transposition_range != (0, 0):
                 root, chord_type, inversion = get_chord_from_one_hot_index(
@@ -519,6 +520,9 @@ class ChordClassificationDataset(HarmonicDataset):
                     pad=False,
                     reduction=self.reduction,
                 )
+
+                # Do this before targets gets updated
+                data["intermediate_targets"] = self.generate_intermediate_targets(data["targets"])
 
                 data["targets"] = [
                     get_chord_one_hot_index(
@@ -561,7 +565,8 @@ class ChordClassificationDataset(HarmonicDataset):
                     self.transposition_range[1] - self.transposition_range[0] + 1
                 )
 
-            data["intermediate_targets"] = self.generate_intermediate_targets(data["targets"])
+            else:
+                data["intermediate_targets"] = self.generate_intermediate_targets(data["targets"])
 
 
 class ChordSequenceDataset(HarmonicDataset):
