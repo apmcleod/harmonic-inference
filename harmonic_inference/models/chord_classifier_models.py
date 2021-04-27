@@ -84,37 +84,6 @@ class ChordClassifierModel(pl.LightningModule, ABC):
             "transposition_range": self.transposition_range,
         }
 
-    def flatten_transposed_batch(self, batch: Dict):
-        """
-        Given a batch of data from a torch DataLoader, check if it has been drawn from a
-        transposed Dataset. If so, the dimensions of the data will be slightly off and need
-        to be flattened correctly.
-
-        This function returns nothing since the flattening is performed in place.
-
-        Parameters
-        ----------
-        batch : Dict
-            The input batch data to fix in place (if it needs flattening).
-        """
-        if len(batch["input_lengths"].shape) == 1:
-            # No transposition was performed
-            return
-
-        batch["input_lengths"] = torch.reshape(batch["input_lengths"], (-1,))
-        batch["targets"] = torch.reshape(batch["targets"], (-1,))
-        batch["inputs"] = torch.cat(torch.unbind(batch["inputs"]))
-
-        batch["intermediate_targets"]["bass"] = torch.reshape(
-            batch["intermediate_targets"]["bass"], (-1,)
-        )
-        batch["intermediate_targets"]["root"] = torch.reshape(
-            batch["intermediate_targets"]["root"], (-1,)
-        )
-        batch["intermediate_targets"]["pitches"] = torch.cat(
-            torch.unbind(batch["intermediate_targets"]["pitches"])
-        )
-
     def get_output(self, batch):
         notes = batch["inputs"].float()
         notes_lengths = batch["input_lengths"]
@@ -124,8 +93,6 @@ class ChordClassifierModel(pl.LightningModule, ABC):
         return F.softmax(outputs, dim=-1)
 
     def training_step(self, batch, batch_idx):
-        self.flatten_transposed_batch(batch)
-
         notes = batch["inputs"].float()
         notes_lengths = batch["input_lengths"]
         targets = batch["targets"].long()
@@ -137,8 +104,6 @@ class ChordClassifierModel(pl.LightningModule, ABC):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        self.flatten_transposed_batch(batch)
-
         notes = batch["inputs"].float()
         notes_lengths = batch["input_lengths"]
         targets = batch["targets"].long()
