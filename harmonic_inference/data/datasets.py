@@ -360,7 +360,7 @@ class ChordClassificationDataset(HarmonicDataset):
         dummy_targets: bool = False,
         reduction: Dict[ChordType, ChordType] = None,
         use_inversions: bool = True,
-        transposition_range: Tuple[int, int] = (0, 0),
+        transposition_range: Union[List[int], Tuple[int, int]] = (0, 0),
     ):
         """
         Create a new chord classification dataset from the given pieces.
@@ -388,7 +388,7 @@ class ChordClassificationDataset(HarmonicDataset):
             False to reduce all chords to root position. This is not applied when the data
             is loaded, but only when it is returned. So it is safe to change this after
             initialization.
-        transposition_range : Tuple[int, int]
+        transposition_range : Union[List[int], Tuple[int, int]]
             Minimum and maximum bounds by which to transpose each note and chord of the
             dataset. Each __getitem__ call will return every possible transposition in this
             (min, max) range, inclusive on each side. The transpositions are measured in
@@ -429,7 +429,7 @@ class ChordClassificationDataset(HarmonicDataset):
         self.dummy_targets = dummy_targets
         self.reduction = reduction
         self.use_inversions = use_inversions
-        self.transposition_range = transposition_range
+        self.transposition_range = tuple(transposition_range)
 
     def generate_intermediate_targets(self, target: int) -> Dict[str, Union[int, List]]:
         """
