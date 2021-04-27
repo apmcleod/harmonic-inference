@@ -24,6 +24,7 @@ from harmonic_inference.data.vector_decoding import (
     remove_chord_inversions,
     transpose_note_vector,
 )
+from harmonic_inference.utils.harmonic_constants import NUM_PITCHES
 from harmonic_inference.utils.harmonic_utils import (
     get_bass_note,
     get_chord_from_one_hot_index,
@@ -522,37 +523,52 @@ class ChordClassificationDataset(HarmonicDataset):
             use_inversions=self.use_inversions,
         )[0]
 
-        if transposition != 0:
-            root, chord_type, inversion = get_chord_from_one_hot_index(
-                data["targets"],
-                PitchType(self.target_pitch_type[0]),
-                use_inversions=self.use_inversions,
-                relative=False,
-                pad=False,
-                reduction=self.reduction,
-            )
-
-            data["targets"] = get_chord_one_hot_index(
-                chord_type,
-                root + transposition,
-                PitchType(self.target_pitch_type[0]),
-                inversion=inversion,
-                use_inversion=self.use_inversions,
-                relative=False,
-                pad=False,
-                reduction=self.reduction,
-            )
-
-            for note_index, note_vector in enumerate(data["inputs"][: data["input_lengths"]]):
-                if sum(note_vector) == 0:
-                    # Some vectors are empty because of the chord window
-                    continue
-
-                data["inputs"][note_index] = transpose_note_vector(
-                    note_vector, transposition, pitch_type=PitchType(self.target_pitch_type[0])
+        try:
+            if transposition != 0:
+                root, chord_type, inversion = get_chord_from_one_hot_index(
+                    data["targets"],
+                    PitchType(self.target_pitch_type[0]),
+                    use_inversions=self.use_inversions,
+                    relative=False,
+                    pad=False,
+                    reduction=self.reduction,
                 )
 
-        data["intermediate_targets"] = self.generate_intermediate_targets(data["targets"])
+                data["targets"] = get_chord_one_hot_index(
+                    chord_type,
+                    root + transposition,
+                    PitchType(self.target_pitch_type[0]),
+                    inversion=inversion,
+                    use_inversion=self.use_inversions,
+                    relative=False,
+                    pad=False,
+                    reduction=self.reduction,
+                )
+
+                for note_index, note_vector in enumerate(data["inputs"][: data["input_lengths"]]):
+                    if sum(note_vector) == 0:
+                        # Some vectors are empty because of the chord window
+                        continue
+
+                    data["inputs"][note_index] = transpose_note_vector(
+                        note_vector, transposition, pitch_type=PitchType(self.target_pitch_type[0])
+                    )
+
+            data["intermediate_targets"] = self.generate_intermediate_targets(data["targets"])
+
+        except ValueError:
+            # Something transposed out of the valid pitch range
+            data["targets"] = -1
+            data["input_lengths"] = -1
+            data["inputs"] *= 0
+            data["intermediate_targets"] = {
+                "bass": -1,
+                "root": -1,
+                "pitches": np.zeros(
+                    NUM_PITCHES[PitchType(self.target_pitch_type[0])], dtype=np.long
+                ),
+            }
+            return
 
 
 class ChordSequenceDataset(HarmonicDataset):

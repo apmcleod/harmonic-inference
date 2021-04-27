@@ -131,7 +131,7 @@ class ChordClassifierModel(pl.LightningModule, ABC):
         targets = batch["targets"].long()
 
         outputs = self(notes, notes_lengths)
-        loss = F.cross_entropy(outputs, targets)
+        loss = F.cross_entropy(outputs, targets, ignore_index=-1)
 
         self.log("train_loss", loss)
         return loss
@@ -144,11 +144,17 @@ class ChordClassifierModel(pl.LightningModule, ABC):
         targets = batch["targets"].long()
 
         outputs = self(notes, notes_lengths)
-        loss = F.cross_entropy(outputs, targets)
-        acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
 
-        self.log("val_loss", loss)
-        self.log("val_acc", acc)
+        mask = targets != -1
+        outputs = outputs[mask]
+        targets = targets[mask]
+
+        if len(targets) > 0:
+            acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
+            loss = F.cross_entropy(outputs, targets, ignore_index=-1)
+
+            self.log("val_loss", loss)
+            self.log("val_acc", acc)
 
     def evaluate(self, dataset: ChordClassificationDataset):
         dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
