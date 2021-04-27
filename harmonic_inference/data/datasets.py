@@ -1,7 +1,6 @@
 """Module containing datasets for the various models."""
 import logging
 import shutil
-from copy import copy
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Tuple, Union
 
@@ -460,33 +459,49 @@ class ChordClassificationDataset(HarmonicDataset):
             reduction=self.reduction,
         )
 
+        bass = get_bass_note(
+            chord_type,
+            root,
+            inversion,
+            PitchType(self.target_pitch_type[0]),
+        )
+        chord_vector = get_vector_from_chord_type(
+            chord_type,
+            PitchType(self.target_pitch_type[0]),
+            root,
+        )
+
+        trans_range = range(self.transposition_range[0], self.transposition_range[1] + 1)
+        num_transpositions = len(trans_range)
+
         return {
-            "root": [
-                root + trans
-                for trans in range(self.transposition_range[0], self.transposition_range[1] + 1)
-            ],
-            "bass": [
-                get_bass_note(
-                    chord_type,
-                    root,
-                    inversion,
-                    PitchType(self.target_pitch_type[0]),
-                )
-                + trans
-                for trans in range(self.transposition_range[0], self.transposition_range[1] + 1)
-            ],
-            "pitches": [
-                transpose_chord_vector(
-                    get_vector_from_chord_type(
-                        chord_type,
+            "root": np.array([root + trans for trans in trans_range])
+            if num_transpositions > 1
+            else root + self.transposition_range[0],
+            "bass": np.array(
+                [
+                    bass + trans
+                    for trans in range(self.transposition_range[0], self.transposition_range[1] + 1)
+                ]
+            )
+            if num_transpositions > 1
+            else bass + self.transposition_range[0],
+            "pitches": np.array(
+                [
+                    transpose_chord_vector(
+                        chord_vector,
+                        trans,
                         PitchType(self.target_pitch_type[0]),
-                        root,
-                    ),
-                    trans,
-                    PitchType(self.target_pitch_type[0]),
-                )
-                for trans in range(self.transposition_range[0], self.transposition_range[1] + 1)
-            ],
+                    )
+                    for trans in trans_range
+                ]
+            )
+            if num_transpositions > 1
+            else transpose_chord_vector(
+                chord_vector,
+                self.transposition_range[0],
+                PitchType(self.target_pitch_type[0]),
+            ),
         }
 
     def reduce(self, data: Dict):
@@ -509,9 +524,10 @@ class ChordClassificationDataset(HarmonicDataset):
                 use_inversions=self.use_inversions,
             )[0]
 
-            # TODO: remove this
-            self.transposition_range = (-1, 1)
             if self.transposition_range != (0, 0):
+                num_transpositions = self.transposition_range[1] - self.transposition_range[0] + 1
+                trans_range = range(self.transposition_range[0], self.transposition_range[1] + 1)
+
                 root, chord_type, inversion = get_chord_from_one_hot_index(
                     data["targets"],
                     PitchType(self.target_pitch_type[0]),
@@ -524,30 +540,25 @@ class ChordClassificationDataset(HarmonicDataset):
                 # Do this before targets gets updated
                 data["intermediate_targets"] = self.generate_intermediate_targets(data["targets"])
 
-                data["targets"] = [
-                    get_chord_one_hot_index(
-                        chord_type,
-                        root + trans,
-                        PitchType(self.target_pitch_type[0]),
-                        inversion=inversion,
-                        use_inversion=self.use_inversions,
-                        relative=False,
-                        pad=False,
-                        reduction=self.reduction,
-                    )
-                    for trans in range(self.transposition_range[0], self.transposition_range[1] + 1)
-                ]
-
-                new_inputs = [copy(data["inputs"])] * (
-                    self.transposition_range[1] - self.transposition_range[0] + 1
+                data["targets"] = np.array(
+                    [
+                        get_chord_one_hot_index(
+                            chord_type,
+                            root + trans,
+                            PitchType(self.target_pitch_type[0]),
+                            inversion=inversion,
+                            use_inversion=self.use_inversions,
+                            relative=False,
+                            pad=False,
+                            reduction=self.reduction,
+                        )
+                        for trans in trans_range
+                    ]
                 )
 
-                for i, (trans, chord_input) in enumerate(
-                    zip(
-                        range(self.transposition_range[0], self.transposition_range[1] + 1),
-                        new_inputs,
-                    )
-                ):
+                new_inputs = np.stack((data["inputs"],) * num_transpositions)
+
+                for i, (trans, chord_input) in enumerate(zip(trans_range, new_inputs)):
                     if trans == 0:
                         continue
 
@@ -561,9 +572,7 @@ class ChordClassificationDataset(HarmonicDataset):
                         )
                 data["inputs"] = new_inputs
 
-                data["input_lengths"] = [data["input_lengths"]] * (
-                    self.transposition_range[1] - self.transposition_range[0] + 1
-                )
+                data["input_lengths"] = np.ones(len(data["targets"])) * data["input_lengths"]
 
             else:
                 data["intermediate_targets"] = self.generate_intermediate_targets(data["targets"])
