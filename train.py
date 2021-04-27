@@ -54,7 +54,7 @@ if __name__ == "__main__":
         default="checkpoints",
         help=(
             "The directory to save model checkpoints into, within a subdirectory of the model's "
-            "name (e.g., CSM checkpoints will be saved into `--checkpoint`/csm).",
+            "name (e.g., CSM checkpoints will be saved into `--checkpoint`/csm)."
         ),
     )
 
