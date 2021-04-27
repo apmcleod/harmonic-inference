@@ -1,6 +1,7 @@
 """Module containing datasets for the various models."""
 import logging
 import shutil
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Tuple, Union
 
@@ -28,11 +29,10 @@ from harmonic_inference.utils.harmonic_utils import (
     get_chord_from_one_hot_index,
     get_chord_one_hot_index,
     get_vector_from_chord_type,
-    transpose_chord_vector,
 )
 
 
-class HarmonicDataset(Dataset):
+class HarmonicDataset(Dataset, ABC):
     """
     The base dataset that all model-specific dataset objects will inherit from.
     """
@@ -80,7 +80,12 @@ class HarmonicDataset(Dataset):
 
         self.hidden_states = None
 
-    def finalize_data(self, data: Dict[str, np.array], item) -> Dict:
+    def finalize_data(
+        self,
+        data: Dict[str, np.array],
+        item,
+        transposition: int = None,
+    ) -> Dict:
         """
         Finalize the given data return dict by adding the hidden states corresponding
         to the given index (if hidden_states are loaded), and then transforming the
@@ -92,6 +97,8 @@ class HarmonicDataset(Dataset):
             The data dictionary.
         item : int
             The index (or other indexer) to load the correct hidden state.
+        transposition : int
+            A transposition to be applied to the data, if any.
 
         Returns
         -------
@@ -104,7 +111,7 @@ class HarmonicDataset(Dataset):
                 self.hidden_states[1][:, item],
             )
 
-        self.reduce(data)
+        self.reduce(data, transposition=transposition)
 
         if self.transform:
             data.update(
@@ -117,7 +124,8 @@ class HarmonicDataset(Dataset):
 
         return data
 
-    def reduce(self, data: Dict):
+    @abstractmethod
+    def reduce(self, data: Dict, transposition: int = None):
         """
         Reduce the given data in place.
 
@@ -126,7 +134,10 @@ class HarmonicDataset(Dataset):
         data : Dict
             The data, created by the __getitem__(item) function, to be reduced with chord
             type and inversion reductions. This default implementation does nothing.
+        transposition : int
+            A transposition to be applied to the data, if any.
         """
+        raise NotImplementedError()
 
     def set_hidden_states(self, hidden_states: np.array):
         """
@@ -153,7 +164,7 @@ class HarmonicDataset(Dataset):
                 return len(h5_file["inputs"])
         return len(self.inputs)
 
-    def __getitem__(self, item) -> Dict:
+    def __getitem__(self, item, transposition: int = None) -> Dict:
         """
         Get a specific item (or range of items) from this dataset.
 
@@ -162,6 +173,8 @@ class HarmonicDataset(Dataset):
         item : Indexer
             Some type of indexer which can index into lists and numpy arrays.
             This specifies the input data to be returned.
+        transposition : int
+            A transposition to be applied to the given data point, if desired.
 
         Returns
         -------
@@ -204,7 +217,7 @@ class HarmonicDataset(Dataset):
                 data["targets"] = padded_target
                 data["target_lengths"] = self.target_lengths[item]
 
-        return self.finalize_data(data, item)
+        return self.finalize_data(data, item, transposition=transposition)
 
     def pad(self):
         """
@@ -430,6 +443,16 @@ class ChordClassificationDataset(HarmonicDataset):
         self.reduction = reduction
         self.use_inversions = use_inversions
         self.transposition_range = tuple(transposition_range)
+        self.num_transpositions = self.transposition_range[1] - self.transposition_range[0] + 1
+
+    def __len__(self):
+        return super().__len__() * self.num_transpositions
+
+    def __getitem__(self, item, transposition: int = None) -> Dict:
+        orig_item = item // self.num_transpositions
+        transposition = self.transposition_range[0] + (item % self.num_transpositions)
+
+        return super().__getitem__(orig_item, transposition=transposition)
 
     def generate_intermediate_targets(self, target: int) -> Dict[str, Union[int, List]]:
         """
@@ -459,123 +482,77 @@ class ChordClassificationDataset(HarmonicDataset):
             reduction=self.reduction,
         )
 
-        bass = get_bass_note(
-            chord_type,
-            root,
-            inversion,
-            PitchType(self.target_pitch_type[0]),
-        )
-        chord_vector = get_vector_from_chord_type(
-            chord_type,
-            PitchType(self.target_pitch_type[0]),
-            root,
-        )
-
-        trans_range = range(self.transposition_range[0], self.transposition_range[1] + 1)
-        num_transpositions = len(trans_range)
-
         return {
-            "root": np.array([root + trans for trans in trans_range])
-            if num_transpositions > 1
-            else root + self.transposition_range[0],
-            "bass": np.array(
-                [
-                    bass + trans
-                    for trans in range(self.transposition_range[0], self.transposition_range[1] + 1)
-                ]
-            )
-            if num_transpositions > 1
-            else bass + self.transposition_range[0],
-            "pitches": np.array(
-                [
-                    transpose_chord_vector(
-                        chord_vector,
-                        trans,
-                        PitchType(self.target_pitch_type[0]),
-                    )
-                    for trans in trans_range
-                ]
-            )
-            if num_transpositions > 1
-            else transpose_chord_vector(
-                chord_vector,
-                self.transposition_range[0],
+            "root": root,
+            "bass": get_bass_note(
+                chord_type,
+                root,
+                inversion,
                 PitchType(self.target_pitch_type[0]),
+            ),
+            "pitches": get_vector_from_chord_type(
+                chord_type,
+                PitchType(self.target_pitch_type[0]),
+                root,
             ),
         }
 
-    def reduce(self, data: Dict):
+    def reduce(self, data: Dict, transposition: int = None):
         """
         Reduce the targets using the chord type, inversion, and pitch type reductions.
 
         If not using dummy targets (as is done during inference), this function also:
-        - Transpose each data point onto the range given be transposition_range.
+        - Transpose each data point by the given transposition interval.
         - Generates and saves the intermediate targets into the dictionary.
         """
-        if not self.dummy_targets:
-            data["targets"] = reduce_chord_one_hots(
-                data["targets"] if isinstance(data["targets"], np.ndarray) else [data["targets"]],
-                False,
+        if self.dummy_targets:
+            return
+
+        if transposition is None:
+            transposition = 0
+
+        data["targets"] = reduce_chord_one_hots(
+            data["targets"] if isinstance(data["targets"], np.ndarray) else [data["targets"]],
+            False,
+            PitchType(self.target_pitch_type[0]),
+            inversions_present=True,
+            reduction_present=None,
+            relative=False,
+            reduction=self.reduction,
+            use_inversions=self.use_inversions,
+        )[0]
+
+        if transposition != 0:
+            root, chord_type, inversion = get_chord_from_one_hot_index(
+                data["targets"],
                 PitchType(self.target_pitch_type[0]),
-                inversions_present=True,
-                reduction_present=None,
-                relative=False,
-                reduction=self.reduction,
                 use_inversions=self.use_inversions,
-            )[0]
+                relative=False,
+                pad=False,
+                reduction=self.reduction,
+            )
 
-            if self.transposition_range != (0, 0):
-                num_transpositions = self.transposition_range[1] - self.transposition_range[0] + 1
-                trans_range = range(self.transposition_range[0], self.transposition_range[1] + 1)
+            data["targets"] = get_chord_one_hot_index(
+                chord_type,
+                root + transposition,
+                PitchType(self.target_pitch_type[0]),
+                inversion=inversion,
+                use_inversion=self.use_inversions,
+                relative=False,
+                pad=False,
+                reduction=self.reduction,
+            )
 
-                root, chord_type, inversion = get_chord_from_one_hot_index(
-                    data["targets"],
-                    PitchType(self.target_pitch_type[0]),
-                    use_inversions=self.use_inversions,
-                    relative=False,
-                    pad=False,
-                    reduction=self.reduction,
+            for note_index, note_vector in enumerate(data["inputs"][: data["input_lengths"]]):
+                if sum(note_vector) == 0:
+                    # Some vectors are empty because of the chord window
+                    continue
+
+                data["inputs"][note_index] = transpose_note_vector(
+                    note_vector, transposition, pitch_type=PitchType(self.target_pitch_type[0])
                 )
 
-                # Do this before targets gets updated
-                data["intermediate_targets"] = self.generate_intermediate_targets(data["targets"])
-
-                data["targets"] = np.array(
-                    [
-                        get_chord_one_hot_index(
-                            chord_type,
-                            root + trans,
-                            PitchType(self.target_pitch_type[0]),
-                            inversion=inversion,
-                            use_inversion=self.use_inversions,
-                            relative=False,
-                            pad=False,
-                            reduction=self.reduction,
-                        )
-                        for trans in trans_range
-                    ]
-                )
-
-                new_inputs = np.stack((data["inputs"],) * num_transpositions)
-
-                for i, (trans, chord_input) in enumerate(zip(trans_range, new_inputs)):
-                    if trans == 0:
-                        continue
-
-                    for note_index, note_vector in enumerate(chord_input[: data["input_lengths"]]):
-                        if sum(note_vector) == 0:
-                            # Some vectors are empty because of the chord window
-                            continue
-
-                        new_inputs[i][note_index] = transpose_note_vector(
-                            note_vector, trans, pitch_type=PitchType(self.target_pitch_type[0])
-                        )
-                data["inputs"] = new_inputs
-
-                data["input_lengths"] = np.ones(len(data["targets"])) * data["input_lengths"]
-
-            else:
-                data["intermediate_targets"] = self.generate_intermediate_targets(data["targets"])
+        data["intermediate_targets"] = self.generate_intermediate_targets(data["targets"])
 
 
 class ChordSequenceDataset(HarmonicDataset):
@@ -680,7 +657,7 @@ class ChordSequenceDataset(HarmonicDataset):
         self.use_inversions_input = use_inversions_input
         self.use_inversions_output = use_inversions_output
 
-    def reduce(self, data: Dict):
+    def reduce(self, data: Dict, transposition: int = None):
         reduce_chord_types(data["inputs"], self.input_reduction, pad=False)
         if not self.use_inversions_input:
             remove_chord_inversions(data["inputs"], pad=False)
@@ -816,7 +793,7 @@ class KeyHarmonicDataset(HarmonicDataset):
 
         return self.finalize_data(data, item)
 
-    def reduce(self, data: Dict):
+    def reduce(self, data: Dict, transposition: int = None):
         reduce_chord_types(data["inputs"], self.reduction, pad=True)
         if not self.use_inversions:
             remove_chord_inversions(data["inputs"], pad=True)

@@ -67,11 +67,6 @@ class ChordClassifierModel(pl.LightningModule, ABC):
 
         self.lr = learning_rate
 
-        num_transpositions = self.transposition_range[1] - self.transposition_range[0] + 1
-        if num_transpositions > 1:
-            ChordClassificationDataset.train_batch_size //= num_transpositions
-            ChordClassificationDataset.valid_batch_size //= num_transpositions
-
     def get_dataset_kwargs(self) -> Dict[str, Any]:
         """
         Get a kwargs dict that can be used to create a dataset for this model with
