@@ -299,7 +299,7 @@ class SimpleKeySequenceModel(KeySequenceModel):
         lstm_out_lengths_tensor = (
             lstm_out_lengths.unsqueeze(1).unsqueeze(2).expand((-1, 1, lstm_out.shape[2]))
         ).to(self.device)
-        last_forward = torch.gather(lstm_out, 1, lstm_out_lengths_tensor - 1).squeeze()
+        last_forward = torch.gather(lstm_out, 1, lstm_out_lengths_tensor - 1).squeeze(1)
 
         relu1 = F.relu(last_forward)
         drop1 = self.dropout1(relu1)
