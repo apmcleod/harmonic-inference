@@ -1,7 +1,6 @@
 """Module containing datasets for the various models."""
 import logging
 import shutil
-from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Tuple, Union
 
@@ -33,7 +32,7 @@ from harmonic_inference.utils.harmonic_utils import (
 )
 
 
-class HarmonicDataset(Dataset, ABC):
+class HarmonicDataset(Dataset):
     """
     The base dataset that all model-specific dataset objects will inherit from.
     """
@@ -125,7 +124,6 @@ class HarmonicDataset(Dataset, ABC):
 
         return data
 
-    @abstractmethod
     def reduce(self, data: Dict, transposition: int = None):
         """
         Reduce the given data in place.
@@ -138,7 +136,6 @@ class HarmonicDataset(Dataset, ABC):
         transposition : int
             A transposition to be applied to the data, if any.
         """
-        raise NotImplementedError()
 
     def set_hidden_states(self, hidden_states: np.array):
         """
