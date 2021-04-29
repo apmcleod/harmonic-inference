@@ -294,7 +294,7 @@ class SimpleChordClassifier(ChordClassifierModel):
     def forward(self, notes, lengths):
         # pylint: disable=arguments-differ
         batch_size = notes.shape[0]
-        lengths = torch.clamp(lengths, min=1)
+        lengths = torch.clamp(lengths, min=1).cpu()
         h_0, c_0 = self.init_hidden(batch_size)
 
         packed_notes = pack_padded_sequence(notes, lengths, enforce_sorted=False, batch_first=True)

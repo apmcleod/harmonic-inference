@@ -287,19 +287,24 @@ class SimpleKeySequenceModel(KeySequenceModel):
     def forward(self, inputs, lengths, hidden=None):
         # pylint: disable=arguments-differ
         batch_size = inputs.shape[0]
-        lengths = torch.clamp(lengths, min=1)
+        lengths = torch.clamp(lengths, min=1).cpu()
         h_0, c_0 = self.init_hidden(batch_size) if hidden is None else hidden
 
         embedded = F.relu(self.embed(inputs))
 
         packed = pack_padded_sequence(embedded, lengths, enforce_sorted=False, batch_first=True)
         lstm_out_packed, hidden_out = self.lstm(packed, (h_0, c_0))
-        lstm_out, _ = pad_packed_sequence(lstm_out_packed, batch_first=True)
+        lstm_out, lstm_out_lengths = pad_packed_sequence(lstm_out_packed, batch_first=True)
 
-        relu1 = F.relu(lstm_out)
+        lstm_out_lengths_tensor = (
+            lstm_out_lengths.unsqueeze(1).unsqueeze(2).expand((-1, 1, lstm_out.shape[2]))
+        ).to(self.device)
+        last_forward = torch.gather(lstm_out, 1, lstm_out_lengths_tensor - 1).squeeze()
+
+        relu1 = F.relu(last_forward)
         drop1 = self.dropout1(relu1)
         fc1 = self.fc1(drop1)
         relu2 = F.relu(fc1)
         output = self.fc2(relu2)
 
-        return F.log_softmax(output, dim=2), hidden_out
+        return F.log_softmax(output, dim=1), hidden_out
