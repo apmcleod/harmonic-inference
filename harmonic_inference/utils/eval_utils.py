@@ -8,6 +8,7 @@ from typing import Dict, Union
 import numpy as np
 import pandas as pd
 
+import harmonic_inference.utils.harmonic_constants as hc
 import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.data.data_types import (
     NO_REDUCTION,
@@ -111,6 +112,92 @@ def get_results_df(
                 "gt_chord": chord_label_list[gt_chord_label],
                 "est_key": key_label_list[est_key_label],
                 "est_chord": chord_label_list[est_chord_label],
+                "duration": duration,
+            }
+        )
+
+    return pd.DataFrame(labels_list)
+
+
+def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
+    """
+    Create and return a labels_df for a given Piece, containing all chord and key
+    information for each segment of the piece, in all formats (TPC and MIDI pitch).
+
+    Parameters
+    ----------
+    piece : Piece
+        The piece to create a labels_df for.
+    tpc_c : int
+        Where C should be in the TPC output.
+
+    Returns
+    -------
+    labels_df : pd.DataFrame
+        A labels_df, with the columns:
+            - chord_root_tpc
+            - chord_root_midi
+            - chord_type
+            - chord_inversion
+            - key_tonic_tpc
+            - key_tonic_midi
+            - key_mode
+            - duration
+    """
+    labels_list = []
+
+    chords = piece.get_chords()
+    chord_changes = piece.get_chord_change_indices()
+    chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    for chord, start, end in zip(chords, chord_changes, chord_changes[1:]):
+        chord_labels[start:end] = chord.get_one_hot_index(
+            relative=False, use_inversion=True, pad=False
+        )
+    chord_labels[chord_changes[-1] :] = chords[-1].get_one_hot_index(
+        relative=False, use_inversion=True, pad=False
+    )
+
+    keys = piece.get_keys()
+    key_changes = piece.get_key_change_input_indices()
+    key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    for key, start, end in zip(keys, key_changes, key_changes[1:]):
+        key_labels[start:end] = key.get_one_hot_index()
+    key_labels[key_changes[-1] :] = keys[-1].get_one_hot_index()
+
+    chord_labels_list = hu.get_chord_from_one_hot_index(
+        slice(len(hu.get_chord_label_list(PitchType.TPC))), PitchType.TPC
+    )
+    key_labels_list = hu.get_key_from_one_hot_index(
+        slice(len(hu.get_key_label_list(PitchType.TPC))), PitchType.TPC
+    )
+
+    for duration, chord_label, key_label in zip(
+        piece.get_duration_cache(),
+        chord_labels,
+        key_labels,
+    ):
+        if duration == 0:
+            continue
+
+        root_tpc, chord_type, inversion = chord_labels_list[chord_label]
+        tonic_tpc, mode = key_labels_list[key_label]
+
+        root_midi = hu.get_pitch_from_string(
+            hu.get_pitch_string(root_tpc, PitchType.TPC), PitchType.MIDI
+        )
+        tonic_midi = hu.get_pitch_from_string(
+            hu.get_pitch_string(tonic_tpc, PitchType.TPC), PitchType.MIDI
+        )
+
+        labels_list.append(
+            {
+                "chord_root_tpc": root_tpc - hc.TPC_C + tpc_c,
+                "chord_root_midi": root_midi,
+                "chord_type": chord_type,
+                "chord_inversion": inversion,
+                "key_tonic_tpc": tonic_tpc - hc.TPC_C + tpc_c,
+                "key_tonic_midi": tonic_midi,
+                "key_mode": mode,
                 "duration": duration,
             }
         )
