@@ -579,12 +579,16 @@ class HarmonicInferenceModel:
         classifications : List[np.array]
             The prior log-probability over all chord symbols for each given range.
         """
+        # Ensure no transposition happens at test time
+        ds_kwargs = self.chord_classifier.get_dataset_kwargs()
+        ds_kwargs.update({"transposition_range": [0, 0]})
+
         ccm_dataset = ds.ChordClassificationDataset(
             [self.current_piece],
             ranges=[ranges],
             change_indices=[change_indices],
             dummy_targets=True,
-            **self.chord_classifier.get_dataset_kwargs(),
+            **ds_kwargs,
         )
         ccm_loader = DataLoader(
             ccm_dataset,
