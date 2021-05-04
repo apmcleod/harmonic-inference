@@ -706,9 +706,10 @@ class ChordSequenceDataset(HarmonicDataset):
 
             for i, (target, input_vec) in enumerate(
                 zip(
-                    data["targets"][: data["target_lengths"]],
-                    data["inputs"][: data["target_lengths"]],
-                )
+                    data["targets"][1 : data["target_lengths"]],
+                    data["inputs"][1 : data["target_lengths"]],
+                ),
+                start=1,
             ):
                 if input_vec[-1] == 1:
                     # Key change
@@ -783,7 +784,7 @@ class KeyHarmonicDataset(HarmonicDataset):
                 return int(np.sum(h5_file["piece_lengths"]))
         return int(np.sum(self.piece_lengths))
 
-    def __getitem__(self, item) -> Dict:
+    def __getitem__(self, item, transposition: int = None) -> Dict:
         def get_piece_index(item: int) -> Tuple[int, bool]:
             """
             Get the index of the piece from which the given item should be drawn.
@@ -792,6 +793,8 @@ class KeyHarmonicDataset(HarmonicDataset):
             ----------
             item : int
                 The index of the input/output we are looking for.
+            transposition : int
+                Not used. (Kept so the signature is the same as overriden function.)
 
             Returns
             -------

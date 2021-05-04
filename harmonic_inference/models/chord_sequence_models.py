@@ -15,7 +15,7 @@ from harmonic_inference.data.chord import get_chord_vector_length
 from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.datasets import ChordSequenceDataset
 from harmonic_inference.data.key import get_key_change_vector_length
-from harmonic_inference.utils.harmonic_constants import NUM_PITCHES
+from harmonic_inference.utils.harmonic_constants import MAX_RELATIVE_TPC, MIN_RELATIVE_TPC
 
 
 class ChordSequenceModel(pl.LightningModule, ABC):
@@ -432,7 +432,7 @@ class PitchBasedChordSequenceModel(ChordSequenceModel):
             + get_key_change_vector_length(input_key_pitch_type, one_hot=False)  # Key change vector
             + 1  # is_key_change
         )
-        self.output_dim = NUM_PITCHES[output_pitch_type]
+        self.output_dim = MAX_RELATIVE_TPC - MIN_RELATIVE_TPC
 
         self.embed_dim = embed_dim
         self.embed = nn.Linear(self.input_dim, self.embed_dim)
@@ -462,48 +462,50 @@ class PitchBasedChordSequenceModel(ChordSequenceModel):
         return kwargs
 
     def get_data_from_batch(self, batch):
-        # TODO
         inputs = batch["inputs"].float()
         targets = batch["targets"].long()
         input_lengths = batch["input_lengths"]
-        target_lengths = batch["target_lengths"].long()
 
         longest = max(input_lengths)
         inputs = inputs[:, :longest]
 
         targets = targets[:, :longest]
-        targets[inputs[:, :, -1] == 1] = -100
-        targets[:, 0] = -100
-        for i, length in enumerate(target_lengths):
-            targets[i, length:] = -100
         targets = torch.roll(targets, -1, dims=1)
 
         return inputs, input_lengths, targets
 
     def training_step(self, batch, batch_idx):
-        # TODO
         inputs, input_lengths, targets = self.get_data_from_batch(batch)
 
         outputs, _ = self(inputs, input_lengths)
 
-        loss = F.nll_loss(outputs.permute(0, 2, 1), targets, ignore_index=-100)
+        flat_outputs = outputs.view(-1, outputs.shape[-1])
+        flat_targets = targets.view(-1, targets.shape[-1])
+        flat_mask = flat_targets[:, 0] == 0
+
+        flat_outputs = flat_outputs[flat_mask]
+        flat_targets = flat_targets[flat_mask]
+
+        loss = F.binary_cross_entropy(outputs, targets.float())
 
         self.log("train_loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        # TODO
         inputs, input_lengths, targets = self.get_data_from_batch(batch)
 
         outputs, _ = self(inputs, input_lengths)
 
-        loss = F.nll_loss(outputs.permute(0, 2, 1), targets, ignore_index=-100)
+        flat_outputs = outputs.view(-1, outputs.shape[-1])
+        flat_targets = targets.view(-1, targets.shape[-1])
+        flat_mask = flat_targets[:, 0] == 0
 
-        targets = targets.reshape(-1)
-        mask = targets != -100
-        outputs = outputs.argmax(-1).reshape(-1)[mask]
-        targets = targets[mask]
-        acc = 100 * (outputs == targets).sum().float() / len(targets)
+        flat_outputs = flat_outputs[flat_mask]
+        flat_targets = flat_targets[flat_mask]
+
+        loss = F.binary_cross_entropy(outputs, targets.float())
+
+        acc = 100 * (outputs.round() == targets).sum().float() / len(flat_targets.view(-1))
 
         self.log("val_loss", loss)
         self.log("val_acc", acc)
@@ -575,4 +577,4 @@ class PitchBasedChordSequenceModel(ChordSequenceModel):
         relu2 = F.relu(fc1)
         output = self.fc2(relu2)
 
-        return F.log_softmax(output, dim=2), hidden_out
+        return torch.sigmoid(output), hidden_out
