@@ -525,14 +525,21 @@ class PitchBasedChordSequenceModel(ChordSequenceModel):
 
             outputs, _ = self(inputs, input_lengths)
 
-            loss = F.nll_loss(outputs.permute(0, 2, 1), targets, ignore_index=-100)
+            flat_outputs = outputs.view(-1, outputs.shape[-1])
+            flat_targets = targets.view(-1, targets.shape[-1])
+            flat_mask = flat_targets[:, 0] == 0
+            batch_count = len(flat_mask.view(-1))
 
-            targets = targets.reshape(-1)
-            mask = targets != -100
-            outputs = outputs.argmax(-1).reshape(-1)[mask]
-            targets = targets[mask]
-            batch_count = len(targets)
-            acc = 100 * (outputs == targets).sum().float() / len(targets)
+            flat_outputs = flat_outputs[flat_mask]
+            flat_targets = flat_targets[flat_mask]
+
+            loss = F.binary_cross_entropy(flat_outputs, flat_targets.float(), reduction="none")
+
+            acc = (
+                100
+                * (flat_outputs.round() == flat_targets).sum().float()
+                / len(flat_targets.view(-1))
+            )
 
             total += batch_count
             total_loss += loss * batch_count
