@@ -596,6 +596,7 @@ class ChordSequenceDataset(HarmonicDataset):
         output_reduction: Dict[ChordType, ChordType] = None,
         use_inversions_input: bool = True,
         use_inversions_output: bool = True,
+        pitch_based: bool = False,
     ):
         """
         Create a chord sequence dataset from the given pieces.
@@ -621,6 +622,10 @@ class ChordSequenceDataset(HarmonicDataset):
         use_inversions_output : bool
             True to use target inversions when returning data with __getitem__. False to reduce
             all target chords to root position. This is not applied when the data is loaded, but
+            only when it is returned. So it is safe to change this after initialization.
+        pitch_based : bool
+            True to make the targets a pitch-based multi-hot mask, for pitches relative to the
+            current key tonic. This is not applied when the data is loaded, but
             only when it is returned. So it is safe to change this after initialization.
         """
         super().__init__(transform=transform)
@@ -669,6 +674,7 @@ class ChordSequenceDataset(HarmonicDataset):
         self.output_reduction = output_reduction
         self.use_inversions_input = use_inversions_input
         self.use_inversions_output = use_inversions_output
+        self.pitch_based = pitch_based
 
     def reduce(self, data: Dict, transposition: int = None):
         reduce_chord_types(data["inputs"], self.input_reduction, pad=False)
@@ -685,6 +691,10 @@ class ChordSequenceDataset(HarmonicDataset):
             reduction=self.output_reduction,
             use_inversions=self.use_inversions_output,
         )
+
+        if self.pitch_based:
+            # TODO: Convert each target to a relative-pitch-based multi-hot mask
+            pass
 
 
 class KeyHarmonicDataset(HarmonicDataset):
