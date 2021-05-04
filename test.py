@@ -252,7 +252,7 @@ if __name__ == "__main__":
         "-o",
         "--output",
         type=Path,
-        default="output",
+        default="outputs",
         help="The directory to write label tsvs and annotated MuseScore3 scores to.",
     )
 
@@ -325,7 +325,10 @@ if __name__ == "__main__":
         "--log",
         type=str,
         default=sys.stderr,
-        help="The log file to print messages to.",
+        help=(
+            "The log file to print messages to. If a file is given, it will be interpreted "
+            "relative to `--output`."
+        ),
     )
 
     parser.add_argument(
@@ -369,14 +372,16 @@ if __name__ == "__main__":
         torch.set_num_threads(ARGS.threads)
 
     if ARGS.log is not sys.stderr:
-        log_path = Path(ARGS.log)
+        log_path = ARGS.output / ARGS.log
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
     logging.basicConfig(
-        filename=None if ARGS.log is sys.stderr else ARGS.log,
+        filename=None if ARGS.log is sys.stderr else ARGS.output / ARGS.log,
         level=logging.DEBUG if ARGS.verbose else logging.INFO,
         filemode="w",
     )
+
+    logging.info("test")
 
     if ARGS.average:
         for key, average in eu.average_results(ARGS.average).items():
