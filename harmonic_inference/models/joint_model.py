@@ -826,6 +826,7 @@ class HarmonicInferenceModel:
             # Add CSM prior and add to beam (CSM is run at the start of each iteration)
             for state in to_csm_prior_states:
                 state.add_csm_prior(
+                    isinstance(self.chord_sequence_model, csm.PitchBasedChordSequenceModel),
                     self.CHORD_OUTPUT_TYPE,
                     self.duration_cache,
                     self.onset_cache,
