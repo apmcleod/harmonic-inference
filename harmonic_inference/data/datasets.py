@@ -23,7 +23,11 @@ from harmonic_inference.data.vector_decoding import (
     remove_chord_inversions,
     transpose_note_vector,
 )
-from harmonic_inference.utils.harmonic_constants import NUM_PITCHES
+from harmonic_inference.utils.harmonic_constants import (
+    MAX_RELATIVE_TPC,
+    MIN_RELATIVE_TPC,
+    NUM_PITCHES,
+)
 from harmonic_inference.utils.harmonic_utils import (
     get_bass_note,
     get_chord_from_one_hot_index,
@@ -693,8 +697,47 @@ class ChordSequenceDataset(HarmonicDataset):
         )
 
         if self.pitch_based:
-            # TODO: Convert each target to a relative-pitch-based multi-hot mask
-            pass
+            num_pitches = (
+                NUM_PITCHES[PitchType.MIDI]
+                if PitchType(self.target_pitch_type[0]) == PitchType.MIDI
+                else MAX_RELATIVE_TPC - MIN_RELATIVE_TPC
+            )
+            new_targets = np.ones((len(data["targets"]), num_pitches)) * -100
+
+            for i, (target, input_vec) in enumerate(
+                zip(
+                    data["targets"][: data["target_lengths"]],
+                    data["inputs"][: data["target_lengths"]],
+                )
+            ):
+                if input_vec[-1] == 1:
+                    # Key change
+                    continue
+
+                relative_root, chord_type, _ = get_chord_from_one_hot_index(
+                    int(target),
+                    PitchType(self.target_pitch_type[0]),
+                    use_inversions=self.use_inversions_output,
+                    relative=True,
+                    pad=False,
+                    reduction=self.output_reduction,
+                )
+
+                if PitchType(self.target_pitch_type[0]) == PitchType.TPC:
+                    relative_root -= MIN_RELATIVE_TPC
+
+                chord_vector = get_vector_from_chord_type(
+                    chord_type,
+                    PitchType(self.target_pitch_type[0]),
+                    root=relative_root,
+                )
+
+                assert (
+                    sum(chord_vector[num_pitches:]) == 0
+                ), "Warning: some pitches are lost in the CSM-P prior"
+                new_targets[i, :] = chord_vector[:num_pitches]
+
+            data["targets"] = new_targets
 
 
 class KeyHarmonicDataset(HarmonicDataset):

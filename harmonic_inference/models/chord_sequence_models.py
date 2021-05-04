@@ -412,7 +412,9 @@ class PitchBasedChordSequenceModel(ChordSequenceModel):
             input_key_pitch_type,
             output_pitch_type,
             input_reduction,
+            None,
             use_input_inversions,
+            True,
             learning_rate,
         )
         self.save_hyperparameters()

@@ -28,12 +28,12 @@ from harmonic_inference.data.piece import Piece, get_range_start
 from harmonic_inference.utils.beam_search_utils import Beam, HashedBeam, State
 
 MODEL_CLASSES = {
-    "ccm": ccm.SimpleChordClassifier,
-    "ctm": ctm.SimpleChordTransitionModel,
-    "csm": csm.SimpleChordSequenceModel,
-    "ktm": ktm.SimpleKeyTransitionModel,
-    "ksm": ksm.SimpleKeySequenceModel,
-    "icm": icm.SimpleInitialChordModel,
+    "ccm": [ccm.SimpleChordClassifier],
+    "ctm": [ctm.SimpleChordTransitionModel],
+    "csm": [csm.SimpleChordSequenceModel, csm.PitchBasedChordSequenceModel],
+    "ktm": [ktm.SimpleKeyTransitionModel],
+    "ksm": [ksm.SimpleKeySequenceModel],
+    "icm": [icm.SimpleInitialChordModel],
 }
 
 
@@ -243,11 +243,11 @@ class HarmonicInferenceModel:
             An exponent to apply to the KSM's output probabilities. Used to weight the KSM
             and CSM equally, even given their different vocabulary sizes.
         """
-        for model, model_class in MODEL_CLASSES.items():
+        for model, model_classes in MODEL_CLASSES.items():
             assert model in models.keys(), f"`{model}` not in models dict."
-            assert isinstance(
-                models[model], model_class
-            ), f"`{model}` in models dict is not of type {model_class.__name__}."
+            assert (
+                type(models[model]) in model_classes
+            ), f"`{model}` in models dict is not one of: {[c.__name__ for c in model_classes]}."
 
         logging.info("Joint Model parameters:")
         for arg_name in inspect.getfullargspec(HarmonicInferenceModel.__init__).args[1:]:

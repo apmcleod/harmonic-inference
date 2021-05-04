@@ -39,6 +39,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--pitch-based",
+        action="store_true",
+        help="Train a pitch-based CSM (CSM-P). Ignored if --model is not csm.",
+    )
+
+    parser.add_argument(
         "--gpu",
         type=str,
         default=None,
@@ -157,13 +163,22 @@ if __name__ == "__main__":
         dataset = ds.ChordTransitionDataset
 
     elif ARGS.model == "csm":
-        model = csm.SimpleChordSequenceModel(
-            PitchType.TPC,
-            PitchType.TPC,
-            PitchType.TPC,
-            learning_rate=ARGS.lr,
-            **kwargs,
-        )
+        if ARGS.pitch_based:
+            model = csm.PitchBasedChordSequenceModel(
+                PitchType.TPC,
+                PitchType.TPC,
+                PitchType.TPC,
+                learning_rate=ARGS.lr,
+                **kwargs,
+            )
+        else:
+            model = csm.SimpleChordSequenceModel(
+                PitchType.TPC,
+                PitchType.TPC,
+                PitchType.TPC,
+                learning_rate=ARGS.lr,
+                **kwargs,
+            )
         dataset = ds.ChordSequenceDataset
 
     elif ARGS.model == "ktm":
