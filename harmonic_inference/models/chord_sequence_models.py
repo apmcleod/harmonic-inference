@@ -486,7 +486,7 @@ class PitchBasedChordSequenceModel(ChordSequenceModel):
         flat_outputs = flat_outputs[flat_mask]
         flat_targets = flat_targets[flat_mask]
 
-        loss = F.binary_cross_entropy(outputs, targets.float())
+        loss = F.binary_cross_entropy(flat_outputs, flat_targets.float())
 
         self.log("train_loss", loss)
         return loss
@@ -503,9 +503,11 @@ class PitchBasedChordSequenceModel(ChordSequenceModel):
         flat_outputs = flat_outputs[flat_mask]
         flat_targets = flat_targets[flat_mask]
 
-        loss = F.binary_cross_entropy(outputs, targets.float())
+        loss = F.binary_cross_entropy(flat_outputs, flat_targets.float())
 
-        acc = 100 * (outputs.round() == targets).sum().float() / len(flat_targets.view(-1))
+        acc = (
+            100 * (flat_outputs.round() == flat_targets).sum().float() / len(flat_targets.view(-1))
+        )
 
         self.log("val_loss", loss)
         self.log("val_acc", acc)
