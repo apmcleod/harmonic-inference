@@ -381,8 +381,6 @@ if __name__ == "__main__":
         filemode="w",
     )
 
-    logging.info("test")
-
     if ARGS.average:
         for key, average in eu.average_results(ARGS.average).items():
             print(f"Average {key} = {average}")
