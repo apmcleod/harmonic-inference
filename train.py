@@ -65,6 +65,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--resume",
+        type=Path,
+        default=None,
+        help="A path to a checkpoint file from which to resume training.",
+    )
+
+    parser.add_argument(
         "-i",
         "--input",
         type=Path,
@@ -278,5 +285,6 @@ if __name__ == "__main__":
         profiler=ARGS.profile,
         callbacks=[early_stopping_callback, lr_logger],
         gpus=ARGS.gpu,
+        resume_from_checkpoint=ARGS.resume,
     )
     trainer.fit(model, dl_train, dl_valid)
