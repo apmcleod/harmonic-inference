@@ -87,3 +87,19 @@ TRIAD_REDUCTION = {
     ChordType.AUG_MIN7: ChordType.AUGMENTED,
     ChordType.AUG_MAJ7: ChordType.AUGMENTED,
 }
+
+
+ALL_ONE_TYPE_REDUCTION = {
+    ChordType.MAJOR: ChordType.MAJOR,
+    ChordType.MINOR: ChordType.MAJOR,
+    ChordType.DIMINISHED: ChordType.MAJOR,
+    ChordType.AUGMENTED: ChordType.MAJOR,
+    ChordType.MAJ_MAJ7: ChordType.MAJOR,
+    ChordType.MAJ_MIN7: ChordType.MAJOR,
+    ChordType.MIN_MAJ7: ChordType.MAJOR,
+    ChordType.MIN_MIN7: ChordType.MAJOR,
+    ChordType.DIM7: ChordType.MAJOR,
+    ChordType.HALF_DIM7: ChordType.MAJOR,
+    ChordType.AUG_MIN7: ChordType.MAJOR,
+    ChordType.AUG_MAJ7: ChordType.MAJOR,
+}

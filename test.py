@@ -12,7 +12,12 @@ from tqdm import tqdm
 
 import h5py
 import harmonic_inference.utils.eval_utils as eu
-from harmonic_inference.data.data_types import NO_REDUCTION, TRIAD_REDUCTION, PitchType
+from harmonic_inference.data.data_types import (
+    ALL_ONE_TYPE_REDUCTION,
+    NO_REDUCTION,
+    TRIAD_REDUCTION,
+    PitchType,
+)
 from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import (
     MODEL_CLASSES,
@@ -125,11 +130,19 @@ def evaluate(
                 use_inversion=False,
                 reduction=TRIAD_REDUCTION,
             )
+            chord_acc_root_only = eu.evaluate_chords(
+                piece,
+                state,
+                model.CHORD_OUTPUT_TYPE,
+                use_inversion=False,
+                reduction=ALL_ONE_TYPE_REDUCTION,
+            )
 
             logging.info("Chord accuracy = %s", chord_acc_full)
             logging.info("Chord accuracy, no inversions = %s", chord_acc_no_inv)
             logging.info("Chord accuracy, triads = %s", chord_acc_triad)
             logging.info("Chord accuracy, triad, no inversions = %s", chord_acc_triad_no_inv)
+            logging.info("Chord accuracy, root only = %s", chord_acc_root_only)
 
             key_acc_full = eu.evaluate_keys(piece, state, model.KEY_OUTPUT_TYPE, tonic_only=False)
             key_acc_tonic = eu.evaluate_keys(piece, state, model.KEY_OUTPUT_TYPE, tonic_only=True)
