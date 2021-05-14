@@ -171,8 +171,18 @@ def evaluate(
                 model.KEY_OUTPUT_TYPE,
             )
 
-            # Write MIDI outputs for SPS chord-eval testing
+            # Write outputs tsv
             results_df = eu.get_results_df(
+                piece,
+                state,
+                model.CHORD_OUTPUT_TYPE,
+                model.KEY_OUTPUT_TYPE,
+                PitchType.TPC,
+                PitchType.TPC,
+            )
+
+            # Write MIDI outputs for SPS chord-eval testing
+            results_midi_df = eu.get_results_df(
                 piece,
                 state,
                 model.CHORD_OUTPUT_TYPE,
@@ -191,6 +201,17 @@ def evaluate(
                         output_tsv_path.name[:-4] + "_results.tsv"
                     )
                     results_df.to_csv(results_tsv_path, sep="\t")
+                    logging.info("Results TSV written out to %s", results_tsv_path)
+                except Exception:
+                    logging.exception("Error writing to csv %s", results_tsv_path)
+                    logging.debug(results_df)
+
+                try:
+                    output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
+                    results_tsv_path = output_tsv_path.parent / (
+                        output_tsv_path.name[:-4] + "_results_midi.tsv"
+                    )
+                    results_midi_df.to_csv(results_tsv_path, sep="\t")
                     logging.info("Results TSV written out to %s", results_tsv_path)
                 except Exception:
                     logging.exception("Error writing to csv %s", results_tsv_path)
