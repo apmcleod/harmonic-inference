@@ -239,9 +239,8 @@ def load_models_from_argparse(ARGS: Namespace) -> Dict:
         assert model_name in models, f"Couldn't load {model_name} from checkpoint {checkpoint}."
 
     # Load icm json differently
-    logging.info("Loading checkpoint %s for icm.", ARGS.icm_json)
-    models["icm"] = icm.SimpleInitialChordModel(
-        load_kwargs_from_json(ARGS.icm_json.replace("`--checkpoint`", ARGS.checkpoint))
-    )
+    icm_path = ARGS.icm_json.replace("`--checkpoint`", ARGS.checkpoint)
+    logging.info("Loading checkpoint %s for icm.", icm_path)
+    models["icm"] = icm.SimpleInitialChordModel(load_kwargs_from_json(icm_path))
 
     return models
