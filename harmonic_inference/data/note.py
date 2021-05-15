@@ -101,7 +101,7 @@ class Note:
         new_params["pitch_type"] = pitch_type
 
         if pitch_type == self.pitch_type:
-            return Note(**self.params)
+            return Note(**new_params)
 
         # Convert pitch
         new_params["pitch_class"] = get_pitch_from_string(
