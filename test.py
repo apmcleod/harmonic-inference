@@ -212,10 +212,10 @@ def evaluate(
                         output_tsv_path.name[:-4] + "_results_midi.tsv"
                     )
                     results_midi_df.to_csv(results_tsv_path, sep="\t")
-                    logging.info("Results TSV written out to %s", results_tsv_path)
+                    logging.info("MIDI results TSV written out to %s", results_tsv_path)
                 except Exception:
                     logging.exception("Error writing to csv %s", results_tsv_path)
-                    logging.debug(results_df)
+                    logging.debug(results_midi_df)
 
                 try:
                     output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
