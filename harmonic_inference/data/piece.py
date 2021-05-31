@@ -745,10 +745,11 @@ def get_measures_df_from_music21_score(m21_score: music21.stream.Score) -> pd.Da
         for bracket in m21_score.flat.getElementsByClass(music21.spanner.RepeatBracket)
         if int(bracket.number) == 1
     ]
+    skipped_dur = 0
 
     # Go through the measures and add them to the tracking lists
     for mc, (offset, measures_list) in enumerate(m21_score.measureOffsetMap().items()):
-        offset = Fraction(offset) / 4
+        offset = Fraction(offset) / 4 - skipped_dur
         measure = measures_list[0]
 
         skip = False
@@ -757,6 +758,7 @@ def get_measures_df_from_music21_score(m21_score: music21.stream.Score) -> pd.Da
                 skip = True
                 break
         if skip:
+            skipped_dur += Fraction(measure.duration.quarterLength) / 4
             continue
 
         if measure.timeSignature is not None:
@@ -831,6 +833,11 @@ def get_notes_from_music_xml(
 
     for measure_mc, measures_list in enumerate(m21_score.measureOffsetMap().values()):
         measure = measures_list[0]
+
+        if measure.measureNumber not in measures_df["mn"].values:
+            continue
+
+        measure_mc = measures_df.loc[measures_df["mn"] == measure.measureNumber, "mc"].iloc[0]
 
         for note in measure.recurse().notes:
             if note.isChord:
