@@ -39,6 +39,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--pitch-based",
+        action="store_true",
+        help="Train a pitch-based CSM (CSM-P). Ignored if --model is not csm.",
+    )
+
+    parser.add_argument(
         "--gpu",
         type=str,
         default=None,
@@ -54,8 +60,15 @@ if __name__ == "__main__":
         default="checkpoints",
         help=(
             "The directory to save model checkpoints into, within a subdirectory of the model's "
-            "name (e.g., CSM checkpoints will be saved into `--checkpoint`/csm).",
+            "name (e.g., CSM checkpoints will be saved into `--checkpoint`/csm)."
         ),
+    )
+
+    parser.add_argument(
+        "--resume",
+        type=Path,
+        default=None,
+        help="A path to a checkpoint file from which to resume training.",
     )
 
     parser.add_argument(
@@ -157,13 +170,22 @@ if __name__ == "__main__":
         dataset = ds.ChordTransitionDataset
 
     elif ARGS.model == "csm":
-        model = csm.SimpleChordSequenceModel(
-            PitchType.TPC,
-            PitchType.TPC,
-            PitchType.TPC,
-            learning_rate=ARGS.lr,
-            **kwargs,
-        )
+        if ARGS.pitch_based:
+            model = csm.PitchBasedChordSequenceModel(
+                PitchType.TPC,
+                PitchType.TPC,
+                PitchType.TPC,
+                learning_rate=ARGS.lr,
+                **kwargs,
+            )
+        else:
+            model = csm.SimpleChordSequenceModel(
+                PitchType.TPC,
+                PitchType.TPC,
+                PitchType.TPC,
+                learning_rate=ARGS.lr,
+                **kwargs,
+            )
         dataset = ds.ChordSequenceDataset
 
     elif ARGS.model == "ktm":
@@ -263,5 +285,6 @@ if __name__ == "__main__":
         profiler=ARGS.profile,
         callbacks=[early_stopping_callback, lr_logger],
         gpus=ARGS.gpu,
+        resume_from_checkpoint=ARGS.resume,
     )
     trainer.fit(model, dl_train, dl_valid)

@@ -197,7 +197,7 @@ def load_models_from_argparse(ARGS: Namespace) -> Dict:
         instance of a model of that type.
     """
     models = {}
-    for model_name, model_class in MODEL_CLASSES.items():
+    for model_name, model_classes in MODEL_CLASSES.items():
         if model_name == "icm":
             continue
 
@@ -227,13 +227,20 @@ def load_models_from_argparse(ARGS: Namespace) -> Dict:
             checkpoint = possible_checkpoints[-1]
             logging.info("Multiple checkpoints found for %s. Loading %s.", model_name, checkpoint)
 
-        models[model_name] = model_class.load_from_checkpoint(checkpoint)
-        models[model_name].freeze()
+        for model_class in model_classes:
+            try:
+                models[model_name] = model_class.load_from_checkpoint(checkpoint)
+            except Exception:
+                continue
+            else:
+                models[model_name].freeze()
+                break
+
+        assert model_name in models, f"Couldn't load {model_name} from checkpoint {checkpoint}."
 
     # Load icm json differently
-    logging.info("Loading checkpoint %s for icm.", ARGS.icm_json)
-    models["icm"] = icm.SimpleInitialChordModel(
-        load_kwargs_from_json(ARGS.icm_json.replace("`--checkpoint`", ARGS.checkpoint))
-    )
+    icm_path = ARGS.icm_json.replace("`--checkpoint`", ARGS.checkpoint)
+    logging.info("Loading checkpoint %s for icm.", icm_path)
+    models["icm"] = icm.SimpleInitialChordModel(load_kwargs_from_json(icm_path))
 
     return models

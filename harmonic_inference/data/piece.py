@@ -732,10 +732,6 @@ def get_measures_df_from_music21_score(m21_score: music21.stream.Score) -> pd.Da
     df_offsets = []
     mns = []
 
-    # Lists that we can pre-compute
-    mcs = list(range(len(m21_score.measureOffsetMap())))
-    nexts = mcs[1:] + [pd.NA]
-
     # The start of the 2nd measure (the first full measure in the case of an anacrusis)
     ts_epoch = Fraction(list(m21_score.measureOffsetMap().keys())[1] / 4)
 
@@ -743,10 +739,27 @@ def get_measures_df_from_music21_score(m21_score: music21.stream.Score) -> pd.Da
     time_signature = "4/4"
     ts_duration = Fraction(time_signature)
 
+    # First and last measure number (inclusive) of all first endings
+    first_endings = [
+        (bracket.getFirst().number, bracket.getLast().number)
+        for bracket in m21_score.flat.getElementsByClass(music21.spanner.RepeatBracket)
+        if int(bracket.number) == 1
+    ]
+    skipped_dur = 0
+
     # Go through the measures and add them to the tracking lists
     for mc, (offset, measures_list) in enumerate(m21_score.measureOffsetMap().items()):
-        offset = Fraction(offset) / 4
+        offset = Fraction(offset) / 4 - skipped_dur
         measure = measures_list[0]
+
+        skip = False
+        for start, end in first_endings:
+            if measure.measureNumber in range(start, end + 1):
+                skip = True
+                break
+        if skip:
+            skipped_dur += Fraction(measure.duration.quarterLength) / 4
+            continue
 
         if measure.timeSignature is not None:
             if measure.timeSignature.ratioString != time_signature:
@@ -769,6 +782,8 @@ def get_measures_df_from_music21_score(m21_score: music21.stream.Score) -> pd.Da
         df_offsets.append((offset - ts_epoch) % ts_duration)
         mns.append(measure.measureNumber)
 
+    mcs = list(range(len(mns)))
+
     return pd.DataFrame(
         {
             "mc": mcs,
@@ -777,7 +792,7 @@ def get_measures_df_from_music21_score(m21_score: music21.stream.Score) -> pd.Da
             "start": starts,
             "act_dur": lengths,
             "offset": df_offsets,
-            "next": nexts,
+            "next": mcs[1:] + [pd.NA],
         }
     )
 
@@ -818,6 +833,11 @@ def get_notes_from_music_xml(
 
     for measure_mc, measures_list in enumerate(m21_score.measureOffsetMap().values()):
         measure = measures_list[0]
+
+        if measure.measureNumber not in measures_df["mn"].values:
+            continue
+
+        measure_mc = measures_df.loc[measures_df["mn"] == measure.measureNumber, "mc"].iloc[0]
 
         for note in measure.recurse().notes:
             if note.isChord:
@@ -892,6 +912,13 @@ def get_score_piece_from_music_xml(
     # Labels are in quarter notes, but the rest of the code uses whole notes
     labels_df["on"] /= 4
     labels_df["off"] /= 4
+
+    diff = (
+        labels_df.iloc[-1]["off"] - measures_df.iloc[-1]["start"] - measures_df.iloc[-1]["act_dur"]
+    )
+    if diff != 0:
+        print(music_xml_path)
+        print(diff)
 
     # Bugfix for some pieces that start with negative numbers
     labels_df = labels_df.loc[(labels_df["on"] >= 0) & (labels_df["off"] > 0)]

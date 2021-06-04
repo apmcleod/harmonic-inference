@@ -96,7 +96,7 @@ class Key:
         new_params["tonic_type"] = pitch_type
 
         if pitch_type == self.tonic_type:
-            return Key(**self.params)
+            return Key(**new_params)
 
         # Convert relative, local, and global tonic
         for key in ["relative_tonic", "local_tonic", "global_tonic"]:

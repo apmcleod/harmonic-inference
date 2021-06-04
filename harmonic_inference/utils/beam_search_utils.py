@@ -395,6 +395,7 @@ class State:
 
     def add_csm_prior(
         self,
+        pitch_based: bool,
         pitch_type: PitchType,
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
@@ -411,6 +412,9 @@ class State:
 
         Parameters
         ----------
+        pitch_based : bool
+            True if the CSM prior is pitch-based, rather than a one-hot chord-based
+            representation.
         pitch_type : PitchType
             The pitch type used to store the chord root.
         duration_cache : np.array
@@ -453,7 +457,36 @@ class State:
             use_inversions=use_output_inversions,
         )[0]
 
-        self.most_recent_csm = self.csm_log_prior[reduced_index] * range_length
+        if pitch_based and self.prev_state.change_index != 0:
+            num_pitches = (
+                hc.NUM_PITCHES[PitchType.MIDI]
+                if pitch_type == PitchType.MIDI
+                else hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
+            )
+
+            relative_root, chord_type, _ = hu.get_chord_from_one_hot_index(
+                reduced_index,
+                pitch_type,
+                use_inversions=use_output_inversions,
+                relative=True,
+                pad=False,
+                reduction=output_reduction,
+            )
+
+            chord_vector = hu.get_vector_from_chord_type(
+                chord_type,
+                pitch_type,
+                root=relative_root,
+            )[:num_pitches]
+
+            self.most_recent_csm = (
+                np.sum(np.log(self.csm_log_prior[chord_vector == 1]))
+                + np.sum(np.log(1 - self.csm_log_prior[chord_vector == 0]))
+            ) * range_length
+
+        else:
+            self.most_recent_csm = self.csm_log_prior[reduced_index] * range_length
+
         self.log_prob += self.most_recent_csm
 
     def get_csm_input(

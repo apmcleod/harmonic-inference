@@ -255,7 +255,7 @@ class SimpleChordTransitionModel(ChordTransitionModel):
     def forward(self, inputs, lengths):
         # pylint: disable=arguments-differ
         batch_size = inputs.shape[0]
-        lengths = torch.clamp(lengths, min=1)
+        lengths = torch.clamp(lengths, min=1).cpu()
         h_0, c_0 = self.init_hidden(batch_size)
 
         embedded = F.relu(self.embed(inputs))

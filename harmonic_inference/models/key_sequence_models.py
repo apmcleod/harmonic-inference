@@ -255,14 +255,14 @@ class SimpleKeySequenceModel(KeySequenceModel):
             self.embed_dim,
             self.lstm_hidden_dim,
             num_layers=self.lstm_layers,
-            bidirectional=True,
+            bidirectional=False,
             batch_first=True,
         )
 
         # Linear layers post-LSTM
         self.hidden_dim = hidden_dim
         self.dropout = dropout
-        self.fc1 = nn.Linear(2 * self.lstm_hidden_dim, self.hidden_dim)  # 2 * for bi-directional
+        self.fc1 = nn.Linear(self.lstm_hidden_dim, self.hidden_dim)
         self.fc2 = nn.Linear(self.hidden_dim, self.output_dim)
         self.dropout1 = nn.Dropout(self.dropout)
 
@@ -277,41 +277,31 @@ class SimpleKeySequenceModel(KeySequenceModel):
         """
         return (
             Variable(
-                torch.zeros(
-                    2 * self.lstm_layers, batch_size, self.lstm_hidden_dim, device=self.device
-                )
+                torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim, device=self.device)
             ),
             Variable(
-                torch.zeros(
-                    2 * self.lstm_layers, batch_size, self.lstm_hidden_dim, device=self.device
-                )
+                torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim, device=self.device)
             ),
         )
 
     def forward(self, inputs, lengths, hidden=None):
         # pylint: disable=arguments-differ
         batch_size = inputs.shape[0]
-        lengths = torch.clamp(lengths, min=1)
+        lengths = torch.clamp(lengths, min=1).cpu()
         h_0, c_0 = self.init_hidden(batch_size) if hidden is None else hidden
 
         embedded = F.relu(self.embed(inputs))
 
         packed = pack_padded_sequence(embedded, lengths, enforce_sorted=False, batch_first=True)
         lstm_out_packed, hidden_out = self.lstm(packed, (h_0, c_0))
-        lstm_out_unpacked, lstm_out_lengths = pad_packed_sequence(lstm_out_packed, batch_first=True)
+        lstm_out, lstm_out_lengths = pad_packed_sequence(lstm_out_packed, batch_first=True)
 
-        # Reshape lstm outs
-        lstm_out_forward, lstm_out_backward = torch.chunk(lstm_out_unpacked, 2, 2)
-
-        # Get lengths in proper format
         lstm_out_lengths_tensor = (
-            lstm_out_lengths.unsqueeze(1).unsqueeze(2).expand((-1, 1, lstm_out_forward.shape[2]))
+            lstm_out_lengths.unsqueeze(1).unsqueeze(2).expand((-1, 1, lstm_out.shape[2]))
         ).to(self.device)
-        last_forward = torch.gather(lstm_out_forward, 1, lstm_out_lengths_tensor - 1).squeeze(dim=1)
-        last_backward = lstm_out_backward[:, 0, :]
-        lstm_out = torch.cat((last_forward, last_backward), 1)
+        last_forward = torch.gather(lstm_out, 1, lstm_out_lengths_tensor - 1).squeeze(1)
 
-        relu1 = F.relu(lstm_out)
+        relu1 = F.relu(last_forward)
         drop1 = self.dropout1(relu1)
         fc1 = self.fc1(drop1)
         relu2 = F.relu(fc1)

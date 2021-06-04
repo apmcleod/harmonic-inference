@@ -12,7 +12,12 @@ from tqdm import tqdm
 
 import h5py
 import harmonic_inference.utils.eval_utils as eu
-from harmonic_inference.data.data_types import NO_REDUCTION, TRIAD_REDUCTION, PitchType
+from harmonic_inference.data.data_types import (
+    ALL_ONE_TYPE_REDUCTION,
+    NO_REDUCTION,
+    TRIAD_REDUCTION,
+    PitchType,
+)
 from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import (
     MODEL_CLASSES,
@@ -125,11 +130,19 @@ def evaluate(
                 use_inversion=False,
                 reduction=TRIAD_REDUCTION,
             )
+            chord_acc_root_only = eu.evaluate_chords(
+                piece,
+                state,
+                model.CHORD_OUTPUT_TYPE,
+                use_inversion=False,
+                reduction=ALL_ONE_TYPE_REDUCTION,
+            )
 
             logging.info("Chord accuracy = %s", chord_acc_full)
             logging.info("Chord accuracy, no inversions = %s", chord_acc_no_inv)
             logging.info("Chord accuracy, triads = %s", chord_acc_triad)
             logging.info("Chord accuracy, triad, no inversions = %s", chord_acc_triad_no_inv)
+            logging.info("Chord accuracy, root only = %s", chord_acc_root_only)
 
             key_acc_full = eu.evaluate_keys(piece, state, model.KEY_OUTPUT_TYPE, tonic_only=False)
             key_acc_tonic = eu.evaluate_keys(piece, state, model.KEY_OUTPUT_TYPE, tonic_only=True)
@@ -158,8 +171,18 @@ def evaluate(
                 model.KEY_OUTPUT_TYPE,
             )
 
-            # Write MIDI outputs for SPS chord-eval testing
+            # Write outputs tsv
             results_df = eu.get_results_df(
+                piece,
+                state,
+                model.CHORD_OUTPUT_TYPE,
+                model.KEY_OUTPUT_TYPE,
+                PitchType.TPC,
+                PitchType.TPC,
+            )
+
+            # Write MIDI outputs for SPS chord-eval testing
+            results_midi_df = eu.get_results_df(
                 piece,
                 state,
                 model.CHORD_OUTPUT_TYPE,
@@ -182,6 +205,17 @@ def evaluate(
                 except Exception:
                     logging.exception("Error writing to csv %s", results_tsv_path)
                     logging.debug(results_df)
+
+                try:
+                    output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
+                    results_tsv_path = output_tsv_path.parent / (
+                        output_tsv_path.name[:-4] + "_results_midi.tsv"
+                    )
+                    results_midi_df.to_csv(results_tsv_path, sep="\t")
+                    logging.info("MIDI results TSV written out to %s", results_tsv_path)
+                except Exception:
+                    logging.exception("Error writing to csv %s", results_tsv_path)
+                    logging.debug(results_midi_df)
 
                 try:
                     output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
@@ -252,7 +286,7 @@ if __name__ == "__main__":
         "-o",
         "--output",
         type=Path,
-        default="output",
+        default="outputs",
         help="The directory to write label tsvs and annotated MuseScore3 scores to.",
     )
 
@@ -325,7 +359,10 @@ if __name__ == "__main__":
         "--log",
         type=str,
         default=sys.stderr,
-        help="The log file to print messages to.",
+        help=(
+            "The log file to print messages to. If a file is given, it will be interpreted "
+            "relative to `--output`."
+        ),
     )
 
     parser.add_argument(
@@ -369,11 +406,11 @@ if __name__ == "__main__":
         torch.set_num_threads(ARGS.threads)
 
     if ARGS.log is not sys.stderr:
-        log_path = Path(ARGS.log)
+        log_path = ARGS.output / ARGS.log
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
     logging.basicConfig(
-        filename=None if ARGS.log is sys.stderr else ARGS.log,
+        filename=None if ARGS.log is sys.stderr else ARGS.output / ARGS.log,
         level=logging.DEBUG if ARGS.verbose else logging.INFO,
         filemode="w",
     )

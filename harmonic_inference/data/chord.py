@@ -128,7 +128,7 @@ class Chord:
         new_params["pitch_type"] = pitch_type
 
         if pitch_type == self.pitch_type:
-            return Chord(**self.params)
+            return Chord(**new_params)
 
         # Convert key_tonic, root, and bass
         for key in ["key_tonic", "root", "bass"]:

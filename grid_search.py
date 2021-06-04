@@ -199,7 +199,7 @@ if __name__ == "__main__":
         this_args.append(str(ARGS.output / DIR_NAME))
 
         this_args.append("--log")
-        this_args.append(str(ARGS.output / DIR_NAME / "test.log"))
+        this_args.append("test.log")
 
         for name, val in zip(argument_names, values):
             this_args.append(f"--{name.replace('_', '-')}")

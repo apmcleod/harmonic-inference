@@ -1,6 +1,6 @@
 """Models that generate probability distributions over chord classifications of a given input."""
 from abc import ABC, abstractmethod
-from typing import Any, Collection, Dict, Tuple
+from typing import Any, Collection, Dict, List, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -31,6 +31,7 @@ class ChordClassifierModel(pl.LightningModule, ABC):
         reduction: Dict[ChordType, ChordType],
         use_inversions: bool,
         learning_rate: float,
+        transposition_range: Union[List[int], Tuple[int, int]],
     ):
         """
         Create a new base ChordClassifierModel with the given input and output formats.
@@ -49,6 +50,11 @@ class ChordClassifierModel(pl.LightningModule, ABC):
             Whether to use different inversions as different chords in the output.
         learning_rate : float
             The learning rate.
+        transposition_range : Union[List[int], Tuple[int, int]]
+            Minimum and maximum bounds by which to transpose each note and chord of the
+            dataset. Each __getitem__ call will return every possible transposition in this
+            (min, max) range, inclusive on each side. The transpositions are measured in
+            whatever PitchType is used in the dataset.
         """
         super().__init__()
         self.INPUT_TYPE = input_type
@@ -57,6 +63,7 @@ class ChordClassifierModel(pl.LightningModule, ABC):
 
         self.reduction = reduction
         self.use_inversions = use_inversions
+        self.transposition_range = transposition_range
 
         self.lr = learning_rate
 
@@ -74,6 +81,7 @@ class ChordClassifierModel(pl.LightningModule, ABC):
         return {
             "reduction": self.reduction,
             "use_inversions": self.use_inversions,
+            "transposition_range": self.transposition_range,
         }
 
     def get_output(self, batch):
@@ -90,7 +98,7 @@ class ChordClassifierModel(pl.LightningModule, ABC):
         targets = batch["targets"].long()
 
         outputs = self(notes, notes_lengths)
-        loss = F.cross_entropy(outputs, targets)
+        loss = F.cross_entropy(outputs, targets, ignore_index=-1)
 
         self.log("train_loss", loss)
         return loss
@@ -101,11 +109,17 @@ class ChordClassifierModel(pl.LightningModule, ABC):
         targets = batch["targets"].long()
 
         outputs = self(notes, notes_lengths)
-        loss = F.cross_entropy(outputs, targets)
-        acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
 
-        self.log("val_loss", loss)
-        self.log("val_acc", acc)
+        mask = targets != -1
+        outputs = outputs[mask]
+        targets = targets[mask]
+
+        if len(targets) > 0:
+            acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
+            loss = F.cross_entropy(outputs, targets, ignore_index=-1)
+
+            self.log("val_loss", loss)
+            self.log("val_acc", acc)
 
     def evaluate(self, dataset: ChordClassificationDataset):
         dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
@@ -176,6 +190,7 @@ class SimpleChordClassifier(ChordClassifierModel):
         output_pitch: PitchType,
         reduction: Dict[ChordType, ChordType] = None,
         use_inversions: bool = True,
+        transposition_range: Union[List[int], Tuple[int, int]] = (0, 0),
         lstm_layers: int = 1,
         lstm_hidden_dim: int = 128,
         hidden_dim: int = 128,
@@ -195,6 +210,11 @@ class SimpleChordClassifier(ChordClassifierModel):
             The pitch type to use for outputs of this model. Used to derive the output length.
         reduction : Dict[ChordType, ChordType]
             The reduction used for the output chord types.
+        transposition_range : Union[List[int], Tuple[int, int]]
+            Minimum and maximum bounds by which to transpose each note and chord of the
+            dataset. Each __getitem__ call will return every possible transposition in this
+            (min, max) range, inclusive on each side. The transpositions are measured in
+            whatever PitchType is used in the dataset.
         use_inversions : bool
             Whether to use different inversions as different chords in the output. Used to
             derive the output length.
@@ -216,6 +236,7 @@ class SimpleChordClassifier(ChordClassifierModel):
             reduction,
             use_inversions,
             learning_rate,
+            transposition_range,
         )
         self.save_hyperparameters()
 
@@ -273,7 +294,7 @@ class SimpleChordClassifier(ChordClassifierModel):
     def forward(self, notes, lengths):
         # pylint: disable=arguments-differ
         batch_size = notes.shape[0]
-        lengths = torch.clamp(lengths, min=1)
+        lengths = torch.clamp(lengths, min=1).cpu()
         h_0, c_0 = self.init_hidden(batch_size)
 
         packed_notes = pack_padded_sequence(notes, lengths, enforce_sorted=False, batch_first=True)

@@ -1,4 +1,5 @@
 """Functions for decoding data vectors."""
+from copy import copy
 from typing import Dict, List, Tuple, Union
 
 import numpy as np
@@ -364,7 +365,7 @@ def reduce_chord_one_hots(
 
     for one_hot, (root, chord_type, inversion) in zip(unique_one_hots, old_labels):
         if relative:
-            # If relatived, returned root is on the range [MIN_RELATIVE_TPC, MAX_RELATIVE_TPC]
+            # If relative, returned root is on the range [MIN_RELATIVE_TPC, MAX_RELATIVE_TPC]
             # However, it is expected to be [0, ...]
             # This absolute to relative call with key=0 converts this correctly.
             root = absolute_to_relative(root, 0, pitch_type, False, pad=pad)
@@ -520,3 +521,54 @@ def decode_chord_and_key_change_vector(
             raise ValueError("No key change, but key change vector is not empty.")
 
     return chord, key
+
+
+def transpose_note_vector(
+    note_vector: List[float],
+    interval: int,
+    pitch_type: PitchType = None,
+) -> List[float]:
+    """
+    Transpose the given note vector by the given interval.
+
+    Parameters
+    ----------
+    note_vec : List[float]
+        The note vector to transpose.
+    interval : int
+        The interval by which to transpose the given note vector.
+    pitch_type : PitchType
+        The pitch type used by both the note vector and the given interval.
+        Will speed up computation slightly if given, but this can also be inferred
+        from the length of the note vector.
+
+    Returns
+    -------
+    new_note_vector : List[float]
+        The given note vector, transposed by the given interval.
+    """
+    # Infer pitch_type from vector length
+    if pitch_type is None:
+        for check_pitch_type in PitchType:
+            if len(note_vector) == get_note_vector_length(check_pitch_type):
+                pitch_type = check_pitch_type
+                break
+
+        if pitch_type is None:
+            raise ValueError("Key change vector is not a valid length for any PitchType.")
+
+    new_note_vector = copy(note_vector)
+
+    old_pitch = np.arange(NUM_PITCHES[pitch_type])[np.where(note_vector == 1)[0][0]]
+    new_pitch = old_pitch + interval
+
+    if not (0 <= old_pitch < NUM_PITCHES[pitch_type]):
+        raise ValueError(
+            f"Transposed note {decode_note_vector(note_vector)} + {interval} "
+            f"outside of valid range (0 - {NUM_PITCHES[pitch_type]}"
+        )
+
+    new_note_vector[old_pitch] = 0
+    new_note_vector[new_pitch] = 1
+
+    return new_note_vector

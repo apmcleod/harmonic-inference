@@ -28,12 +28,12 @@ from harmonic_inference.data.piece import Piece, get_range_start
 from harmonic_inference.utils.beam_search_utils import Beam, HashedBeam, State
 
 MODEL_CLASSES = {
-    "ccm": ccm.SimpleChordClassifier,
-    "ctm": ctm.SimpleChordTransitionModel,
-    "csm": csm.SimpleChordSequenceModel,
-    "ktm": ktm.SimpleKeyTransitionModel,
-    "ksm": ksm.SimpleKeySequenceModel,
-    "icm": icm.SimpleInitialChordModel,
+    "ccm": [ccm.SimpleChordClassifier],
+    "ctm": [ctm.SimpleChordTransitionModel],
+    "csm": [csm.SimpleChordSequenceModel, csm.PitchBasedChordSequenceModel],
+    "ktm": [ktm.SimpleKeyTransitionModel],
+    "ksm": [ksm.SimpleKeySequenceModel],
+    "icm": [icm.SimpleInitialChordModel],
 }
 
 
@@ -72,7 +72,7 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
         "--min-chord-change-prob",
         default=MIN_CHORD_CHANGE_PROB_DEFAULT,
         type=float,
-        nargs="+" if grid_search else 1,
+        nargs="+" if grid_search else None,
         help="The minimum CTM probability that can be a chord change.",
     )
 
@@ -80,7 +80,7 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
         "--max-no-chord-change-prob",
         default=MAX_NO_CHORD_CHANGE_PROB_DEFAULT,
         type=float,
-        nargs="+" if grid_search else 1,
+        nargs="+" if grid_search else None,
         help="The maximum CTM probability that can be a non-chord change.",
     )
 
@@ -88,7 +88,7 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
         "--max-chord-length",
         default=MAX_CHORD_LENGTH_DEFAULT,
         type=Fraction,
-        nargs="+" if grid_search else 1,
+        nargs="+" if grid_search else None,
         help="The maximum duration (in whole notes) of a chord.",
     )
 
@@ -96,7 +96,7 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
         "--min-key-change-prob",
         default=MIN_KEY_CHANGE_PROB_DEFAULT,
         type=float,
-        nargs="+" if grid_search else 1,
+        nargs="+" if grid_search else None,
         help="The minimum KTM probability that can be a key change.",
     )
 
@@ -104,7 +104,7 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
         "--max-no-key-change-prob",
         default=MAX_NO_KEY_CHANGE_PROB_DEFAULT,
         type=float,
-        nargs="+" if grid_search else 1,
+        nargs="+" if grid_search else None,
         help="The maximum KTM probability that can be a non-key change.",
     )
 
@@ -112,7 +112,7 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
         "--beam-size",
         default=BEAM_SIZE_DEFAULT,
         type=int,
-        nargs="+" if grid_search else 1,
+        nargs="+" if grid_search else None,
         help="The beam size to use during decoding.",
     )
 
@@ -120,7 +120,7 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
         "--max-chord-branching-factor",
         default=MAX_CHORD_BRANCHING_FACTOR_DEFAULT,
         type=int,
-        nargs="+" if grid_search else 1,
+        nargs="+" if grid_search else None,
         help="The maximum number of different chords to branch into.",
     )
 
@@ -128,7 +128,7 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
         "--target-chord-branch-prob",
         default=TARGET_CHORD_BRANCH_PROB_DEFAULT,
         type=float,
-        nargs="+" if grid_search else 1,
+        nargs="+" if grid_search else None,
         help=(
             "Once the chords branched into account for at least this much probability mass "
             "stop branching, disregarding --max-chord-branching-factor."
@@ -139,7 +139,7 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
         "--max-key-branching-factor",
         default=MAX_KEY_BRANCHING_FACTOR_DEFAULT,
         type=int,
-        nargs="+" if grid_search else 1,
+        nargs="+" if grid_search else None,
         help="The maximum number of different keys to branch into.",
     )
 
@@ -147,7 +147,7 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
         "--target-key-branch-prob",
         default=TARGET_KEY_BRANCH_PROB_DEFAULT,
         type=float,
-        nargs="+" if grid_search else 1,
+        nargs="+" if grid_search else None,
         help=(
             "Once the keys branched into account for at least this much probability mass "
             "stop branching, disregarding --max-key-branching-factor."
@@ -158,7 +158,7 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
         "--hash-length",
         default=HASH_LENGTH_DEFAULT,
         type=int,
-        nargs="+" if grid_search else 1,
+        nargs="+" if grid_search else None,
         help=(
             "If 2 states are identical in chord and key for this many chord changes "
             "(disregarding change index), only the most likely state is kept in the beam."
@@ -169,7 +169,7 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
         "--ksm-exponent",
         default=KSM_EXPONENT_DEFAULT,
         type=float,
-        nargs="+" if grid_search else 1,
+        nargs="+" if grid_search else None,
         help=(
             "An exponent to be applied to the KSM's probability outputs. Used to weight "
             "the KSM and CSM equally even given their different vocabulary sizes."
@@ -243,11 +243,11 @@ class HarmonicInferenceModel:
             An exponent to apply to the KSM's output probabilities. Used to weight the KSM
             and CSM equally, even given their different vocabulary sizes.
         """
-        for model, model_class in MODEL_CLASSES.items():
+        for model, model_classes in MODEL_CLASSES.items():
             assert model in models.keys(), f"`{model}` not in models dict."
-            assert isinstance(
-                models[model], model_class
-            ), f"`{model}` in models dict is not of type {model_class.__name__}."
+            assert (
+                type(models[model]) in model_classes
+            ), f"`{model}` in models dict is not one of: {[c.__name__ for c in model_classes]}."
 
         logging.info("Joint Model parameters:")
         for arg_name in inspect.getfullargspec(HarmonicInferenceModel.__init__).args[1:]:
@@ -579,12 +579,16 @@ class HarmonicInferenceModel:
         classifications : List[np.array]
             The prior log-probability over all chord symbols for each given range.
         """
+        # Ensure no transposition happens at test time
+        ds_kwargs = self.chord_classifier.get_dataset_kwargs()
+        ds_kwargs.update({"transposition_range": [0, 0]})
+
         ccm_dataset = ds.ChordClassificationDataset(
             [self.current_piece],
             ranges=[ranges],
             change_indices=[change_indices],
             dummy_targets=True,
-            **self.chord_classifier.get_dataset_kwargs(),
+            **ds_kwargs,
         )
         ccm_loader = DataLoader(
             ccm_dataset,
@@ -822,6 +826,7 @@ class HarmonicInferenceModel:
             # Add CSM prior and add to beam (CSM is run at the start of each iteration)
             for state in to_csm_prior_states:
                 state.add_csm_prior(
+                    isinstance(self.chord_sequence_model, csm.PitchBasedChordSequenceModel),
                     self.CHORD_OUTPUT_TYPE,
                     self.duration_cache,
                     self.onset_cache,
@@ -1736,16 +1741,16 @@ def from_args(models: Dict, ARGS: Namespace) -> HarmonicInferenceModel:
     """
     return HarmonicInferenceModel(
         models,
-        min_chord_change_prob=ARGS.min_chord_change_prob[0],
-        max_no_chord_change_prob=ARGS.max_no_chord_change_prob[0],
-        max_chord_length=ARGS.max_chord_length[0],
-        min_key_change_prob=ARGS.min_key_change_prob[0],
-        max_no_key_change_prob=ARGS.max_no_key_change_prob[0],
-        beam_size=ARGS.beam_size[0],
-        max_chord_branching_factor=ARGS.max_chord_branching_factor[0],
-        target_chord_branch_prob=ARGS.target_chord_branch_prob[0],
-        max_key_branching_factor=ARGS.max_key_branching_factor[0],
-        target_key_branch_prob=ARGS.target_key_branch_prob[0],
-        hash_length=ARGS.hash_length[0],
-        ksm_exponent=ARGS.ksm_exponent[0],
+        min_chord_change_prob=ARGS.min_chord_change_prob,
+        max_no_chord_change_prob=ARGS.max_no_chord_change_prob,
+        max_chord_length=ARGS.max_chord_length,
+        min_key_change_prob=ARGS.min_key_change_prob,
+        max_no_key_change_prob=ARGS.max_no_key_change_prob,
+        beam_size=ARGS.beam_size,
+        max_chord_branching_factor=ARGS.max_chord_branching_factor,
+        target_chord_branch_prob=ARGS.target_chord_branch_prob,
+        max_key_branching_factor=ARGS.max_key_branching_factor,
+        target_key_branch_prob=ARGS.target_key_branch_prob,
+        hash_length=ARGS.hash_length,
+        ksm_exponent=ARGS.ksm_exponent,
     )
