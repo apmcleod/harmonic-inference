@@ -10,7 +10,9 @@ from tqdm import tqdm
 
 import harmonic_inference.utils.corpus_utils as cu
 
-MEASURES_OFFSET_COL = "offset"
+MEASURE_OFFSET = "mc_offset"
+CHORD_ONSET_BEAT = "mn_onset"
+NOTE_ONSET_BEAT = "mn_onset"
 
 
 # Helper functions to be used as converters, handling empty strings
@@ -33,19 +35,28 @@ def int2bool(s: str) -> bool:
         return pd.NA
 
 
+def str2frac(s: str) -> Fraction:
+    try:
+        return Fraction(s)
+    except Exception:
+        return pd.NA
+
+
 CONVERTERS = {
     "added_tones": str2inttuple,
-    "act_dur": Fraction,
+    "act_dur": str2frac,
     "chord_tones": str2inttuple,
     "globalkey_is_minor": int2bool,
     "localkey_is_minor": int2bool,
-    "mc_offset": Fraction,
+    "mc_offset": str2frac,
+    "mc_onset": str2frac,
+    "mn_onset": str2frac,
     "next": str2inttuple,
-    "nominal_duration": Fraction,
-    "offset": Fraction,
-    "onset": Fraction,
-    "duration": Fraction,
-    "scalar": Fraction,
+    "nominal_duration": str2frac,
+    "offset": str2frac,
+    "onset": str2frac,
+    "duration": str2frac,
+    "scalar": str2frac,
 }
 
 
@@ -64,28 +75,28 @@ DTYPES = {
     "globalkey": str,
     "gracenote": str,
     "harmonies_id": "Int64",
-    "keysig": int,
+    "keysig": "Int64",
     "label": str,
     "localkey": str,
     "mc": "Int64",
-    "midi": int,
-    "mn": int,
+    "midi": "Int64",
+    "mn": "Int64",
     "notes_id": "Int64",
     "numbering_offset": "Int64",
     "numeral": str,
     "pedal": str,
-    "playthrough": int,
+    "playthrough": "Int64",
     "phraseend": str,
     "relativeroot": str,
     "repeats": str,
     "root": "Int64",
     "special": str,
-    "staff": int,
+    "staff": "Int64",
     "tied": "Int64",
     "timesig": str,
-    "tpc": int,
-    "voice": int,
-    "voices": int,
+    "tpc": "Int64",
+    "voice": "Int64",
+    "voices": "Int64",
     "volta": "Int64",
 }
 
@@ -174,6 +185,26 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
         chords_df = chords_df.loc[files_df.index]
         notes_df = notes_df.loc[files_df.index]
 
+    # Bugfix for Couperin piece "next" error
+    files_df = files_df.loc[~(files_df["file_name"] == "c11n08_Rondeau.tsv")]
+    measures_df = measures_df.loc[files_df.index]
+    chords_df = chords_df.loc[files_df.index]
+    notes_df = notes_df.loc[files_df.index]
+    # End bugfix
+
+    # Incomplete column renaming
+    if "offset" in measures_df.columns:
+        measures_df[MEASURE_OFFSET].fillna(measures_df["offset"], inplace=True)
+        measures_df = measures_df.drop("offset", axis=1)
+
+    if "onset" in chords_df.columns:
+        chords_df[CHORD_ONSET_BEAT].fillna(chords_df["onset"], inplace=True)
+        chords_df = chords_df.drop("onset", axis=1)
+
+    if "onset" in notes_df.columns:
+        notes_df[NOTE_ONSET_BEAT].fillna(notes_df["onset"], inplace=True)
+        notes_df = notes_df.drop("onset", axis=1)
+
     # Remove measure repeats
     if isinstance(measures_df.iloc[0].next, tuple):
         measures_df = cu.remove_repeats(measures_df)
@@ -193,14 +224,14 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
         on=["file_id", "mc"],
     )
 
-    valid_onsets = (note_measures[MEASURES_OFFSET_COL] <= note_measures["onset"]) & (
-        note_measures["onset"] < note_measures["act_dur"] + note_measures[MEASURES_OFFSET_COL]
+    valid_onsets = (note_measures[MEASURE_OFFSET] <= note_measures[NOTE_ONSET_BEAT]) & (
+        note_measures[NOTE_ONSET_BEAT] < note_measures["act_dur"] + note_measures[MEASURE_OFFSET]
     )
     if not valid_onsets.all():
         with pd.option_context("display.max_rows", None, "display.max_columns", None):
             invalid_string = note_measures.loc[
                 ~valid_onsets,
-                ["file_id", "note_id", "mc", "onset", MEASURES_OFFSET_COL, "act_dur"],
+                ["file_id", "note_id", "mc", NOTE_ONSET_BEAT, MEASURE_OFFSET, "act_dur"],
             ]
             logging.warning(
                 f"{(~valid_onsets).sum()} notes have invalid onset times:\n{invalid_string}"
@@ -215,14 +246,15 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
         on=["file_id", "mc"],
     )
 
-    valid_onsets = (chord_measures[MEASURES_OFFSET_COL] <= chord_measures["onset"]) & (
-        chord_measures["onset"] < chord_measures["act_dur"] + chord_measures[MEASURES_OFFSET_COL]
+    valid_onsets = (chord_measures[MEASURE_OFFSET] <= chord_measures[CHORD_ONSET_BEAT]) & (
+        chord_measures[CHORD_ONSET_BEAT]
+        < chord_measures["act_dur"] + chord_measures[MEASURE_OFFSET]
     )
     if not valid_onsets.all():
         with pd.option_context("display.max_rows", None, "display.max_columns", None):
             invalid_string = chord_measures.loc[
                 ~valid_onsets,
-                ["file_id", "chord_id", "mc", "onset", MEASURES_OFFSET_COL, "act_dur"],
+                ["file_id", "chord_id", "mc", CHORD_ONSET_BEAT, MEASURE_OFFSET, "act_dur"],
             ]
             logging.warning(
                 f"{(~valid_onsets).sum()} chords have invalid onset times:\n{invalid_string}"
@@ -245,7 +277,7 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
         with pd.option_context("display.max_rows", None, "display.max_columns", None):
             invalid_string = chords_df.loc[
                 invalid_dur,
-                ["mc", "onset", "mc_next", "onset_next", "duration"],
+                ["mc", CHORD_ONSET_BEAT, "mc_next", "onset_next", "duration"],
             ]
             logging.warning(
                 f"{(invalid_dur).sum()} chords have invalid durations:\n{invalid_string}"

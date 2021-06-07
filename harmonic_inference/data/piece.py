@@ -13,6 +13,7 @@ from tqdm import tqdm
 
 import harmonic_inference.utils.rhythmic_utils as ru
 from harmonic_inference.data.chord import Chord
+from harmonic_inference.data.corpus_reading import MEASURE_OFFSET
 from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, PieceType, PitchType
 from harmonic_inference.data.key import Key
 from harmonic_inference.data.note import Note
@@ -721,7 +722,7 @@ def get_measures_df_from_music21_score(m21_score: music21.stream.Score) -> pd.Da
             'start' (Fraction): The "offset" position at the start of each measure, in
                                 whole notes since the beginning of the piece.
             'act_dur' (Fraction): The duration of the measure, in whole notes.
-            'offset' (Fraction): The starting position of this measure, in whole notes
+            'mc_offset' (Fraction): The starting position of this measure, in whole notes
                                  after the most recent downbeat.
             'next' (int): The measure index of the measure that follows each one.
     """
@@ -791,7 +792,7 @@ def get_measures_df_from_music21_score(m21_score: music21.stream.Score) -> pd.Da
             "timesig": time_signatures,
             "start": starts,
             "act_dur": lengths,
-            "offset": df_offsets,
+            MEASURE_OFFSET: df_offsets,
             "next": mcs[1:] + [pd.NA],
         }
     )
@@ -816,7 +817,7 @@ def get_notes_from_music_xml(
             'start' (Fraction): The "offset" position at the start of each measure, in
                                 whole notes since the beginning of the piece.
             'act_dur' (Fraction): The duration of the measure, in whole notes.
-            'offset' (Fraction): The starting position of this measure, in whole notes
+            'mc_offset' (Fraction): The starting position of this measure, in whole notes
                                  after the most recent downbeat.
             'next' (int): The measure index of the measure that follows each one.
 

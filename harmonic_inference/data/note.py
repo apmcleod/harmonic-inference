@@ -8,6 +8,7 @@ import music21
 import numpy as np
 import pandas as pd
 
+from harmonic_inference.data.corpus_reading import MEASURE_OFFSET, NOTE_ONSET_BEAT
 from harmonic_inference.data.data_types import PitchType
 from harmonic_inference.utils.harmonic_constants import NUM_PITCHES, TPC_C
 from harmonic_inference.utils.harmonic_utils import get_pitch_from_string, get_pitch_string
@@ -232,7 +233,7 @@ class Note:
                     pd.Series(
                         {
                             "mc": self.onset[0],
-                            "onset": self.onset[1],
+                            NOTE_ONSET_BEAT: self.onset[1],
                             "duration": self.duration,
                         }
                     ),
@@ -360,22 +361,22 @@ class Note:
         """
         try:
             if pitch_type == PitchType.TPC:
-                pitch = note_row.tpc + TPC_C
+                pitch = note_row["tpc"] + TPC_C
                 if pitch < 0 or pitch >= NUM_PITCHES[PitchType.TPC]:
                     raise ValueError(f"TPC pitch {pitch} is outside of valid range.")
             elif pitch_type == PitchType.MIDI:
-                pitch = note_row.midi % NUM_PITCHES[PitchType.MIDI]
+                pitch = note_row["midi"] % NUM_PITCHES[PitchType.MIDI]
             else:
                 raise ValueError(f"Invalid pitch type: {pitch_type}")
-            octave = note_row.midi // NUM_PITCHES[PitchType.MIDI]
+            octave = note_row["midi"] // NUM_PITCHES[PitchType.MIDI]
 
             # Rhythmic info
             positions = [None, None]
             levels = [None, None]
             for i, (mc, beat) in enumerate(
                 zip(
-                    [note_row.mc, note_row.offset_mc],
-                    [note_row.onset, note_row.offset_beat],
+                    [note_row["mc"], note_row["offset_mc"]],
+                    [note_row[NOTE_ONSET_BEAT], note_row["offset_beat"]],
                 )
             ):
                 measure = measures_df.loc[measures_df["mc"] == mc].squeeze()
@@ -401,7 +402,7 @@ class Note:
                 octave,
                 onset,
                 onset_level,
-                note_row.duration,
+                note_row["duration"],
                 offset,
                 offset_level,
                 pitch_type,
@@ -461,16 +462,16 @@ class Note:
 
         # Find the offset measure
         offset_measure = onset_measure
-        tmp_duration = note_duration + note_start - onset_measure["offset"]
+        tmp_duration = note_duration + note_start - onset_measure[MEASURE_OFFSET]
         while tmp_duration >= offset_measure["act_dur"] and not pd.isna(offset_measure["next"]):
             tmp_duration -= offset_measure["act_dur"]
             offset_measure = measures_df.loc[measures_df["mc"] == offset_measure["next"]].iloc[0]
 
         onset_beat = note_start
-        offset_beat = tmp_duration + offset_measure["offset"]
+        offset_beat = tmp_duration + offset_measure[MEASURE_OFFSET]
 
-        onset_beat += onset_measure["offset"]
-        offset_beat += offset_measure["offset"]
+        onset_beat += onset_measure[MEASURE_OFFSET]
+        offset_beat += offset_measure[MEASURE_OFFSET]
 
         levels = [None, None]
 

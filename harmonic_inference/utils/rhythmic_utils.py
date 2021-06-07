@@ -1,14 +1,14 @@
 """Utility functions for getting rhythmic or metrical information from the corpus DataFrames."""
-from typing import Tuple
 from fractions import Fraction
+from typing import Tuple
 
 import pandas as pd
 
+from harmonic_inference.data.corpus_reading import MEASURE_OFFSET, NOTE_ONSET_BEAT
+
 
 def get_range_length(
-    range_start: Tuple[int, Fraction],
-    range_end: Tuple[int, Fraction],
-    measures: pd.DataFrame
+    range_start: Tuple[int, Fraction], range_end: Tuple[int, Fraction], measures: pd.DataFrame
 ) -> Fraction:
     """
     Get the length of a range in whole notes.
@@ -43,18 +43,20 @@ def get_range_length(
         return factor * (end_beat - start_beat)
 
     # Start looping at end of start_mc
-    act_dur, offset, current_mc = measures.loc[measures.mc == start_mc,
-                                               ['act_dur', 'offset', 'next']].values[0]
+    act_dur, offset, current_mc = measures.loc[
+        measures["mc"] == start_mc, ["act_dur", MEASURE_OFFSET, "next"]
+    ].values[0]
     length = act_dur + offset - start_beat
 
     # Loop until reaching end_mc
     while current_mc != end_mc and current_mc is not None:
-        act_dur, current_mc = measures.loc[measures.mc == current_mc,
-                                           ['act_dur', 'next']].values[0]
+        act_dur, current_mc = measures.loc[
+            measures["mc"] == current_mc, ["act_dur", "next"]
+        ].values[0]
         length += act_dur
 
     # Add remainder
-    final_offset = measures.loc[measures.mc == current_mc, 'offset'].values[0]
+    final_offset = measures.loc[measures["mc"] == current_mc, MEASURE_OFFSET].values[0]
     length += end_beat - final_offset
 
     return factor * length
@@ -65,7 +67,7 @@ def get_rhythmic_info_as_proportion_of_range(
     range_start: Tuple[int, Fraction],
     range_end: Tuple[int, Fraction],
     measures: pd.DataFrame,
-    range_len: Fraction = None
+    range_len: Fraction = None,
 ) -> Tuple[Fraction, Fraction, Fraction]:
     """
     Get a note's onset, offset, and duration as a proportion of the given range.
@@ -101,14 +103,19 @@ def get_rhythmic_info_as_proportion_of_range(
     if range_len is None:
         range_len = get_range_length(range_start, range_end, measures)
 
-    duration = note.duration / range_len
+    duration = note["duration"] / range_len
 
-    onset_to_start = abs(note.mc - range_start[0])
-    onset_to_end = abs(note.mc - range_end[0])
+    onset_to_start = abs(note["mc"] - range_start[0])
+    onset_to_end = abs(note["mc"] - range_end[0])
     if onset_to_start <= onset_to_end:
-        onset = get_range_length(range_start, (note.mc, note.onset), measures) / range_len
+        onset = (
+            get_range_length(range_start, (note["mc"], note[NOTE_ONSET_BEAT]), measures) / range_len
+        )
     else:
-        onset = 1 - get_range_length((note.mc, note.onset), range_end, measures) / range_len
+        onset = (
+            1
+            - get_range_length((note["mc"], note[NOTE_ONSET_BEAT]), range_end, measures) / range_len
+        )
     offset = onset + duration
 
     return onset, offset, duration
@@ -134,7 +141,7 @@ def get_metrical_level_lengths(timesig: str) -> Tuple[Fraction, Fraction, Fracti
     sub_beat_length : Fraction
         The length of a sub_beat in the given time signature, where 1 is a whole note.
     """
-    numerator, denominator = [int(val) for val in timesig.split('/')]
+    numerator, denominator = [int(val) for val in timesig.split("/")]
 
     if (numerator > 3) and (numerator % 3 == 0):
         # Compound meter
@@ -170,7 +177,7 @@ def get_metrical_level(beat: Fraction, measure: pd.Series) -> int:
         1: sub-beat
         0: lower
     """
-    measure_length, beat_length, sub_beat_length = get_metrical_level_lengths(measure.timesig)
+    measure_length, beat_length, sub_beat_length = get_metrical_level_lengths(measure["timesig"])
 
     if beat % measure_length == 0:
         return 3

@@ -7,6 +7,7 @@ from typing import DefaultDict, Dict, Tuple, Union
 import numpy as np
 import pandas as pd
 
+from harmonic_inference.data.corpus_reading import CHORD_ONSET_BEAT, MEASURE_OFFSET
 from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, KeyMode, PitchType
 from harmonic_inference.data.key import Key
 from harmonic_inference.utils.harmonic_constants import (
@@ -504,8 +505,8 @@ class Chord:
             levels = [None, None]
             for i, (mc, beat) in enumerate(
                 zip(
-                    [chord_row.mc, chord_row.mc_next],
-                    [chord_row.onset, chord_row.onset_next],
+                    [chord_row["mc"], chord_row["mc_next"]],
+                    [chord_row[CHORD_ONSET_BEAT], chord_row["onset_next"]],
                 )
             ):
                 measure = measures_df.loc[measures_df["mc"] == mc].squeeze()
@@ -526,7 +527,7 @@ class Chord:
             onset, offset = positions
             onset_level, offset_level = levels
 
-            duration = chord_row.duration
+            duration = chord_row["duration"]
 
             return Chord(
                 root,
@@ -660,8 +661,10 @@ class Chord:
             onset_measure = measures_df.loc[measures_df["start"] <= chord_row["on"]].iloc[-1]
             offset_measure = measures_df.loc[measures_df["start"] <= chord_row["off"]].iloc[-1]
 
-            onset_beat = onset_measure["offset"] + chord_row["on"] - onset_measure["start"]
-            offset_beat = offset_measure["offset"] + chord_row["off"] - offset_measure["start"]
+            onset_beat = onset_measure[MEASURE_OFFSET] + chord_row["on"] - onset_measure["start"]
+            offset_beat = (
+                offset_measure[MEASURE_OFFSET] + chord_row["off"] - offset_measure["start"]
+            )
 
             levels = [None, None]
 

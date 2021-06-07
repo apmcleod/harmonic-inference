@@ -180,6 +180,10 @@ STRING_TO_CHORD_TYPE = {
     "%7": ChordType.HALF_DIM7,
     "+7": ChordType.AUG_MIN7,
     "+M7": ChordType.AUG_MAJ7,
+    # TODO: Fix these
+    "It": ChordType.MAJOR,
+    "Ger": ChordType.MAJOR,
+    "Fr": ChordType.MAJOR,
 }
 
 
