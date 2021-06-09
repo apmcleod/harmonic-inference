@@ -8,7 +8,7 @@ import music21
 import numpy as np
 import pandas as pd
 
-from harmonic_inference.data.corpus_reading import MEASURE_OFFSET, NOTE_ONSET_BEAT
+from harmonic_inference.data.corpus_constants import MEASURE_OFFSET, NOTE_ONSET_BEAT
 from harmonic_inference.data.data_types import PitchType
 from harmonic_inference.utils.harmonic_constants import NUM_PITCHES, TPC_C
 from harmonic_inference.utils.harmonic_utils import get_pitch_from_string, get_pitch_string

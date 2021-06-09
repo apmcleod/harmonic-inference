@@ -6,7 +6,11 @@ from typing import List, Tuple
 import numpy as np
 import pandas as pd
 
-from harmonic_inference.data.corpus_reading import CHORD_ONSET_BEAT, MEASURE_OFFSET, NOTE_ONSET_BEAT
+from harmonic_inference.data.corpus_constants import (
+    CHORD_ONSET_BEAT,
+    MEASURE_OFFSET,
+    NOTE_ONSET_BEAT,
+)
 
 
 def remove_unmatched(dataframe: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFrame:
@@ -164,7 +168,7 @@ def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.
         right_on=["file_id", "mc"],
     )
     full_merge = full_merge.set_index(["file_id", "chord_id"])
-    chords = chords.assign(on_fixed=full_merge.onset - full_merge.offset)
+    chords = chords.assign(on_fixed=full_merge[CHORD_ONSET_BEAT] - full_merge[MEASURE_OFFSET])
 
     # In most cases, next is a simple shift
     chords = chords.assign(

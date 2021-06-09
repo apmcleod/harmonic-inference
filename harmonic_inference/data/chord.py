@@ -7,7 +7,7 @@ from typing import DefaultDict, Dict, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from harmonic_inference.data.corpus_reading import CHORD_ONSET_BEAT, MEASURE_OFFSET
+from harmonic_inference.data.corpus_constants import CHORD_ONSET_BEAT, MEASURE_OFFSET
 from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, KeyMode, PitchType
 from harmonic_inference.data.key import Key
 from harmonic_inference.utils.harmonic_constants import (

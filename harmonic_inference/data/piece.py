@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 import harmonic_inference.utils.rhythmic_utils as ru
 from harmonic_inference.data.chord import Chord
-from harmonic_inference.data.corpus_reading import MEASURE_OFFSET
+from harmonic_inference.data.corpus_constants import MEASURE_OFFSET
 from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, PieceType, PitchType
 from harmonic_inference.data.key import Key
 from harmonic_inference.data.note import Note

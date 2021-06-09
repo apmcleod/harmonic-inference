@@ -4,7 +4,7 @@ from typing import Tuple
 
 import pandas as pd
 
-from harmonic_inference.data.corpus_reading import MEASURE_OFFSET, NOTE_ONSET_BEAT
+from harmonic_inference.data.corpus_constants import MEASURE_OFFSET, NOTE_ONSET_BEAT
 
 
 def get_range_length(
