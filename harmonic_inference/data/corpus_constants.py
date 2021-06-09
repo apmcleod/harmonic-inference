@@ -1,6 +1,6 @@
 """Defines constants used for the DCML corpus tsv files."""
 from fractions import Fraction
-from typing import Iterable, Tuple
+from typing import Tuple
 
 import pandas as pd
 
@@ -11,18 +11,39 @@ NOTE_ONSET_BEAT = "mn_onset"
 
 # Helper functions to be used as converters, handling empty strings
 def str2inttuple(string: str) -> Tuple[int]:
+    """
+    Convert the given string (with ", " separating ints) into a tuple of integers.
+
+    Parameters
+    ----------
+    string : str
+        A string of the format "i1, i2, i3...".
+
+    Returns
+    -------
+    int_tuple : Tuple[int]
+        A tuple of the integers contained in the string. An empty string will return
+        an empty tuple.
+    """
     return tuple() if string == "" else tuple(int(s) for s in string.split(", "))
 
 
-def str2strtuple(string: str) -> Tuple[str]:
-    return tuple() if string == "" else tuple(string.split(", "))
-
-
-def iterable2str(iterable: Iterable) -> str:
-    return ", ".join(str(s) for s in iterable)
-
-
 def int2bool(s: str) -> bool:
+    """
+    Convert the given int string into a boolean. Useful for the error case which
+    returns pd.NA.
+
+    Parameters
+    ----------
+    s : str
+        A string of an integer, which represents a boolean ("0" or "1").
+
+    Returns
+    -------
+    boolean : bool
+        False if the string is "0", True if the string is some other integer.
+        pd.NA for an error.
+    """
     try:
         return bool(int(s))
     except Exception:
@@ -30,6 +51,19 @@ def int2bool(s: str) -> bool:
 
 
 def str2frac(s: str) -> Fraction:
+    """
+    Convert the given string into a Fraction. Useful for the error case which returns pd.NA.
+
+    Parameters
+    ----------
+    s : str
+        A string of a fraction.
+
+    Returns
+    -------
+    frac : Fraction
+        The given string converted to a fraction, or pd.NA on any error.
+    """
     try:
         return Fraction(s)
     except Exception:
