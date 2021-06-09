@@ -149,7 +149,7 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
                 ~valid_onsets,
                 ["file_id", "note_id", "mc", NOTE_ONSET_BEAT, MEASURE_OFFSET, "act_dur"],
             ]
-            logging.warning(
+            logging.debug(
                 f"{(~valid_onsets).sum()} notes have invalid onset times:\n{invalid_string}"
             )
         notes_df = notes_df.loc[valid_onsets.values]
@@ -172,7 +172,7 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
                 ~valid_onsets,
                 ["file_id", "chord_id", "mc", CHORD_ONSET_BEAT, MEASURE_OFFSET, "act_dur"],
             ]
-            logging.warning(
+            logging.debug(
                 f"{(~valid_onsets).sum()} chords have invalid onset times:\n{invalid_string}"
             )
         chords_df = chords_df.loc[valid_onsets.values]
@@ -195,9 +195,7 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
                 invalid_dur,
                 ["mc", CHORD_ONSET_BEAT, "mc_next", "onset_next", "duration"],
             ]
-            logging.warning(
-                f"{(invalid_dur).sum()} chords have invalid durations:\n{invalid_string}"
-            )
+            logging.debug(f"{(invalid_dur).sum()} chords have invalid durations:\n{invalid_string}")
         chords_df = chords_df.loc[~invalid_dur].copy()
 
     return files_df, measures_df, chords_df, notes_df
