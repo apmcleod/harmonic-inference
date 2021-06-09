@@ -497,6 +497,10 @@ class Chord:
             # Additional chord info
             chord_type = reduction[get_chord_type_from_string(chord_row["chord_type"])]
             inversion = get_chord_inversion(chord_row["figbass"]) if use_inversion else 0
+
+            # Bugfix for inversion too high (e.g., for augmented 6th chords)
+            inversion %= len(CHORD_PITCHES[pitch_type][chord_type])
+
             bass = get_bass_note(chord_type, root, inversion, pitch_type)
             assert 0 <= bass < NUM_PITCHES[pitch_type]
 
