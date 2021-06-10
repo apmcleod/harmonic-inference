@@ -193,7 +193,7 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
         with pd.option_context("display.max_rows", None, "display.max_columns", None):
             invalid_string = chords_df.loc[
                 invalid_dur,
-                ["mc", CHORD_ONSET_BEAT, "mc_next", "onset_next", "duration"],
+                ["mc", CHORD_ONSET_BEAT, "mc_next", f"{CHORD_ONSET_BEAT}_next", "duration"],
             ]
             logging.debug(f"{(invalid_dur).sum()} chords have invalid durations:\n{invalid_string}")
         chords_df = chords_df.loc[~invalid_dur].copy()

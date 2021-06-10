@@ -131,7 +131,7 @@ def remove_repeats(measures: pd.DataFrame, remove_unreachable: bool = True) -> p
 
 def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFrame:
     """
-    Add 'mc_next' (int), 'onset_next' (Fraction), and 'duration' (Fraction) columns to the given
+    Add 'mc_next' (int), 'mn_onset_next' (Fraction), and 'duration' (Fraction) columns to the given
     chords DataFrame, indicating the metrical position of the next chord as well as the duration
     for each chord. The last chord of each piece will be assigned 'mc_next' of the last measure
     of the piece, and 'onset_next' as the 'act_dur' of that measure. Its 'duration' will be
@@ -149,7 +149,7 @@ def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.
     Returns
     -------
     chords : pd.DataFrame
-        A copy of the given chords DataFrame, with 'mc_next' (int), 'onset_next' (Fraction),
+        A copy of the given chords DataFrame, with 'mc_next' (int), 'mn_onset_next' (Fraction),
         and 'duration' (Fraction) columns added.
     """
     if isinstance(measures.iloc[0].next, list) or isinstance(measures.iloc[0].next, tuple):
@@ -173,9 +173,9 @@ def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.
     # In most cases, next is a simple shift
     chords = chords.assign(
         mc_next=chords["mc"].shift(-1).astype("Int64"),
-        onset_next=chords[CHORD_ONSET_BEAT].shift(-1),
         on_next_fixed=chords["on_fixed"].shift(-1),
     )
+    chords.loc[:, f"{CHORD_ONSET_BEAT}_next"] = chords[CHORD_ONSET_BEAT].shift(-1)
 
     # For the last chord of each piece, it is more complicated
     last_chords = chords.loc[

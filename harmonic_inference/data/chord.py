@@ -510,7 +510,7 @@ class Chord:
             for i, (mc, beat) in enumerate(
                 zip(
                     [chord_row["mc"], chord_row["mc_next"]],
-                    [chord_row[CHORD_ONSET_BEAT], chord_row["onset_next"]],
+                    [chord_row[CHORD_ONSET_BEAT], chord_row[f"{CHORD_ONSET_BEAT}_next"]],
                 )
             ):
                 measure = measures_df.loc[measures_df["mc"] == mc].squeeze()
