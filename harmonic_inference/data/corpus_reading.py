@@ -92,20 +92,26 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
     """
     files_df = read_dump(Path(dir_path, "files.tsv"), index_col=0)
     measures_df = read_dump(Path(dir_path, "measures.tsv"))
-    chords_df = read_dump(Path(dir_path, "chords.tsv"), low_memory=False)
     notes_df = read_dump(Path(dir_path, "notes.tsv"))
+    try:
+        chords_df = read_dump(Path(dir_path, "chords.tsv"), low_memory=False)
+    except Exception:
+        # Enable loading with no annotations
+        chords_df = None
 
     if count is not None:
         files_df = files_df.iloc[:count]
         measures_df = measures_df.loc[files_df.index]
-        chords_df = chords_df.loc[files_df.index]
         notes_df = notes_df.loc[files_df.index]
+        if chords_df:
+            chords_df = chords_df.loc[files_df.index]
 
     # Bugfix for Couperin piece "next" error
     files_df = files_df.loc[~(files_df["file_name"] == "c11n08_Rondeau.tsv")]
     measures_df = measures_df.loc[files_df.index]
-    chords_df = chords_df.loc[files_df.index]
     notes_df = notes_df.loc[files_df.index]
+    if chords_df:
+        chords_df = chords_df.loc[files_df.index]
     # End bugfix
 
     # Incomplete column renaming
@@ -127,10 +133,11 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
 
     # Remove unmatched
     notes_df = cu.remove_unmatched(notes_df, measures_df)
-    chords_df = cu.remove_unmatched(chords_df, measures_df)
-    chords_df = chords_df.drop(
-        chords_df.loc[(chords_df.numeral == "@none") | chords_df.numeral.isnull()].index
-    )
+    if chords_df:
+        chords_df = cu.remove_unmatched(chords_df, measures_df)
+        chords_df = chords_df.drop(
+            chords_df.loc[(chords_df.numeral == "@none") | chords_df.numeral.isnull()].index
+        )
 
     # Remove notes with invalid onset times
     note_measures = pd.merge(
@@ -155,27 +162,28 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
         notes_df = notes_df.loc[valid_onsets.values]
 
     # Remove chords with invalid onset times
-    chord_measures = pd.merge(
-        chords_df.reset_index(),
-        measures_df.reset_index(),
-        how="left",
-        on=["file_id", "mc"],
-    )
+    if chords_df:
+        chord_measures = pd.merge(
+            chords_df.reset_index(),
+            measures_df.reset_index(),
+            how="left",
+            on=["file_id", "mc"],
+        )
 
-    valid_onsets = (chord_measures[MEASURE_OFFSET] <= chord_measures[CHORD_ONSET_BEAT]) & (
-        chord_measures[CHORD_ONSET_BEAT]
-        < chord_measures["act_dur"] + chord_measures[MEASURE_OFFSET]
-    )
-    if not valid_onsets.all():
-        with pd.option_context("display.max_rows", None, "display.max_columns", None):
-            invalid_string = chord_measures.loc[
-                ~valid_onsets,
-                ["file_id", "chord_id", "mc", CHORD_ONSET_BEAT, MEASURE_OFFSET, "act_dur"],
-            ]
-            logging.debug(
-                f"{(~valid_onsets).sum()} chords have invalid onset times:\n{invalid_string}"
-            )
-        chords_df = chords_df.loc[valid_onsets.values]
+        valid_onsets = (chord_measures[MEASURE_OFFSET] <= chord_measures[CHORD_ONSET_BEAT]) & (
+            chord_measures[CHORD_ONSET_BEAT]
+            < chord_measures["act_dur"] + chord_measures[MEASURE_OFFSET]
+        )
+        if not valid_onsets.all():
+            with pd.option_context("display.max_rows", None, "display.max_columns", None):
+                invalid_string = chord_measures.loc[
+                    ~valid_onsets,
+                    ["file_id", "chord_id", "mc", CHORD_ONSET_BEAT, MEASURE_OFFSET, "act_dur"],
+                ]
+                logging.debug(
+                    f"{(~valid_onsets).sum()} chords have invalid onset times:\n{invalid_string}"
+                )
+            chords_df = chords_df.loc[valid_onsets.values]
 
     # Add offsets
     if not all([column in notes_df.columns for column in ["offset_beat", "offset_mc"]]):
@@ -185,23 +193,31 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
     notes_df = cu.merge_ties(notes_df)
 
     # Add chord metrical info
-    chords_df = cu.add_chord_metrical_data(chords_df, measures_df)
+    if chords_df:
+        chords_df = cu.add_chord_metrical_data(chords_df, measures_df)
 
     # Remove chords with dur 0
-    invalid_dur = chords_df["duration"] <= 0
-    if invalid_dur.any():
-        with pd.option_context("display.max_rows", None, "display.max_columns", None):
-            invalid_string = chords_df.loc[
-                invalid_dur,
-                ["mc", CHORD_ONSET_BEAT, "mc_next", f"{CHORD_ONSET_BEAT}_next", "duration"],
-            ]
-            logging.debug(f"{(invalid_dur).sum()} chords have invalid durations:\n{invalid_string}")
-        chords_df = chords_df.loc[~invalid_dur].copy()
+    if chords_df:
+        invalid_dur = chords_df["duration"] <= 0
+        if invalid_dur.any():
+            with pd.option_context("display.max_rows", None, "display.max_columns", None):
+                invalid_string = chords_df.loc[
+                    invalid_dur,
+                    ["mc", CHORD_ONSET_BEAT, "mc_next", f"{CHORD_ONSET_BEAT}_next", "duration"],
+                ]
+                logging.debug(
+                    f"{(invalid_dur).sum()} chords have invalid durations:\n{invalid_string}"
+                )
+            chords_df = chords_df.loc[~invalid_dur].copy()
 
     return files_df, measures_df, chords_df, notes_df
 
 
-def aggregate_annotation_dfs(annotations_path: Union[Path, str], out_dir: Union[Path, str]):
+def aggregate_annotation_dfs(
+    annotations_path: Union[Path, str],
+    out_dir: Union[Path, str],
+    notes_only: bool = False,
+):
     """
     Aggregate all annotations from a corpus directory into 4 combined tsvs in an out directory.
     The resulting tsv will be: files.tsv, chords.tsv, notes.tsv, and measures.tsv.
@@ -213,6 +229,10 @@ def aggregate_annotation_dfs(annotations_path: Union[Path, str], out_dir: Union[
         annotations_path/*/{harmonies/notes/measures}/*.tsv
     out_dir : Union[Path, str]
         The directory to write the output tsvs into.
+    notes_only : bool
+        If True, the resulting aggregation will include pieces without annotations,
+        but which have a notes tsv entry. If False, only those with annotations (a harmonies
+        directory) will be included.
     """
     if isinstance(annotations_path, str):
         annotations_path = Path(annotations_path)
@@ -225,7 +245,15 @@ def aggregate_annotation_dfs(annotations_path: Union[Path, str], out_dir: Union[
     note_df_list = []
     measure_df_list = []
 
-    for file_string in tqdm(glob(str(Path(annotations_path, "*/harmonies/*.tsv")))):
+    chord_indexes = []
+    note_indexes = []
+    measure_indexes = []
+
+    dir_name = "notes" if notes_only else "harmonies"
+
+    for file_string in tqdm(
+        glob(str(Path(annotations_path, f"**/{dir_name}/*.tsv")), recursive=True)
+    ):
         file_path = Path(file_string)
         base_path = file_path.parent.parent
         corpus_name = base_path.name
@@ -233,18 +261,38 @@ def aggregate_annotation_dfs(annotations_path: Union[Path, str], out_dir: Union[
 
         try:
             chord_df = pd.read_csv(Path(base_path, "harmonies", file_name), dtype=str, sep="\t")
-            note_df = pd.read_csv(Path(base_path, "notes", file_name), dtype=str, sep="\t")
-            measure_df = pd.read_csv(Path(base_path, "measures", file_name), dtype=str, sep="\t")
+            chord_indexes.append(len(files_dict["file_name"]))
         except Exception:
-            print("Error parsing file " + file_name)
-            continue
+            logging.info("Error parsing harmonies for file %s", file_name)
+            chord_df = None
+
+        try:
+            note_df = pd.read_csv(Path(base_path, "notes", file_name), dtype=str, sep="\t")
+            note_indexes.append(len(files_dict["file_name"]))
+        except Exception:
+            logging.info("Error parsing notes for file %s", file_name)
+            note_df = None
+
+        try:
+            measure_df = pd.read_csv(Path(base_path, "measures", file_name), dtype=str, sep="\t")
+            measure_indexes.append(len(files_dict["file_name"]))
+        except Exception:
+            logging.info("Error parsing measures for file %s", file_name)
+            measure_df = None
 
         files_dict["corpus_name"].append(corpus_name)
         files_dict["file_name"].append(file_name)
 
-        chord_df_list.append(chord_df)
-        note_df_list.append(note_df)
-        measure_df_list.append(measure_df)
+        if chord_df is not None:
+            chord_df_list.append(chord_df)
+        if note_df is not None:
+            note_df_list.append(note_df)
+        if measure_df is not None:
+            measure_df_list.append(measure_df)
+
+    if not files_dict["file_name"]:
+        logging.warning("No files found to aggregate.")
+        return
 
     # Write out aggregated tsvs
     if not out_dir.exists():
@@ -253,13 +301,18 @@ def aggregate_annotation_dfs(annotations_path: Union[Path, str], out_dir: Union[
     files_df = pd.DataFrame(files_dict)
     files_df.to_csv(Path(out_dir, "files.tsv"), sep="\t")
 
-    chords_df = pd.concat(chord_df_list, keys=files_df.index, axis=0, names=["file_id", "chord_id"])
-    chords_df.to_csv(Path(out_dir, "chords.tsv"), sep="\t")
+    if chord_df_list:
+        chords_df = pd.concat(
+            chord_df_list, keys=chord_indexes, axis=0, names=["file_id", "chord_id"]
+        )
+        chords_df.to_csv(Path(out_dir, "chords.tsv"), sep="\t")
 
-    notes_df = pd.concat(note_df_list, keys=files_df.index, axis=0, names=["file_id", "note_id"])
-    notes_df.to_csv(Path(out_dir, "notes.tsv"), sep="\t")
+    if note_df_list:
+        notes_df = pd.concat(note_df_list, keys=note_indexes, axis=0, names=["file_id", "note_id"])
+        notes_df.to_csv(Path(out_dir, "notes.tsv"), sep="\t")
 
-    measures_df = pd.concat(
-        measure_df_list, keys=list(files_df.index), axis=0, names=["file_id", "measure_id"]
-    )
-    measures_df.to_csv(Path(out_dir, "measures.tsv"), sep="\t")
+    if measure_df_list:
+        measures_df = pd.concat(
+            measure_df_list, keys=measure_indexes, axis=0, names=["file_id", "measure_id"]
+        )
+        measures_df.to_csv(Path(out_dir, "measures.tsv"), sep="\t")
