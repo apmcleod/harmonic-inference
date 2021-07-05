@@ -449,7 +449,7 @@ class HarmonicInferenceModel:
         change_probs : List[float]
             A List of the chord change probability on each input of the given Piece.
         """
-        ctm_dataset = ds.ChordTransitionDataset([self.current_piece])
+        ctm_dataset = ds.ChordTransitionDataset([self.current_piece], dummy_targets=True)
         ctm_loader = DataLoader(
             ctm_dataset,
             batch_size=ds.ChordTransitionDataset.valid_batch_size,

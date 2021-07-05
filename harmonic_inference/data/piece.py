@@ -426,7 +426,7 @@ class ScorePiece(Piece):
             fake_last_note = Note(
                 0,
                 0,
-                self.chords[-1].offset if self.chords else self.notes[-1].offset,
+                self.chords[-1].offset if self.chords else max(note.offset for note in self.notes),
                 0,
                 Fraction(0),
                 (0, Fraction(0)),
@@ -474,7 +474,9 @@ class ScorePiece(Piece):
 
         chords = self.get_chords() if use_real_chords else [None] * len(ranges)
 
-        last_offset = self.chords[-1].offset
+        last_offset = (
+            self.chords[-1].offset if self.chords else max(note.offset for note in self.notes)
+        )
         duration_cache = self.get_duration_cache()
 
         chord_note_inputs = []

@@ -12,7 +12,6 @@ import torch
 from tqdm import tqdm
 
 import harmonic_inference.utils.eval_utils as eu
-from harmonic_inference.data.data_types import PitchType
 from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import (
     MODEL_CLASSES,
@@ -101,31 +100,11 @@ def annotate(
             if logging.getLogger().isEnabledFor(logging.DEBUG):
                 eu.log_state(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)
 
-            labels_df = eu.get_label_df(
+            annotation_df = eu.get_annotation_df(
                 state,
                 piece,
                 model.CHORD_OUTPUT_TYPE,
                 model.KEY_OUTPUT_TYPE,
-            )
-
-            # Write outputs tsv
-            results_df = eu.get_results_df(
-                piece,
-                state,
-                model.CHORD_OUTPUT_TYPE,
-                model.KEY_OUTPUT_TYPE,
-                PitchType.TPC,
-                PitchType.TPC,
-            )
-
-            # Write MIDI outputs for SPS chord-eval testing
-            results_midi_df = eu.get_results_df(
-                piece,
-                state,
-                model.CHORD_OUTPUT_TYPE,
-                model.KEY_OUTPUT_TYPE,
-                PitchType.MIDI,
-                PitchType.MIDI,
             )
 
             if piece.name is not None and output_tsv_dir is not None:
@@ -134,33 +113,11 @@ def annotate(
 
                 try:
                     output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
-                    results_tsv_path = output_tsv_path.parent / (
-                        output_tsv_path.name[:-4] + "_results.tsv"
-                    )
-                    results_df.to_csv(results_tsv_path, sep="\t")
-                    logging.info("Results TSV written out to %s", results_tsv_path)
-                except Exception:
-                    logging.exception("Error writing to csv %s", results_tsv_path)
-                    logging.debug(results_df)
-
-                try:
-                    output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
-                    results_tsv_path = output_tsv_path.parent / (
-                        output_tsv_path.name[:-4] + "_results_midi.tsv"
-                    )
-                    results_midi_df.to_csv(results_tsv_path, sep="\t")
-                    logging.info("MIDI results TSV written out to %s", results_tsv_path)
-                except Exception:
-                    logging.exception("Error writing to csv %s", results_tsv_path)
-                    logging.debug(results_midi_df)
-
-                try:
-                    output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
-                    labels_df.to_csv(output_tsv_path, sep="\t")
+                    annotation_df.to_csv(output_tsv_path, sep="\t")
                     logging.info("Labels TSV written out to %s", output_tsv_path)
                 except Exception:
                     logging.exception("Error writing to csv %s", output_tsv_path)
-                    logging.debug(labels_df)
+                    logging.debug(annotation_df)
                 else:
                     if annotations_base_dir is not None:
                         try:
@@ -180,7 +137,7 @@ def annotate(
                             )
 
             else:
-                logging.debug(labels_df)
+                logging.debug(annotation_df)
 
 
 if __name__ == "__main__":

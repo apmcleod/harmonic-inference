@@ -313,7 +313,9 @@ class ChordTransitionDataset(HarmonicDataset):
     valid_batch_size = 64
     chunk_size = 64
 
-    def __init__(self, pieces: List[Piece], transform: Callable = None):
+    def __init__(
+        self, pieces: List[Piece], transform: Callable = None, dummy_targets: bool = False
+    ):
         """
         Create a new Chord Transition Dataset from the given pieces.
 
@@ -323,6 +325,8 @@ class ChordTransitionDataset(HarmonicDataset):
             The pieces to get the data from.
         transform : Callable
             A function to transform numpy arrays returned by __getitem__ by default.
+        dummy_targets : boolean
+            True if the targets will be ignored. False to load targets from the given pieces.
         """
         super().__init__(transform=transform)
         self.inputs = [
@@ -340,10 +344,11 @@ class ChordTransitionDataset(HarmonicDataset):
         ]
 
         self.targets = [np.zeros(len(piece_input), dtype=int) for piece_input in self.inputs]
-        for piece, target in zip(pieces, self.targets):
-            target[piece.get_chord_change_indices()] = 1
-            target[0] = -100
-            target[np.roll(piece.get_duration_cache() == 0, 1)] = -100
+        if not dummy_targets:
+            for piece, target in zip(pieces, self.targets):
+                target[piece.get_chord_change_indices()] = 1
+                target[0] = -100
+                target[np.roll(piece.get_duration_cache() == 0, 1)] = -100
 
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
         self.target_lengths = np.array([len(target) for target in self.targets])
