@@ -272,6 +272,9 @@ class Piece:
         assert stop is None or stop >= start, "stop must be None or >= start"
 
         chords = self.get_chords()
+        if not chords:
+            return None
+
         chord_change_indices = self.get_chord_change_indices()
 
         start_index = bisect.bisect_left(chord_change_indices, start)
@@ -350,6 +353,9 @@ class Piece:
             The indices (into the input list) at which there is a key change.
         """
         chord_changes = self.get_chord_change_indices()
+        if not chord_changes:
+            return None
+
         return [chord_changes[i] for i in self.get_key_change_indices()]
 
     def get_keys(self) -> List[Key]:
@@ -418,7 +424,14 @@ class ScorePiece(Piece):
     def get_duration_cache(self):
         if self.duration_cache is None:
             fake_last_note = Note(
-                0, 0, self.chords[-1].offset, 0, Fraction(0), (0, Fraction(0)), 0, PitchType.TPC
+                0,
+                0,
+                self.chords[-1].offset if self.chords else self.notes[-1].offset,
+                0,
+                Fraction(0),
+                (0, Fraction(0)),
+                0,
+                PitchType.TPC,
             )
 
             self.duration_cache = np.array(
@@ -614,6 +627,19 @@ def get_score_piece_from_data_frames(
     notes, note_ilocs = np.hsplit(notes_list, 2)
     notes = np.squeeze(notes)
     note_ilocs = np.squeeze(note_ilocs).astype(int)
+
+    if not chords_df:
+        # Quick check for pieces without ground truth chords
+        return ScorePiece(
+            measures_df,
+            notes,
+            None,
+            None,
+            None,
+            None,
+            None,
+            name=name,
+        )
 
     chords_list = np.array(
         [

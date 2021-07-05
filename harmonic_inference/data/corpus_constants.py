@@ -25,7 +25,10 @@ def str2inttuple(string: str) -> Tuple[int]:
         A tuple of the integers contained in the string. An empty string will return
         an empty tuple.
     """
-    return tuple() if string == "" else tuple(int(s) for s in string.split(", "))
+    try:
+        return tuple() if string == "" else tuple(int(s) for s in string.split(", "))
+    except Exception:
+        return tuple()
 
 
 def int2bool(s: str) -> bool:

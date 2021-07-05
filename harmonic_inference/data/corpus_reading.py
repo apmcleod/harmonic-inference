@@ -119,9 +119,10 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
         measures_df[MEASURE_OFFSET].fillna(measures_df["offset"], inplace=True)
         measures_df = measures_df.drop("offset", axis=1)
 
-    if "onset" in chords_df.columns:
-        chords_df[CHORD_ONSET_BEAT].fillna(chords_df["onset"], inplace=True)
-        chords_df = chords_df.drop("onset", axis=1)
+    if chords_df:
+        if "onset" in chords_df.columns:
+            chords_df[CHORD_ONSET_BEAT].fillna(chords_df["onset"], inplace=True)
+            chords_df = chords_df.drop("onset", axis=1)
 
     if "onset" in notes_df.columns:
         notes_df[NOTE_ONSET_BEAT].fillna(notes_df["onset"], inplace=True)
