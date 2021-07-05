@@ -539,8 +539,8 @@ def evaluate_chords_and_keys_jointly(
 
 
 def get_annotation_df(
-    piece: Piece,
     state: State,
+    piece: Piece,
     root_type: PitchType,
     tonic_type: PitchType,
 ) -> pd.DataFrame:
@@ -549,10 +549,10 @@ def get_annotation_df(
 
     Parameters
     ----------
-    piece : Piece
-        The piece which was used as input when creating the given state.
     state : State
         The state containing harmony annotations.
+    piece : Piece
+        The piece which was used as input when creating the given state.
     root_type : PitchType
         The pitch type to use for chord root labels.
     tonic_type : PitchType
@@ -633,10 +633,10 @@ def get_label_df(
 
     Parameters
     ----------
-    piece : Piece
-        The piece, containing the ground truth harmonic structure.
     state : State
         The state, containing the estimated harmonic structure.
+    piece : Piece
+        The piece, containing the ground truth harmonic structure.
     root_type : PitchType
         The pitch type used for chord roots.
     tonic_type : PitchType
