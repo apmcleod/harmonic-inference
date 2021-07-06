@@ -243,9 +243,15 @@ class Note:
                     range_len=chord_duration,
                 )
             else:
-                onset = note_onset / chord_duration
-                duration = self.duration / chord_duration
-                offset = onset + duration
+                try:
+                    onset = note_onset / chord_duration
+                    duration = self.duration / chord_duration
+                    offset = onset + duration
+                except Exception:
+                    # Bugfix for chord duration 0, due to an error in the TSVs
+                    onset = Fraction(1)
+                    duration = Fraction(1)
+                    offset = Fraction(1)
             metrical = np.array([onset, offset, duration], dtype=np.float16)
             vectors.append(metrical)
         else:

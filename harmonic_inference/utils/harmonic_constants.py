@@ -180,14 +180,15 @@ STRING_TO_CHORD_TYPE = {
     "%7": ChordType.HALF_DIM7,
     "+7": ChordType.AUG_MIN7,
     "+M7": ChordType.AUG_MAJ7,
-    # TODO: Fix these
-    "It": ChordType.MAJOR,
-    "Ger": ChordType.MAJOR,
-    "Fr": ChordType.MAJOR,
 }
 
 
 CHORD_TYPE_TO_STRING = {chord_type: string for string, chord_type in STRING_TO_CHORD_TYPE.items()}
+
+# TODO: Fix these
+STRING_TO_CHORD_TYPE["It"] = ChordType.MAJOR
+STRING_TO_CHORD_TYPE["Ger"] = ChordType.MAJOR
+STRING_TO_CHORD_TYPE["Fr"] = ChordType.MAJOR
 
 
 FIGBASS_INVERSIONS = {"7": 0, "6": 1, "65": 1, "43": 2, "64": 2, "2": 3}
