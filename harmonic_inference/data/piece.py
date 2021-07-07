@@ -630,7 +630,7 @@ def get_score_piece_from_data_frames(
     notes = np.squeeze(notes)
     note_ilocs = np.squeeze(note_ilocs).astype(int)
 
-    if not chords_df:
+    if chords_df is None:
         # Quick check for pieces without ground truth chords
         return ScorePiece(
             measures_df,

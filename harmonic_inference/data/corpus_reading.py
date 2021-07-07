@@ -103,15 +103,15 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
         files_df = files_df.iloc[:count]
         measures_df = measures_df.loc[files_df.index]
         notes_df = notes_df.loc[files_df.index]
-        if chords_df:
+        if chords_df is not None:
             chords_df = chords_df.loc[files_df.index]
 
     # Bugfix for Couperin piece "next" error
     files_df = files_df.loc[~(files_df["file_name"] == "c11n08_Rondeau.tsv")]
     measures_df = measures_df.loc[files_df.index]
     notes_df = notes_df.loc[files_df.index]
-    if chords_df:
-        chords_df = chords_df.loc[files_df.index]
+    if chords_df is not None:
+        chords_df = chords_df.loc[chords_df.index.get_level_values(0).isin(files_df.index)]
     # End bugfix
 
     # Incomplete column renaming
@@ -119,7 +119,7 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
         measures_df[MEASURE_OFFSET].fillna(measures_df["offset"], inplace=True)
         measures_df = measures_df.drop("offset", axis=1)
 
-    if chords_df:
+    if chords_df is not None:
         if "onset" in chords_df.columns:
             chords_df[CHORD_ONSET_BEAT].fillna(chords_df["onset"], inplace=True)
             chords_df = chords_df.drop("onset", axis=1)
@@ -134,7 +134,7 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
 
     # Remove unmatched
     notes_df = cu.remove_unmatched(notes_df, measures_df)
-    if chords_df:
+    if chords_df is not None:
         chords_df = cu.remove_unmatched(chords_df, measures_df)
         chords_df = chords_df.drop(
             chords_df.loc[(chords_df.numeral == "@none") | chords_df.numeral.isnull()].index
@@ -163,7 +163,7 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
         notes_df = notes_df.loc[valid_onsets.values]
 
     # Remove chords with invalid onset times
-    if chords_df:
+    if chords_df is not None:
         chord_measures = pd.merge(
             chords_df.reset_index(),
             measures_df.reset_index(),
@@ -194,11 +194,11 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
     notes_df = cu.merge_ties(notes_df)
 
     # Add chord metrical info
-    if chords_df:
+    if chords_df is not None:
         chords_df = cu.add_chord_metrical_data(chords_df, measures_df)
 
     # Remove chords with dur 0
-    if chords_df:
+    if chords_df is not None:
         invalid_dur = chords_df["duration"] <= 0
         if invalid_dur.any():
             with pd.option_context("display.max_rows", None, "display.max_columns", None):
