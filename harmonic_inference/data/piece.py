@@ -582,6 +582,7 @@ def get_score_piece_from_data_frames(
     use_inversions: bool = True,
     use_relative: bool = True,
     name: str = None,
+    use_suspensions: bool = False,
 ) -> ScorePiece:
     """
     Create a ScorePiece object from the given 3 pandas DataFrames.
@@ -604,6 +605,9 @@ def get_score_piece_from_data_frames(
         within the annotated local key.
     name : str
         A string identifier for this piece.
+    use_suspensions : bool
+        False to treat consecutive chords which differ only by altered tones as the same chord
+        by merging them. True to keep them separate.
 
     Returns
     -------
@@ -666,7 +670,13 @@ def get_score_piece_from_data_frames(
     chord_ilocs = np.squeeze(chord_ilocs).astype(int)
 
     # Remove accidentally repeated chords
-    non_repeated_mask = get_reduction_mask(chords_list, kwargs={"use_inversion": use_inversions})
+    non_repeated_mask = get_reduction_mask(
+        chords_list,
+        kwargs={
+            "use_inversion": use_inversions,
+            "use_suspension": use_suspensions,
+        },
+    )
     chords = []
     for chord, mask in zip(chords_list, non_repeated_mask):
         if mask:

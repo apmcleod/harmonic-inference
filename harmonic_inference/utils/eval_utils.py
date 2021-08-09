@@ -7,6 +7,7 @@ from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
+from ms3 import Parse
 
 import harmonic_inference.utils.harmonic_constants as hc
 import harmonic_inference.utils.harmonic_utils as hu
@@ -19,7 +20,6 @@ from harmonic_inference.data.data_types import (
 )
 from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import State
-from ms3 import Parse
 
 
 def get_results_df(
@@ -139,6 +139,7 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
             - chord_root_midi
             - chord_type
             - chord_inversion
+            - chord_suspension
             - key_tonic_tpc
             - key_tonic_midi
             - key_mode
@@ -149,10 +150,12 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
     chords = piece.get_chords()
     chord_changes = piece.get_chord_change_indices()
     chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    chord_suspensions = np.full(len(piece.get_inputs()), "")
     for chord, start, end in zip(chords, chord_changes, chord_changes[1:]):
         chord_labels[start:end] = chord.get_one_hot_index(
             relative=False, use_inversion=True, pad=False
         )
+        chord_suspensions[start:end] = "" if chord.suspension is None else chord.suspension
     chord_labels[chord_changes[-1] :] = chords[-1].get_one_hot_index(
         relative=False, use_inversion=True, pad=False
     )
@@ -171,10 +174,8 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
         slice(len(hu.get_key_label_list(PitchType.TPC))), PitchType.TPC
     )
 
-    for duration, chord_label, key_label in zip(
-        piece.get_duration_cache(),
-        chord_labels,
-        key_labels,
+    for duration, chord_label, key_label, suspension in zip(
+        piece.get_duration_cache(), chord_labels, key_labels, chord_suspensions
     ):
         if duration == 0:
             continue
@@ -195,6 +196,7 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
                 "chord_root_midi": root_midi,
                 "chord_type": chord_type,
                 "chord_inversion": inversion,
+                "chord_suspension": suspension,
                 "key_tonic_tpc": tonic_tpc - hc.TPC_C + tpc_c,
                 "key_tonic_midi": tonic_midi,
                 "key_mode": mode,

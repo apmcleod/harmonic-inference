@@ -53,6 +53,7 @@ class Chord:
         offset_level: int,
         duration: Union[float, Fraction],
         pitch_type: PitchType,
+        suspension: str = None,
     ):
         """
         Create a new musical chord object.
@@ -92,6 +93,8 @@ class Chord:
         pitch_type : PitchType
             The PitchType in which this chord's root and bass note are stored. If this is TPC, the
             values can be later converted into MIDI, but not vice versa.
+        suspension : str
+            The suspension associated with this chord, if any.
         """
         self.root = root
         self.bass = bass
@@ -105,6 +108,7 @@ class Chord:
         self.offset_level = offset_level
         self.duration = duration
         self.pitch_type = pitch_type
+        self.suspension = suspension
 
         self.params = inspect.getfullargspec(Chord.__init__).args[1:]
 
@@ -320,7 +324,9 @@ class Chord:
 
         return np.concatenate(vectors).astype(dtype=np.float16)
 
-    def is_repeated(self, other: "Chord", use_inversion: bool = True) -> bool:
+    def is_repeated(
+        self, other: "Chord", use_inversion: bool = True, use_suspension: bool = False
+    ) -> bool:
         """
         Detect if a given chord can be regarded as a repeat of this one in terms of root and
         chord_type, plus optionally inversion.
@@ -331,6 +337,8 @@ class Chord:
             The other chord to check for repeat.
         use_inversion : bool
             True to take inversions into account. False otherwise.
+        use_suspension : bool
+            True to take suspensions into account. False otherwise.
 
         Returns
         -------
@@ -343,6 +351,8 @@ class Chord:
         attr_names = ["pitch_type", "root", "chord_type"]
         if use_inversion:
             attr_names.append("inversion")
+        if use_suspension:
+            attr_names.append("suspension")
 
         for attr_name in attr_names:
             if getattr(self, attr_name) != getattr(other, attr_name):
@@ -447,6 +457,7 @@ class Chord:
                 'mc_next' (int): The chord's offset measure.
                 'onset_next' (Fraction): The chord's offset beat, in whole notes.
                 'duration' (Fraction): The chord's duration, in whole notes.
+                'changes' (str): Any suspensions or altered tones in this chord.
         measures_df : pd.DataFrame
             A pd.DataFrame of the measures in the piece of the chord. It is used to get metrical
             levels of the chord's onset and offset. Must have at least the columns:
@@ -546,6 +557,7 @@ class Chord:
                 offset_level,
                 duration,
                 pitch_type,
+                suspension=chord_row["changes"],
             )
 
         except Exception as exception:
