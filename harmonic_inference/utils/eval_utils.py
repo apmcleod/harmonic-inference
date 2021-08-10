@@ -139,7 +139,8 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
             - chord_root_midi
             - chord_type
             - chord_inversion
-            - chord_suspension
+            - chord_suspension_midi
+            - chord_suspension_tpc
             - key_tonic_tpc
             - key_tonic_midi
             - key_mode
@@ -150,12 +151,58 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
     chords = piece.get_chords()
     chord_changes = piece.get_chord_change_indices()
     chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    chord_suspensions = np.full(len(piece.get_inputs()), "")
+    chord_suspensions_midi = np.full(len(piece.get_inputs()), "")
+    chord_suspensions_tpc = np.full(len(piece.get_inputs()), "")
     for chord, start, end in zip(chords, chord_changes, chord_changes[1:]):
         chord_labels[start:end] = chord.get_one_hot_index(
             relative=False, use_inversion=True, pad=False
         )
-        chord_suspensions[start:end] = "" if chord.suspension is None else chord.suspension
+
+        if chord.suspension is not None:
+            change_mapping = hu.get_added_and_removed_pitches(
+                chord.root,
+                chord.chord_type,
+                chord.suspension,
+                chord.key_tonic,
+                chord.key_mode,
+            )
+
+            mapping_midi = {}
+            mapping_tpc = {}
+            for orig, new in change_mapping.items():
+                if orig == "":
+                    orig_midi = ""
+                    orig_tpc = ""
+                else:
+                    orig_midi = str(
+                        hu.get_pitch_from_string(
+                            hu.get_pitch_string(int(orig), PitchType.TPC), PitchType.MIDI
+                        )
+                    )
+                    orig_tpc = str(int(orig) - hc.TPC_C + tpc_c)
+
+                prefix = ""
+                if new[0] == "+":
+                    prefix = "+"
+                    new = new[1:]
+
+                new_midi = prefix + str(
+                    hu.get_pitch_from_string(
+                        hu.get_pitch_string(int(new), PitchType.TPC), PitchType.MIDI
+                    )
+                )
+                new_tpc = prefix + str(int(new) - hc.TPC_C + tpc_c)
+
+                mapping_midi[orig_midi] = new_midi
+                mapping_tpc[orig_tpc] = new_tpc
+
+            chord_suspensions_tpc[start:end] = ";".join(
+                f"{orig}:{new}" for orig, new in mapping_tpc.items()
+            )
+            chord_suspensions_midi[start:end] = ";".join(
+                f"{orig}:{new}" for orig, new in mapping_midi.items()
+            )
+
     chord_labels[chord_changes[-1] :] = chords[-1].get_one_hot_index(
         relative=False, use_inversion=True, pad=False
     )
@@ -174,8 +221,12 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
         slice(len(hu.get_key_label_list(PitchType.TPC))), PitchType.TPC
     )
 
-    for duration, chord_label, key_label, suspension in zip(
-        piece.get_duration_cache(), chord_labels, key_labels, chord_suspensions
+    for duration, chord_label, key_label, suspension_tpc, suspension_midi in zip(
+        piece.get_duration_cache(),
+        chord_labels,
+        key_labels,
+        chord_suspensions_tpc,
+        chord_suspensions_midi,
     ):
         if duration == 0:
             continue
@@ -196,7 +247,8 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
                 "chord_root_midi": root_midi,
                 "chord_type": chord_type,
                 "chord_inversion": inversion,
-                "chord_suspension": suspension,
+                "chord_suspension_tpc": suspension_tpc,
+                "chord_suspension_midi": suspension_midi,
                 "key_tonic_tpc": tonic_tpc - hc.TPC_C + tpc_c,
                 "key_tonic_midi": tonic_midi,
                 "key_mode": mode,
