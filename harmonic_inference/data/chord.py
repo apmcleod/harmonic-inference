@@ -544,6 +544,8 @@ class Chord:
 
             duration = chord_row["duration"]
 
+            suspension = chord_row["changes"] if not pd.isna(chord_row["changes"]) else None
+
             return Chord(
                 root,
                 bass,
@@ -557,7 +559,7 @@ class Chord:
                 offset_level,
                 duration,
                 pitch_type,
-                suspension=chord_row["changes"],
+                suspension=suspension,
             )
 
         except Exception as exception:

@@ -3,7 +3,7 @@ import logging
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Union
+from typing import Dict, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -11,6 +11,7 @@ from ms3 import Parse
 
 import harmonic_inference.utils.harmonic_constants as hc
 import harmonic_inference.utils.harmonic_utils as hu
+from harmonic_inference.data.chord import Chord
 from harmonic_inference.data.data_types import (
     NO_REDUCTION,
     TRIAD_REDUCTION,
@@ -146,6 +147,70 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
             - key_mode
             - duration
     """
+
+    def get_suspension_strings(chord: Chord) -> Tuple[str, str]:
+        """
+        Get the tpc and midi strings for the given chord's suspension and changes.
+
+        Parameters
+        ----------
+        chord : Chord
+            The chord whose string to return.
+
+        Returns
+        -------
+        tpc_string : str
+            A string representing the mapping of altered pitches in the given chord.
+            Each altered pitch is represented as "orig:new", where orig is the pitch in the default
+            chord voicing, and "new" is the altered pitch that is actually present. For added
+            pitches, "orig" is the empty string. "new" can be prefixed with a "+", in which
+            case this pitch is present in an upper octave. Pitches are represented as TPC,
+            and multiple alterations are separated by semicolons.
+        midi_string : str
+            The same format as tpc_string, but using a MIDI pitch representation.
+        """
+        if chord.suspension is None:
+            return None
+
+        change_mapping = hu.get_added_and_removed_pitches(
+            chord.root,
+            chord.chord_type,
+            chord.suspension,
+            chord.key_tonic,
+            chord.key_mode,
+        )
+
+        mappings_midi = []
+        mappings_tpc = []
+        for orig, new in change_mapping.items():
+            if orig == "":
+                orig_midi = ""
+                orig_tpc = ""
+            else:
+                orig_midi = str(
+                    hu.get_pitch_from_string(
+                        hu.get_pitch_string(int(orig), PitchType.TPC), PitchType.MIDI
+                    )
+                )
+                orig_tpc = str(int(orig) - hc.TPC_C + tpc_c)
+
+            prefix = ""
+            if new[0] == "+":
+                prefix = "+"
+                new = new[1:]
+
+            new_midi = prefix + str(
+                hu.get_pitch_from_string(
+                    hu.get_pitch_string(int(new), PitchType.TPC), PitchType.MIDI
+                )
+            )
+            new_tpc = prefix + str(int(new) - hc.TPC_C + tpc_c)
+
+            mappings_midi.append(f"{orig_midi}:{new_midi}")
+            mappings_tpc.append(f"{orig_tpc}:{new_tpc}")
+
+        return ";".join(mappings_tpc), ";".join(mappings_midi)
+
     labels_list = []
 
     chords = piece.get_chords()
@@ -158,54 +223,19 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
             relative=False, use_inversion=True, pad=False
         )
 
-        if chord.suspension is not None:
-            change_mapping = hu.get_added_and_removed_pitches(
-                chord.root,
-                chord.chord_type,
-                chord.suspension,
-                chord.key_tonic,
-                chord.key_mode,
-            )
+        tpc_string, midi_string = get_suspension_strings(chord)
 
-            mapping_midi = {}
-            mapping_tpc = {}
-            for orig, new in change_mapping.items():
-                if orig == "":
-                    orig_midi = ""
-                    orig_tpc = ""
-                else:
-                    orig_midi = str(
-                        hu.get_pitch_from_string(
-                            hu.get_pitch_string(int(orig), PitchType.TPC), PitchType.MIDI
-                        )
-                    )
-                    orig_tpc = str(int(orig) - hc.TPC_C + tpc_c)
-
-                prefix = ""
-                if new[0] == "+":
-                    prefix = "+"
-                    new = new[1:]
-
-                new_midi = prefix + str(
-                    hu.get_pitch_from_string(
-                        hu.get_pitch_string(int(new), PitchType.TPC), PitchType.MIDI
-                    )
-                )
-                new_tpc = prefix + str(int(new) - hc.TPC_C + tpc_c)
-
-                mapping_midi[orig_midi] = new_midi
-                mapping_tpc[orig_tpc] = new_tpc
-
-            chord_suspensions_tpc[start:end] = ";".join(
-                f"{orig}:{new}" for orig, new in mapping_tpc.items()
-            )
-            chord_suspensions_midi[start:end] = ";".join(
-                f"{orig}:{new}" for orig, new in mapping_midi.items()
-            )
+        chord_suspensions_tpc[start:end] = tpc_string
+        chord_suspensions_midi[start:end] = midi_string
 
     chord_labels[chord_changes[-1] :] = chords[-1].get_one_hot_index(
         relative=False, use_inversion=True, pad=False
     )
+
+    tpc_string, midi_string = get_suspension_strings(chords[-1])
+
+    chord_suspensions_tpc[chord_changes[-1] :] = tpc_string
+    chord_suspensions_midi[chord_changes[-1] :] = midi_string
 
     keys = piece.get_keys()
     key_changes = piece.get_key_change_input_indices()

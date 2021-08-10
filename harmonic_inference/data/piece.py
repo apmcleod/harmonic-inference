@@ -353,7 +353,7 @@ class Piece:
             The indices (into the input list) at which there is a key change.
         """
         chord_changes = self.get_chord_change_indices()
-        if not chord_changes:
+        if chord_changes is None:
             return None
 
         return [chord_changes[i] for i in self.get_key_change_indices()]
@@ -426,7 +426,9 @@ class ScorePiece(Piece):
             fake_last_note = Note(
                 0,
                 0,
-                self.chords[-1].offset if self.chords else max(note.offset for note in self.notes),
+                self.chords[-1].offset
+                if self.chords is not None
+                else max(note.offset for note in self.notes),
                 0,
                 Fraction(0),
                 (0, Fraction(0)),
@@ -475,7 +477,9 @@ class ScorePiece(Piece):
         chords = self.get_chords() if use_real_chords else [None] * len(ranges)
 
         last_offset = (
-            self.chords[-1].offset if self.chords else max(note.offset for note in self.notes)
+            self.chords[-1].offset
+            if self.chords is not None
+            else max(note.offset for note in self.notes)
         )
         duration_cache = self.get_duration_cache()
 
