@@ -233,6 +233,12 @@ def get_added_and_removed_pitches(
         if change[0] == "^" or (new_change in "246" and change[0] == "#"):
             # Replaces the above pitch
 
+            if change == "#6" and len(ascending_chord_vector) == 3:
+                # Special case: If #6 occurs for a triad, it is an addition,
+                # since it cannot be a lower replacement to a non-existent 7
+                removed_pitches.append("")
+                continue
+
             # 2 replaces the 2nd chord pitch, 4 replaces the 3rd, etc.
             removed_pitches.append(str(ascending_chord_vector[int(change[-1]) // 2]))
 

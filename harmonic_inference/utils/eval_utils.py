@@ -170,7 +170,7 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
             The same format as tpc_string, but using a MIDI pitch representation.
         """
         if chord.suspension is None:
-            return None
+            return "", ""
 
         change_mapping = hu.get_added_and_removed_pitches(
             chord.root,
@@ -216,8 +216,8 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
     chords = piece.get_chords()
     chord_changes = piece.get_chord_change_indices()
     chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    chord_suspensions_midi = np.full(len(piece.get_inputs()), "")
-    chord_suspensions_tpc = np.full(len(piece.get_inputs()), "")
+    chord_suspensions_midi = np.full(len(piece.get_inputs()), "", dtype=object)
+    chord_suspensions_tpc = np.full(len(piece.get_inputs()), "", dtype=object)
     for chord, start, end in zip(chords, chord_changes, chord_changes[1:]):
         chord_labels[start:end] = chord.get_one_hot_index(
             relative=False, use_inversion=True, pad=False
