@@ -114,11 +114,15 @@ def load_pieces(
     else:
         files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(input_path)
 
+    if not file_ids:
+        file_ids = list(files_df.index)
+
     # Load from pkl if available
-    pkl_path = Path(piece_dicts_path)
-    if pkl_path.exists():
-        with open(pkl_path, "rb") as pkl_file:
-            piece_dicts = pickle.load(pkl_file)
+    if piece_dicts_path:
+        pkl_path = Path(piece_dicts_path)
+        if pkl_path.exists():
+            with open(pkl_path, "rb") as pkl_file:
+                piece_dicts = pickle.load(pkl_file)
     else:
         piece_dicts = [None] * len(file_ids)
 
@@ -155,7 +159,7 @@ def load_pieces(
         pieces = [
             get_score_piece_from_data_frames(
                 notes_df.loc[file_id],
-                chords_df.loc[file_id],
+                chords_df.loc[file_id] if chords_df else None,
                 measures_df.loc[file_id],
                 name=(
                     f"{file_id}: {files_df.loc[file_id, 'corpus_name']}/"

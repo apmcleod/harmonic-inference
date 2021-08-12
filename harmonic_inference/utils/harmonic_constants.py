@@ -185,6 +185,10 @@ STRING_TO_CHORD_TYPE = {
 
 CHORD_TYPE_TO_STRING = {chord_type: string for string, chord_type in STRING_TO_CHORD_TYPE.items()}
 
+STRING_TO_CHORD_TYPE["It"] = ChordType.DIMINISHED
+STRING_TO_CHORD_TYPE["Ger"] = ChordType.DIM7
+STRING_TO_CHORD_TYPE["Fr"] = ChordType.MAJ_MIN7
+
 
 FIGBASS_INVERSIONS = {"7": 0, "6": 1, "65": 1, "43": 2, "64": 2, "2": 3}
 

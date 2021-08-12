@@ -7,6 +7,7 @@ from typing import DefaultDict, Dict, Tuple, Union
 import numpy as np
 import pandas as pd
 
+from harmonic_inference.data.corpus_constants import CHORD_ONSET_BEAT, MEASURE_OFFSET
 from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, KeyMode, PitchType
 from harmonic_inference.data.key import Key
 from harmonic_inference.utils.harmonic_constants import (
@@ -52,6 +53,7 @@ class Chord:
         offset_level: int,
         duration: Union[float, Fraction],
         pitch_type: PitchType,
+        suspension: str = None,
     ):
         """
         Create a new musical chord object.
@@ -91,6 +93,8 @@ class Chord:
         pitch_type : PitchType
             The PitchType in which this chord's root and bass note are stored. If this is TPC, the
             values can be later converted into MIDI, but not vice versa.
+        suspension : str
+            The suspension associated with this chord, if any.
         """
         self.root = root
         self.bass = bass
@@ -104,6 +108,7 @@ class Chord:
         self.offset_level = offset_level
         self.duration = duration
         self.pitch_type = pitch_type
+        self.suspension = suspension
 
         self.params = inspect.getfullargspec(Chord.__init__).args[1:]
 
@@ -319,7 +324,9 @@ class Chord:
 
         return np.concatenate(vectors).astype(dtype=np.float16)
 
-    def is_repeated(self, other: "Chord", use_inversion: bool = True) -> bool:
+    def is_repeated(
+        self, other: "Chord", use_inversion: bool = True, use_suspension: bool = False
+    ) -> bool:
         """
         Detect if a given chord can be regarded as a repeat of this one in terms of root and
         chord_type, plus optionally inversion.
@@ -330,6 +337,8 @@ class Chord:
             The other chord to check for repeat.
         use_inversion : bool
             True to take inversions into account. False otherwise.
+        use_suspension : bool
+            True to take suspensions into account. False otherwise.
 
         Returns
         -------
@@ -342,6 +351,8 @@ class Chord:
         attr_names = ["pitch_type", "root", "chord_type"]
         if use_inversion:
             attr_names.append("inversion")
+        if use_suspension:
+            attr_names.append("suspension")
 
         for attr_name in attr_names:
             if getattr(self, attr_name) != getattr(other, attr_name):
@@ -446,6 +457,7 @@ class Chord:
                 'mc_next' (int): The chord's offset measure.
                 'onset_next' (Fraction): The chord's offset beat, in whole notes.
                 'duration' (Fraction): The chord's duration, in whole notes.
+                'changes' (str): Any suspensions or altered tones in this chord.
         measures_df : pd.DataFrame
             A pd.DataFrame of the measures in the piece of the chord. It is used to get metrical
             levels of the chord's onset and offset. Must have at least the columns:
@@ -496,6 +508,10 @@ class Chord:
             # Additional chord info
             chord_type = reduction[get_chord_type_from_string(chord_row["chord_type"])]
             inversion = get_chord_inversion(chord_row["figbass"]) if use_inversion else 0
+
+            # Bugfix for inversion too high (e.g., for augmented 6th chords)
+            inversion %= len(CHORD_PITCHES[pitch_type][chord_type])
+
             bass = get_bass_note(chord_type, root, inversion, pitch_type)
             assert 0 <= bass < NUM_PITCHES[pitch_type]
 
@@ -504,8 +520,8 @@ class Chord:
             levels = [None, None]
             for i, (mc, beat) in enumerate(
                 zip(
-                    [chord_row.mc, chord_row.mc_next],
-                    [chord_row.onset, chord_row.onset_next],
+                    [chord_row["mc"], chord_row["mc_next"]],
+                    [chord_row[CHORD_ONSET_BEAT], chord_row[f"{CHORD_ONSET_BEAT}_next"]],
                 )
             ):
                 measure = measures_df.loc[measures_df["mc"] == mc].squeeze()
@@ -526,7 +542,9 @@ class Chord:
             onset, offset = positions
             onset_level, offset_level = levels
 
-            duration = chord_row.duration
+            duration = chord_row["duration"]
+
+            suspension = chord_row["changes"] if not pd.isna(chord_row["changes"]) else None
 
             return Chord(
                 root,
@@ -541,6 +559,7 @@ class Chord:
                 offset_level,
                 duration,
                 pitch_type,
+                suspension=suspension,
             )
 
         except Exception as exception:
@@ -660,8 +679,10 @@ class Chord:
             onset_measure = measures_df.loc[measures_df["start"] <= chord_row["on"]].iloc[-1]
             offset_measure = measures_df.loc[measures_df["start"] <= chord_row["off"]].iloc[-1]
 
-            onset_beat = onset_measure["offset"] + chord_row["on"] - onset_measure["start"]
-            offset_beat = offset_measure["offset"] + chord_row["off"] - offset_measure["start"]
+            onset_beat = onset_measure[MEASURE_OFFSET] + chord_row["on"] - onset_measure["start"]
+            offset_beat = (
+                offset_measure[MEASURE_OFFSET] + chord_row["off"] - offset_measure["start"]
+            )
 
             levels = [None, None]
 

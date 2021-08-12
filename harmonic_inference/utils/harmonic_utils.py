@@ -81,6 +81,180 @@ def get_chord_label_list(
     ]
 
 
+def split_changes_into_list(changes: str) -> List[str]:
+    """
+    Given a string of chord alterations (e.g., suspensions or added tones),
+    split them into a list of individual alterations.
+
+    Parameters
+    ----------
+    changes : str
+        A string representing a chord alterations, like "64" or "13+b2".
+
+    Returns
+    -------
+    changes_list : List[str]
+        The given changes, split into a list of strings representing each individual
+        alteration.
+    """
+
+    def get_first_change_length(changes: str) -> int:
+        """
+        Get the length of the first chord change in the given changes string.
+
+        Parameters
+        ----------
+        changes : str
+            A string representing a chord alterations, like "64" or "13+b2".
+
+        Returns
+        -------
+        length : int
+            The length of the first change in the given string. For example, given "b42",
+            this will return 2.
+        """
+        if changes is None or len(changes) == 0:
+            return 0
+
+        # Find the first numeric character
+        length = 0
+        while not changes[length].isnumeric():
+            length += 1
+
+        if changes[length] == "1":
+            length += 2
+        else:
+            length += 1
+
+        return length
+
+    changes_list = []
+    length = get_first_change_length(changes)
+    while length != 0:
+        changes_list.append(changes[:length])
+        changes = changes[length:]
+        length = get_first_change_length(changes)
+
+    return changes_list
+
+
+def get_added_and_removed_pitches(
+    chord_root_tpc: int,
+    chord_type: ChordType,
+    changes: str,
+    key_tonic_tpc: int,
+    key_mode: KeyMode,
+) -> Dict[str, str]:
+    """
+    Get a mapping of pitch alterations from the given chord. Pitches are given
+    and returned with PitchType TPC because accidental-specific math is required
+    to correctly apply accidentals.
+
+    Parameters
+    ----------
+    chord_root_tpc : int
+        The root pitch of the given chord, in TPC notation.
+    chord_type : ChordType
+        The type of the given chord.
+    changes : str
+        A string of the changes or alterations of a given chord, like "64" or "+b2".
+    key_tonic_tpc : int
+        The tonic pitch of the current key, including any relative root, in TPC notation.
+    key_mode : KeyMode
+        The mode of the current key, including any relative root.
+
+    Returns
+    -------
+    changed_pitches : Dict[str, str]
+        A dictionary representing pitch alterations to the given chord. Each entry represents
+        a mapping of original_pitch -> new_pitch, represented as a string of their TPC integer.
+        If original_pitch is empty, then the new_pitch is simply added. If new_pitch begins
+        with "+", then it is added in an upper octave.
+    """
+    added_pitches = []
+    removed_pitches = []
+
+    # First, we have to find the chord numeral degree, since changes are notated numerically
+    # relative to the chord's tonal pitch class.
+    # i.e., any "2" change to a IV chord will have some V in it, regardless of any accidentals.
+    chord_root_str = get_pitch_string(chord_root_tpc, PitchType.TPC)
+
+    for degree in range(1, 8):
+        interval = get_interval_from_scale_degree(str(degree), True, key_mode, PitchType.TPC)
+        pitch_str = get_pitch_string(interval + key_tonic_tpc, PitchType.TPC)
+        if pitch_str[0] == chord_root_str[0]:
+            break
+
+    changes_list = split_changes_into_list(changes)
+
+    # Calculate added pitches first
+    for change in changes_list:
+        while change[0] in "v^+":
+            change = change[1:]
+
+        # Find the scale degree for this change
+        accidental_count, new_change = get_accidental_adjustment(change, in_front=True)
+        accidental_count = abs(accidental_count)
+
+        octave = "+" if int(new_change) >= 8 else ""
+
+        # Convert change to be relative to the key tonic, including accidentals
+        change_degree = (int(new_change) + degree - 2) % 7  # -2 since both are 1-indexed
+        change_degree += 1  # Conver back to 1-indexing
+        change_degree_str = change[:accidental_count] + str(change_degree)
+
+        # Calculate interval above scale degree, including additional octaves
+        interval = get_interval_from_scale_degree(change_degree_str, True, key_mode, PitchType.TPC)
+
+        # Store added pitch, including "+" if the pitch is an octave up
+        added_pitches.append(octave + str(interval + key_tonic_tpc))
+
+    # Calculate chord vector in ascending pitch order
+    chord_vector = get_vector_from_chord_type(chord_type, PitchType.TPC, chord_root_tpc)
+    chord_vector = np.where(chord_vector == 1)[0]
+    ascending_chord_vector = []
+
+    for degree in range(1, 8):
+        interval = get_interval_from_scale_degree(str(degree), True, key_mode, PitchType.TPC)
+        pitch_str = get_pitch_string(interval + chord_root_tpc, PitchType.TPC)
+
+        for pitch in chord_vector:
+            if get_pitch_string(pitch, PitchType.TPC)[0] == pitch_str[0]:
+                ascending_chord_vector.append(pitch)
+
+    # Calculate removed pitches
+    for change in changes_list:
+        if change[0] == "+":
+            # Added pitch only - no deletion
+            removed_pitches.append("")
+
+        _, new_change = get_accidental_adjustment(change, in_front=True)
+
+        if change[0] == "^" or (new_change in "246" and change[0] == "#"):
+            # Replaces the above pitch
+
+            if change == "#6" and len(ascending_chord_vector) == 3:
+                # Special case: If #6 occurs for a triad, it is an addition,
+                # since it cannot be a lower replacement to a non-existent 7
+                removed_pitches.append("")
+                continue
+
+            # 2 replaces the 2nd chord pitch, 4 replaces the 3rd, etc.
+            removed_pitches.append(str(ascending_chord_vector[int(change[-1]) // 2]))
+
+        elif change[0] == "v" or (new_change in "246" and change[0] != "#"):
+            # Replaces the below pitch
+
+            # 2 replaces the 1st chord pitch, 4 replaces the 2nd, etc.
+            removed_pitches.append(str(ascending_chord_vector[int(change[-1]) // 2 - 1]))
+
+        else:
+            # No removed pitch
+            removed_pitches.append("")
+
+    return {removed: added for removed, added in zip(removed_pitches, added_pitches)}
+
+
 def get_chord_from_one_hot_index(
     one_hot_index: Union[int, slice],
     pitch_type: PitchType,

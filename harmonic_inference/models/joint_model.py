@@ -43,8 +43,8 @@ LABELS = {
 }
 
 
-MIN_CHORD_CHANGE_PROB_DEFAULT = 0.35
-MAX_NO_CHORD_CHANGE_PROB_DEFAULT = 0.55
+MIN_CHORD_CHANGE_PROB_DEFAULT = 0.25
+MAX_NO_CHORD_CHANGE_PROB_DEFAULT = 0.45
 MAX_CHORD_LENGTH_DEFAULT = Fraction(8)
 MIN_KEY_CHANGE_PROB_DEFAULT = 0.05
 MAX_NO_KEY_CHANGE_PROB_DEFAULT = 0.75
@@ -449,7 +449,7 @@ class HarmonicInferenceModel:
         change_probs : List[float]
             A List of the chord change probability on each input of the given Piece.
         """
-        ctm_dataset = ds.ChordTransitionDataset([self.current_piece])
+        ctm_dataset = ds.ChordTransitionDataset([self.current_piece], dummy_targets=True)
         ctm_loader = DataLoader(
             ctm_dataset,
             batch_size=ds.ChordTransitionDataset.valid_batch_size,

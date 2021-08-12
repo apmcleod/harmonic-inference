@@ -3,13 +3,15 @@ import logging
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Union
+from typing import Dict, Tuple, Union
 
 import numpy as np
 import pandas as pd
+from ms3 import Parse
 
 import harmonic_inference.utils.harmonic_constants as hc
 import harmonic_inference.utils.harmonic_utils as hu
+from harmonic_inference.data.chord import Chord
 from harmonic_inference.data.data_types import (
     NO_REDUCTION,
     TRIAD_REDUCTION,
@@ -19,7 +21,6 @@ from harmonic_inference.data.data_types import (
 )
 from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import State
-from ms3 import Parse
 
 
 def get_results_df(
@@ -139,23 +140,102 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
             - chord_root_midi
             - chord_type
             - chord_inversion
+            - chord_suspension_midi
+            - chord_suspension_tpc
             - key_tonic_tpc
             - key_tonic_midi
             - key_mode
             - duration
     """
+
+    def get_suspension_strings(chord: Chord) -> Tuple[str, str]:
+        """
+        Get the tpc and midi strings for the given chord's suspension and changes.
+
+        Parameters
+        ----------
+        chord : Chord
+            The chord whose string to return.
+
+        Returns
+        -------
+        tpc_string : str
+            A string representing the mapping of altered pitches in the given chord.
+            Each altered pitch is represented as "orig:new", where orig is the pitch in the default
+            chord voicing, and "new" is the altered pitch that is actually present. For added
+            pitches, "orig" is the empty string. "new" can be prefixed with a "+", in which
+            case this pitch is present in an upper octave. Pitches are represented as TPC,
+            and multiple alterations are separated by semicolons.
+        midi_string : str
+            The same format as tpc_string, but using a MIDI pitch representation.
+        """
+        if chord.suspension is None:
+            return "", ""
+
+        change_mapping = hu.get_added_and_removed_pitches(
+            chord.root,
+            chord.chord_type,
+            chord.suspension,
+            chord.key_tonic,
+            chord.key_mode,
+        )
+
+        mappings_midi = []
+        mappings_tpc = []
+        for orig, new in change_mapping.items():
+            if orig == "":
+                orig_midi = ""
+                orig_tpc = ""
+            else:
+                orig_midi = str(
+                    hu.get_pitch_from_string(
+                        hu.get_pitch_string(int(orig), PitchType.TPC), PitchType.MIDI
+                    )
+                )
+                orig_tpc = str(int(orig) - hc.TPC_C + tpc_c)
+
+            prefix = ""
+            if new[0] == "+":
+                prefix = "+"
+                new = new[1:]
+
+            new_midi = prefix + str(
+                hu.get_pitch_from_string(
+                    hu.get_pitch_string(int(new), PitchType.TPC), PitchType.MIDI
+                )
+            )
+            new_tpc = prefix + str(int(new) - hc.TPC_C + tpc_c)
+
+            mappings_midi.append(f"{orig_midi}:{new_midi}")
+            mappings_tpc.append(f"{orig_tpc}:{new_tpc}")
+
+        return ";".join(mappings_tpc), ";".join(mappings_midi)
+
     labels_list = []
 
     chords = piece.get_chords()
     chord_changes = piece.get_chord_change_indices()
     chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    chord_suspensions_midi = np.full(len(piece.get_inputs()), "", dtype=object)
+    chord_suspensions_tpc = np.full(len(piece.get_inputs()), "", dtype=object)
     for chord, start, end in zip(chords, chord_changes, chord_changes[1:]):
         chord_labels[start:end] = chord.get_one_hot_index(
             relative=False, use_inversion=True, pad=False
         )
+
+        tpc_string, midi_string = get_suspension_strings(chord)
+
+        chord_suspensions_tpc[start:end] = tpc_string
+        chord_suspensions_midi[start:end] = midi_string
+
     chord_labels[chord_changes[-1] :] = chords[-1].get_one_hot_index(
         relative=False, use_inversion=True, pad=False
     )
+
+    tpc_string, midi_string = get_suspension_strings(chords[-1])
+
+    chord_suspensions_tpc[chord_changes[-1] :] = tpc_string
+    chord_suspensions_midi[chord_changes[-1] :] = midi_string
 
     keys = piece.get_keys()
     key_changes = piece.get_key_change_input_indices()
@@ -171,10 +251,12 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
         slice(len(hu.get_key_label_list(PitchType.TPC))), PitchType.TPC
     )
 
-    for duration, chord_label, key_label in zip(
+    for duration, chord_label, key_label, suspension_tpc, suspension_midi in zip(
         piece.get_duration_cache(),
         chord_labels,
         key_labels,
+        chord_suspensions_tpc,
+        chord_suspensions_midi,
     ):
         if duration == 0:
             continue
@@ -195,6 +277,8 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
                 "chord_root_midi": root_midi,
                 "chord_type": chord_type,
                 "chord_inversion": inversion,
+                "chord_suspension_tpc": suspension_tpc,
+                "chord_suspension_midi": suspension_midi,
                 "key_tonic_tpc": tonic_tpc - hc.TPC_C + tpc_c,
                 "key_tonic_midi": tonic_midi,
                 "key_mode": mode,
@@ -538,7 +622,7 @@ def evaluate_chords_and_keys_jointly(
     return accuracy / np.sum(piece.get_duration_cache())
 
 
-def get_label_df(
+def get_annotation_df(
     state: State,
     piece: Piece,
     root_type: PitchType,
@@ -549,10 +633,94 @@ def get_label_df(
 
     Parameters
     ----------
+    state : State
+        The state containing harmony annotations.
     piece : Piece
-        The piece, containing the ground truth harmonic structure.
+        The piece which was used as input when creating the given state.
+    root_type : PitchType
+        The pitch type to use for chord root labels.
+    tonic_type : PitchType
+        The pitch type to use for key tonic annotations.
+
+    Returns
+    -------
+    annotation_df : pd.DataFrame[type]
+        A DataFrame containing the harmony annotations from the given state.
+    """
+    labels_list = []
+
+    chords, changes = state.get_chords()
+    estimated_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    for chord, start, end in zip(chords, changes[:-1], changes[1:]):
+        estimated_chord_labels[start:end] = chord
+
+    keys, changes = state.get_keys()
+    estimated_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    for key, start, end in zip(keys, changes[:-1], changes[1:]):
+        estimated_key_labels[start:end] = key
+
+    chord_label_list = hu.get_chord_label_list(root_type, use_inversions=True)
+    key_label_list = hu.get_key_label_list(tonic_type)
+
+    prev_est_key_string = None
+    prev_est_chord_string = None
+
+    for duration, note, est_chord_label, est_key_label in zip(
+        piece.get_duration_cache(),
+        piece.get_inputs(),
+        estimated_chord_labels,
+        estimated_key_labels,
+    ):
+        if duration == 0:
+            continue
+
+        est_chord_string = chord_label_list[est_chord_label]
+        est_key_string = key_label_list[est_key_label]
+
+        # No change in labels
+        if est_chord_string == prev_est_chord_string and est_key_string == prev_est_key_string:
+            continue
+
+        if est_key_string != prev_est_key_string:
+            labels_list.append(
+                {
+                    "label": est_key_string,
+                    "mc": note.onset[0],
+                    "mc_onset": note.onset[1],
+                }
+            )
+
+        if est_chord_string != prev_est_chord_string:
+            labels_list.append(
+                {
+                    "label": est_chord_string,
+                    "mc": note.onset[0],
+                    "mc_onset": note.onset[1],
+                }
+            )
+
+        prev_est_key_string = est_key_string
+        prev_est_chord_string = est_chord_string
+
+    return pd.DataFrame(labels_list)
+
+
+def get_label_df(
+    state: State,
+    piece: Piece,
+    root_type: PitchType,
+    tonic_type: PitchType,
+) -> pd.DataFrame:
+    """
+    Get a df containing the labels of the given state, color-coded in terms of their accuracy
+    according to the ground truth harmony in the given piece.
+
+    Parameters
+    ----------
     state : State
         The state, containing the estimated harmonic structure.
+    piece : Piece
+        The piece, containing the ground truth harmonic structure.
     root_type : PitchType
         The pitch type used for chord roots.
     tonic_type : PitchType
@@ -565,28 +733,31 @@ def get_label_df(
     """
     labels_list = []
 
-    gt_chords = piece.get_chords()
-    gt_changes = piece.get_chord_change_indices()
-    gt_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
-        gt_chord_labels[start:end] = chord.get_one_hot_index(
+    gt_chord_labels = np.full(len(piece.get_inputs()), None, dtype=int)
+    if piece.get_chords():
+        gt_chords = piece.get_chords()
+        gt_changes = piece.get_chord_change_indices()
+        for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
+            gt_chord_labels[start:end] = chord.get_one_hot_index(
+                relative=False, use_inversion=True, pad=False
+            )
+        gt_chord_labels[gt_changes[-1] :] = gt_chords[-1].get_one_hot_index(
             relative=False, use_inversion=True, pad=False
         )
-    gt_chord_labels[gt_changes[-1] :] = gt_chords[-1].get_one_hot_index(
-        relative=False, use_inversion=True, pad=False
-    )
 
     chords, changes = state.get_chords()
     estimated_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
     for chord, start, end in zip(chords, changes[:-1], changes[1:]):
         estimated_chord_labels[start:end] = chord
 
-    gt_keys = piece.get_keys()
-    gt_changes = piece.get_key_change_input_indices()
-    gt_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    for key, start, end in zip(gt_keys, gt_changes, gt_changes[1:]):
-        gt_key_labels[start:end] = key.get_one_hot_index()
-    gt_key_labels[gt_changes[-1] :] = gt_keys[-1].get_one_hot_index()
+    gt_key_labels = np.full(len(piece.get_inputs()), None, dtype=int)
+    if piece.get_keys():
+        gt_keys = piece.get_keys()
+        gt_changes = piece.get_key_change_input_indices()
+        gt_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+        for key, start, end in zip(gt_keys, gt_changes, gt_changes[1:]):
+            gt_key_labels[start:end] = key.get_one_hot_index()
+        gt_key_labels[gt_changes[-1] :] = gt_keys[-1].get_one_hot_index()
 
     keys, changes = state.get_keys()
     estimated_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)

@@ -13,6 +13,7 @@ from tqdm import tqdm
 
 import harmonic_inference.utils.rhythmic_utils as ru
 from harmonic_inference.data.chord import Chord
+from harmonic_inference.data.corpus_constants import MEASURE_OFFSET
 from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, PieceType, PitchType
 from harmonic_inference.data.key import Key
 from harmonic_inference.data.note import Note
@@ -271,6 +272,9 @@ class Piece:
         assert stop is None or stop >= start, "stop must be None or >= start"
 
         chords = self.get_chords()
+        if not chords:
+            return None
+
         chord_change_indices = self.get_chord_change_indices()
 
         start_index = bisect.bisect_left(chord_change_indices, start)
@@ -349,6 +353,9 @@ class Piece:
             The indices (into the input list) at which there is a key change.
         """
         chord_changes = self.get_chord_change_indices()
+        if chord_changes is None:
+            return None
+
         return [chord_changes[i] for i in self.get_key_change_indices()]
 
     def get_keys(self) -> List[Key]:
@@ -417,7 +424,16 @@ class ScorePiece(Piece):
     def get_duration_cache(self):
         if self.duration_cache is None:
             fake_last_note = Note(
-                0, 0, self.chords[-1].offset, 0, Fraction(0), (0, Fraction(0)), 0, PitchType.TPC
+                0,
+                0,
+                self.chords[-1].offset
+                if self.chords is not None
+                else max(note.offset for note in self.notes),
+                0,
+                Fraction(0),
+                (0, Fraction(0)),
+                0,
+                PitchType.TPC,
             )
 
             self.duration_cache = np.array(
@@ -460,7 +476,11 @@ class ScorePiece(Piece):
 
         chords = self.get_chords() if use_real_chords else [None] * len(ranges)
 
-        last_offset = self.chords[-1].offset
+        last_offset = (
+            self.chords[-1].offset
+            if self.chords is not None
+            else max(note.offset for note in self.notes)
+        )
         duration_cache = self.get_duration_cache()
 
         chord_note_inputs = []
@@ -566,6 +586,7 @@ def get_score_piece_from_data_frames(
     use_inversions: bool = True,
     use_relative: bool = True,
     name: str = None,
+    use_suspensions: bool = False,
 ) -> ScorePiece:
     """
     Create a ScorePiece object from the given 3 pandas DataFrames.
@@ -588,6 +609,9 @@ def get_score_piece_from_data_frames(
         within the annotated local key.
     name : str
         A string identifier for this piece.
+    use_suspensions : bool
+        False to treat consecutive chords which differ only by altered tones as the same chord
+        by merging them. True to keep them separate.
 
     Returns
     -------
@@ -614,6 +638,19 @@ def get_score_piece_from_data_frames(
     notes = np.squeeze(notes)
     note_ilocs = np.squeeze(note_ilocs).astype(int)
 
+    if chords_df is None:
+        # Quick check for pieces without ground truth chords
+        return ScorePiece(
+            measures_df,
+            notes,
+            None,
+            None,
+            None,
+            None,
+            None,
+            name=name,
+        )
+
     chords_list = np.array(
         [
             [chord, chord_id]
@@ -637,7 +674,13 @@ def get_score_piece_from_data_frames(
     chord_ilocs = np.squeeze(chord_ilocs).astype(int)
 
     # Remove accidentally repeated chords
-    non_repeated_mask = get_reduction_mask(chords_list, kwargs={"use_inversion": use_inversions})
+    non_repeated_mask = get_reduction_mask(
+        chords_list,
+        kwargs={
+            "use_inversion": use_inversions,
+            "use_suspension": use_suspensions,
+        },
+    )
     chords = []
     for chord, mask in zip(chords_list, non_repeated_mask):
         if mask:
@@ -721,7 +764,7 @@ def get_measures_df_from_music21_score(m21_score: music21.stream.Score) -> pd.Da
             'start' (Fraction): The "offset" position at the start of each measure, in
                                 whole notes since the beginning of the piece.
             'act_dur' (Fraction): The duration of the measure, in whole notes.
-            'offset' (Fraction): The starting position of this measure, in whole notes
+            'mc_offset' (Fraction): The starting position of this measure, in whole notes
                                  after the most recent downbeat.
             'next' (int): The measure index of the measure that follows each one.
     """
@@ -791,7 +834,7 @@ def get_measures_df_from_music21_score(m21_score: music21.stream.Score) -> pd.Da
             "timesig": time_signatures,
             "start": starts,
             "act_dur": lengths,
-            "offset": df_offsets,
+            MEASURE_OFFSET: df_offsets,
             "next": mcs[1:] + [pd.NA],
         }
     )
@@ -816,7 +859,7 @@ def get_notes_from_music_xml(
             'start' (Fraction): The "offset" position at the start of each measure, in
                                 whole notes since the beginning of the piece.
             'act_dur' (Fraction): The duration of the measure, in whole notes.
-            'offset' (Fraction): The starting position of this measure, in whole notes
+            'mc_offset' (Fraction): The starting position of this measure, in whole notes
                                  after the most recent downbeat.
             'next' (int): The measure index of the measure that follows each one.
 
