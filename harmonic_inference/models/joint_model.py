@@ -369,7 +369,13 @@ class HarmonicInferenceModel:
             self.initial_chord_model.PITCH_TYPE == self.chord_sequence_model.OUTPUT_PITCH_TYPE
         ), "ICM pitch type does not match CSM output pitch type"
 
-    def get_harmony(self, piece: Piece) -> State:
+    def get_harmony(
+        self,
+        piece: Piece,
+        forced_changes: List[int] = None,
+        forced_chords: Dict[Tuple[int, int], int] = None,
+        forced_keys: Dict[Tuple[int, int], int] = None,
+    ) -> State:
         """
         Run the model on a piece and output its harmony.
 
@@ -377,6 +383,25 @@ class HarmonicInferenceModel:
         ----------
         piece : Piece
             A Piece to perform harmonic inference on.
+
+        forced_changes: List[int]
+            Note indexes at which there must be a chord change in the resulting harmony.
+
+        forced_chords: Dict[Tuple[int, int], int]
+            A dictionary of [(start, end): chord_id] indicating where chords are forced in the
+            resulting harmony. start is inclusive, end is exclusive, and chord_id is the
+            one-hot index of an absolute chord symbol, using the same alphabet as this joint_model.
+            start and end are not forced to be chord changes, but no chord change may lie within
+            the range, and any resulting chord containing this range must be the given
+            chord_id.
+
+        forced_keys: Dict[Tuple[int, int], int]
+            A dictionary of [(start, end): key_id] indicating where keys are forced in the
+            resulting harmony. start is inclusive, end is exclusive, and key_id is the
+            one-hot index of an absolute key, using the same alphabet as this joint_model.
+            start and end are not forced to be key changes, but no key change may lie within
+            the range, and any resulting key containing this range must be the given
+            key_id.
 
         Returns
         -------
