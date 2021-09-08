@@ -471,7 +471,36 @@ class HarmonicInferenceModel:
                         f"{self.forced_chords[change_index]} after)."
                     )
 
-        # TODO: Check compatability between chord and key forces
+        # Second, check compatability between chord and key forces
+
+        # If there is a key change, a chord change must be allowed
+        for change_index in self.forced_key_changes:
+            if change_index in self.forced_chord_non_changes:
+                raise ArgumentError(
+                    f"Index {change_index} has a forced key change, but a forced non-chord change."
+                    " This is illegal: all key changes must be accompanied by a chord change."
+                )
+
+            if (
+                self.forced_chords[change_index - 1] == self.forced_chords[change_index]
+                and self.forced_chords[change_index] != -1
+            ):
+                raise ArgumentError(
+                    f"Index {change_index} has a forced key change, but the chord is forced to id "
+                    f"{self.forced_chords[change_index]} both before and after."
+                )
+
+        # If there is a forced non-chord change, there cannot be a key change
+        for change_index in self.forced_chord_non_changes:
+            if (
+                self.forced_keys[change_index - 1] != self.forced_keys[change_index]
+                and -1 not in self.forced_chords[change_index]
+            ):
+                raise ArgumentError(
+                    f"Index {change_index} has a forced non-chord change, but the key changes from"
+                    f" {self.forced_keys[change_index - 1]} to {self.forced_keys[change_index]} "
+                    "at that index."
+                )
 
     def get_harmony(
         self,
