@@ -376,7 +376,7 @@ class HarmonicInferenceModel:
         current piece (i.e., that they can lead to a full harmonic classification of the given
         piece), raising an Exception if not, and load them into desired data structures.
         """
-        # First: check forced changes and non-changes
+        # First: check forced changes and non-changes for validity
 
         # Basic checks
         if 0 in self.forced_changes:
@@ -408,7 +408,7 @@ class HarmonicInferenceModel:
                     "the first note at its metrical postiion."
                 )
 
-        # Second: check chords and keys
+        # Second: check chords and keys for validity
         self.forced_chord_ids = np.full(len(self.duration_cache), -1)
         self.forced_key_ids = np.full(len(self.duration_cache), -1)
 
@@ -444,6 +444,28 @@ class HarmonicInferenceModel:
                     )
 
                 tracking_list[start:end] = label_id
+
+        # Third: check (non-)changes and chords/keys for compatability
+        for change_index in self.forced_changes:
+            if (
+                self.forced_chords[change_index - 1] == self.forced_chords[change_index]
+                and self.forced_chords[change_index] != -1
+            ):
+                raise ArgumentError(
+                    f"Forced chord change at index {change_index} but forced chord is "
+                    f"{self.forced_chords[change_index]} both before and after."
+                )
+
+        for change_index in self.forced_non_changes:
+            if (
+                self.forced_chords[change_index - 1] != self.forced_chords[change_index]
+                and -1 not in self.forced_chords[change_index - 1 : change_index + 1]
+            ):
+                raise ArgumentError(
+                    f"Forced non chord change at index {change_index} but forced chord changes "
+                    f"at that index ({self.forced_chords[change_index - 1]} before and "
+                    f"{self.forced_chords[change_index]} after)."
+                )
 
     def get_harmony(
         self,
