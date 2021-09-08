@@ -370,108 +370,116 @@ class HarmonicInferenceModel:
             self.initial_chord_model.PITCH_TYPE == self.chord_sequence_model.OUTPUT_PITCH_TYPE
         ), "ICM pitch type does not match CSM output pitch type"
 
-    def _load_forces(self):
+    def _validate_and_load_forced_labels(self):
         """
         Ensure that the currently stored forced changes, chords, and keys are valid for the
         current piece (i.e., that they can lead to a full harmonic classification of the given
         piece), raising an Exception if not, and load them into desired data structures.
         """
-        # First: check forced changes and non-changes for validity
+        # First, ensure consistency within a given type of label (chord vs key)
+        for type_str in ["chord", "key"]:
 
-        # Basic checks
-        if 0 in self.forced_changes:
-            logging.info("There can be no forced change at time 0. Ignoring.")
-            self.forced_changes.remove(0)
+            forced_changes = getattr(self, f"forced_{type_str}_changes")
+            forced_non_changes = getattr(self, f"forced_non_{type_str}_changes")
+            forced_labels = getattr(self, f"forced_{type_str}s")
 
-        if max(self.forced_changes) >= len(self.duration_cache):
-            raise ArgumentError(
-                f"Maximum forced change ({max(self.forced_change)}) is beyond the end of the piece"
-                f" (maximum index {len(self.duration_cache) - 1})."
-            )
+            # First: check forced changes and non-changes for validity
 
-        if max(self.forced_non_changes) >= len(self.duration_cache):
-            raise ArgumentError(
-                f"Maximum forced non-change ({max(self.forced_non_change)}) is beyond the end of "
-                f"the piece (maximum index {len(self.duration_cache) - 1})."
-            )
+            # Basic checks
+            if 0 in forced_changes:
+                logging.info("There can be no forced change at time 0. Ignoring.")
+                forced_changes.remove(0)
 
-        # Ensure that no index is both a forced change and a force non-change
-        union = self.forced_changes | self.forced_non_changes
-        if len(union) > 0:
-            raise ArgumentError(f"{union} are both forced changes and forced non-changes.")
-
-        # Ensure each change is at a valid note
-        for change_index in self.forced_changes:
-            if self.duration_cache[change_index - 1] == 0:
+            if max(forced_changes) >= len(self.duration_cache):
                 raise ArgumentError(
-                    f"{change_index} is an invalid index for a forced change because it is not "
-                    "the first note at its metrical postiion."
+                    f"Maximum forced change ({max(forced_changes)}) is beyond the end of the piece"
+                    f" (maximum index {len(self.duration_cache) - 1})."
                 )
 
-        # Second: check chords and keys for validity
-        self.forced_chord_ids = np.full(len(self.duration_cache), -1)
-        self.forced_key_ids = np.full(len(self.duration_cache), -1)
+            if max(forced_non_changes) >= len(self.duration_cache):
+                raise ArgumentError(
+                    f"Maximum forced non-change ({max(forced_non_changes)}) is beyond the end of "
+                    f"the piece (maximum index {len(self.duration_cache) - 1})."
+                )
 
-        num_chords = get_chord_vector_length(
-            self.chord_classifier.OUTPUT_PITCH,
-            one_hot=True,
-            relative=False,
-            use_inversions=self.chord_classifier.use_inversions,
-            pad=False,
-            reduction=self.chord_classifier.reduction,
-        )
+            # Ensure that no index is both a forced change and a force non-change
+            union = forced_changes | forced_non_changes
+            if len(union) > 0:
+                raise ArgumentError(f"{union} are both forced changes and forced non-changes.")
 
-        num_keys = hc.NUM_PITCHES[self.key_sequence_model.OUTPUT_PITCH_TYPE] * len(KeyMode)
-
-        for tracking_list, type_str, max_id, forced_dict in zip(
-            (self.forced_chord_ids, self.forced_key_ids),
-            ("chord", "key"),
-            (num_chords, num_keys),
-            (self.forced_chord_ids, self.forced_key_ids),
-        ):
-            for (start, end), label_id in forced_dict.items():
-                if label_id < 0 or label_id >= max_id:
+            # Ensure each change is at a valid note
+            for change_index in forced_changes:
+                if self.duration_cache[change_index - 1] == 0:
                     raise ArgumentError(
-                        f"Forced {type_str}_id {label_id} is outside of the valid range "
-                        f"(0-{max_id})."
+                        f"{change_index} is an invalid index for a forced change because it is not "
+                        "the first note at its metrical postiion."
                     )
 
-                valid_indexes = np.isin(tracking_list[start:end], [-1, label_id])
+            # Second: check labels for validity
+            forced_ids = np.full(len(self.duration_cache), -1)
+            setattr(self, f"forced_{type_str}_ids", forced_ids)
+
+            max_id = (
+                get_chord_vector_length(
+                    self.chord_classifier.OUTPUT_PITCH,
+                    one_hot=True,
+                    relative=False,
+                    use_inversions=self.chord_classifier.use_inversions,
+                    pad=False,
+                    reduction=self.chord_classifier.reduction,
+                )
+                if type_str == "chord"
+                else (hc.NUM_PITCHES[self.key_sequence_model.OUTPUT_PITCH_TYPE] * len(KeyMode))
+            )
+
+            for (start, end), label_id in forced_labels.items():
+                if label_id < 0 or label_id >= max_id:
+                    raise ArgumentError(
+                        f"Forced {type_str}_id {label_id} is outside of the valid range for "
+                        f"{type_str}s (0-{max_id})."
+                    )
+
+                valid_indexes = np.isin(forced_ids[start:end], [-1, label_id])
                 if not np.all(valid_indexes):
                     raise ArgumentError(
                         f"The following indexes are forced to multiple different {type_str}s: ",
                         f"{np.where(valid_indexes == False)[0] + start}",
                     )
 
-                tracking_list[start:end] = label_id
+                forced_ids[start:end] = label_id
 
-        # Third: check (non-)changes and chords/keys for compatability
-        for change_index in self.forced_changes:
-            if (
-                self.forced_chords[change_index - 1] == self.forced_chords[change_index]
-                and self.forced_chords[change_index] != -1
-            ):
-                raise ArgumentError(
-                    f"Forced chord change at index {change_index} but forced chord is "
-                    f"{self.forced_chords[change_index]} both before and after."
-                )
+            # Third: check (non-)changes and forced_ids for compatability
+            for change_index in forced_changes:
+                if (
+                    forced_ids[change_index - 1] == forced_ids[change_index]
+                    and forced_ids[change_index] != -1
+                ):
+                    raise ArgumentError(
+                        f"Forced {type_str} change at index {change_index} but forced {type_str} "
+                        f"is {forced_ids[change_index]} both before and after."
+                    )
 
-        for change_index in self.forced_non_changes:
-            if (
-                self.forced_chords[change_index - 1] != self.forced_chords[change_index]
-                and -1 not in self.forced_chords[change_index - 1 : change_index + 1]
-            ):
-                raise ArgumentError(
-                    f"Forced non chord change at index {change_index} but forced chord changes "
-                    f"at that index ({self.forced_chords[change_index - 1]} before and "
-                    f"{self.forced_chords[change_index]} after)."
-                )
+            for change_index in forced_non_changes:
+                if (
+                    forced_ids[change_index - 1] != forced_ids[change_index]
+                    and -1 not in forced_ids[change_index - 1 : change_index + 1]
+                ):
+                    raise ArgumentError(
+                        f"Forced non {type_str} change at index {change_index} but forced "
+                        f"{type_str} changes at that index are "
+                        f"({self.forced_chords[change_index - 1]} before and "
+                        f"{self.forced_chords[change_index]} after)."
+                    )
+
+        # TODO: Check compatability between chord and key forces
 
     def get_harmony(
         self,
         piece: Piece,
-        forced_changes: Set[int] = None,
-        forced_non_changes: Set[int] = None,
+        forced_chord_changes: Set[int] = None,
+        forced_chord_non_changes: Set[int] = None,
+        forced_key_changes: Set[int] = None,
+        forced_key_non_changes: Set[int] = None,
         forced_chords: Dict[Tuple[int, int], int] = None,
         forced_keys: Dict[Tuple[int, int], int] = None,
     ) -> State:
@@ -483,11 +491,17 @@ class HarmonicInferenceModel:
         piece : Piece
             A Piece to perform harmonic inference on.
 
-        forced_changes: Set[int]
+        forced_chord_changes: Set[int]
             Note indexes at which there must be a chord change in the resulting harmony.
 
-        forced_non_changes: Set[int]
+        forced_chord_non_changes: Set[int]
             Note indexes at which there must NOT be a chord change in the resulting harmony.
+
+        forced_key_changes: Set[int]
+            Note indexes at which there must be a key change in the resulting harmony.
+
+        forced_key_non_changes: Set[int]
+            Note indexes at which there must NOT be a key change in the resulting harmony.
 
         forced_chords: Dict[Tuple[int, int], int]
             A dictionary of [(start, end): chord_id] indicating where chords are forced in the
@@ -531,12 +545,18 @@ class HarmonicInferenceModel:
         ]
 
         # Validate forced changes
-        self.forced_changes = set() if forced_changes is None else forced_changes
-        self.forced_non_changes = set() if forced_non_changes is None else forced_non_changes
+        self.forced_chord_changes = set() if forced_chord_changes is None else forced_chord_changes
+        self.forced_chord_non_changes = (
+            set() if forced_chord_non_changes is None else forced_chord_non_changes
+        )
+        self.forced_key_changes = set() if forced_key_changes is None else forced_key_changes
+        self.forced_key_non_changes = (
+            set() if forced_key_non_changes is None else forced_key_non_changes
+        )
         self.forced_chords = dict() if forced_chords is None else forced_chords
         self.forced_keys = dict() if forced_keys is None else forced_keys
         try:
-            self._load_forces()
+            self._validate_and_load_forced_labels()
         except ArgumentError as exception:
             self.current_piece = None
             raise exception
