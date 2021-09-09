@@ -6,7 +6,7 @@ import os
 import sys
 from glob import glob
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Dict, List, Set, Union
 
 import h5py
 import torch
@@ -31,7 +31,7 @@ from harmonic_inference.utils.data_utils import load_models_from_argparse, load_
 SPLITS = ["train", "valid", "test"]
 
 
-def load_forces_from_json(json_path: Union[str, Path]) -> Dict[str]:
+def load_forces_from_json(json_path: Union[str, Path]) -> Dict[str, Union[Set, Dict]]:
     """
     Load forced labels, changes, and non-changes from a json file and return them
     in a dictionary that can be passed through to JointModel.get_harmony(...) as kwargs.
@@ -77,6 +77,26 @@ def load_forces_from_json(json_path: Union[str, Path]) -> Dict[str]:
                 tuple(map(int, range_tuple_str[1:-1].split(","))): label_id
                 for range_tuple_str, label_id in raw_data[key].items()
             }
+
+    for key in raw_data:
+        if key not in [
+            "forced_chord_changes",
+            "forced_chord_non_changes",
+            "forced_key_changes",
+            "forced_key_non_changes",
+            "forced_chords",
+            "forced_keys",
+        ]:
+            logging.warning("--forces-json key not recognized: %s. Ignoring that key.", key)
+
+    logging.info("Forces:" if len(forces_kwargs) > 0 else "Forces: None")
+    for key, item in sorted(forces_kwargs.items()):
+        if type(item) == dict:
+            logging.info("    %s:", key)
+            for inner_key, inner_item in sorted(item.items()):
+                logging.info("        %s = %s", inner_key, inner_item)
+        else:
+            logging.info("    %s = %s", key, item)
 
     return forces_kwargs
 
@@ -153,7 +173,7 @@ def evaluate(
         if piece.name is not None:
             logging.info("Running piece %s", piece.name)
 
-        state = model.get_harmony(piece, *forces_dict)
+        state = model.get_harmony(piece, **forces_dict)
 
         if state is None:
             logging.info("Returned None")

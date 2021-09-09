@@ -380,32 +380,34 @@ class HarmonicInferenceModel:
         for type_str in ["chord", "key"]:
 
             forced_changes = getattr(self, f"forced_{type_str}_changes")
-            forced_non_changes = getattr(self, f"forced_non_{type_str}_changes")
+            forced_non_changes = getattr(self, f"forced_{type_str}_non_changes")
             forced_labels = getattr(self, f"forced_{type_str}s")
 
             # First: check forced changes and non-changes for validity
 
             # Basic checks
             if 0 in forced_changes:
-                logging.info("There can be no forced change at time 0. Ignoring.")
+                logging.warning("There can be no forced change at time 0. Ignoring.")
                 forced_changes.remove(0)
 
-            if max(forced_changes) >= len(self.duration_cache):
+            if len(forced_changes) > 0 and max(forced_changes) >= len(self.duration_cache):
                 raise ArgumentError(
                     f"Maximum forced change ({max(forced_changes)}) is beyond the end of the piece"
                     f" (maximum index {len(self.duration_cache) - 1})."
                 )
 
-            if max(forced_non_changes) >= len(self.duration_cache):
+            if len(forced_non_changes) > 0 and max(forced_non_changes) >= len(self.duration_cache):
                 raise ArgumentError(
                     f"Maximum forced non-change ({max(forced_non_changes)}) is beyond the end of "
                     f"the piece (maximum index {len(self.duration_cache) - 1})."
                 )
 
             # Ensure that no index is both a forced change and a force non-change
-            union = forced_changes | forced_non_changes
-            if len(union) > 0:
-                raise ArgumentError(f"{union} are both forced changes and forced non-changes.")
+            if len(forced_changes & forced_non_changes) > 0:
+                raise ArgumentError(
+                    f"{forced_changes & forced_non_changes} are both forced {type_str} "
+                    f"changes and forced {type_str} non-changes."
+                )
 
             # Ensure each change is at a valid note
             for change_index in forced_changes:
@@ -416,9 +418,7 @@ class HarmonicInferenceModel:
                     )
 
             # Second: check labels for validity
-            forced_ids = np.full(len(self.duration_cache), -1)
-            setattr(self, f"forced_{type_str}_ids", forced_ids)
-
+            forced_ids = getattr(self, f"forced_{type_str}_ids")
             max_id = (
                 get_chord_vector_length(
                     self.chord_classifier.OUTPUT_PITCH,
@@ -482,24 +482,24 @@ class HarmonicInferenceModel:
                 )
 
             if (
-                self.forced_chords[change_index - 1] == self.forced_chords[change_index]
-                and self.forced_chords[change_index] != -1
+                self.forced_chord_ids[change_index - 1] == self.forced_chord_ids[change_index]
+                and self.forced_chord_ids[change_index] != -1
             ):
                 raise ArgumentError(
                     f"Index {change_index} has a forced key change, but the chord is forced to id "
-                    f"{self.forced_chords[change_index]} both before and after."
+                    f"{self.forced_chord_ids[change_index]} both before and after."
                 )
 
         # If there is a forced non-chord change, there cannot be a key change
         for change_index in self.forced_chord_non_changes:
             if (
-                self.forced_keys[change_index - 1] != self.forced_keys[change_index]
-                and -1 not in self.forced_chords[change_index]
+                self.forced_key_ids[change_index - 1] != self.forced_key_ids[change_index]
+                and -1 not in self.forced_chord_ids[change_index]
             ):
                 raise ArgumentError(
                     f"Index {change_index} has a forced non-chord change, but the key changes from"
-                    f" {self.forced_keys[change_index - 1]} to {self.forced_keys[change_index]} "
-                    "at that index."
+                    f" {self.forced_key_ids[change_index - 1]} to "
+                    f"{self.forced_key_ids[change_index]} at that index."
                 )
 
     def get_harmony(
@@ -584,6 +584,8 @@ class HarmonicInferenceModel:
         )
         self.forced_chords = dict() if forced_chords is None else forced_chords
         self.forced_keys = dict() if forced_keys is None else forced_keys
+        self.forced_chord_ids = np.full(len(self.duration_cache), -1)
+        self.forced_key_ids = np.full(len(self.duration_cache), -1)
         try:
             self._validate_and_load_forced_labels()
         except ArgumentError as exception:
