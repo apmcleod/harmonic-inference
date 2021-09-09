@@ -121,6 +121,7 @@ def evaluate(
     pieces: List[Piece],
     output_tsv_dir: Union[Path, str] = None,
     annotations_base_dir: Union[Path, str] = None,
+    forces_path: Union[Path, str] = None,
 ):
     """
     Get estimated chords and keys on the given pieces using the given model.
@@ -137,6 +138,8 @@ def evaluate(
     annotations_base_dir : Union[Path, str]
         A directory containing annotated scores, which the estimated labels can be written
         onto and then saved into the output_tsv directory.
+    forces_path : Union[Path, str]
+        The path to a json file containing forced labels, changes, or non-changes.
     """
     if output_tsv_dir is not None:
         output_tsv_dir = Path(output_tsv_dir)
@@ -144,11 +147,13 @@ def evaluate(
     if annotations_base_dir is not None:
         annotations_base_dir = Path(annotations_base_dir)
 
+    forces_dict = {} if forces_path is None else load_forces_from_json(forces_path)
+
     for piece in tqdm(pieces, desc="Getting harmony for pieces"):
         if piece.name is not None:
             logging.info("Running piece %s", piece.name)
 
-        state = model.get_harmony(piece)
+        state = model.get_harmony(piece, *forces_dict)
 
         if state is None:
             logging.info("Returned None")
@@ -324,6 +329,16 @@ if __name__ == "__main__":
         help=(
             "The --input data comes from the funtional-harmony repository, as MusicXML "
             "files and labels CSV files."
+        ),
+    )
+
+    parser.add_argument(
+        "--forces-json",
+        type=Path,
+        default=None,
+        help=(
+            "A json file containing forced labels changes or non-changes, to be passed to "
+            "JointModel.get_harmony(...)."
         ),
     )
 
@@ -507,4 +522,5 @@ if __name__ == "__main__":
         pieces,
         output_tsv_dir=ARGS.output,
         annotations_base_dir=ARGS.annotations,
+        forces_path=ARGS.forces_json,
     )
