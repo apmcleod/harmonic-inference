@@ -1,16 +1,17 @@
 """Script to test (evaluate) a joint model for harmonic inference."""
 import argparse
+import json
 import logging
 import os
 import sys
 from glob import glob
 from pathlib import Path
-from typing import List, Union
+from typing import Dict, List, Union
 
+import h5py
 import torch
 from tqdm import tqdm
 
-import h5py
 import harmonic_inference.utils.eval_utils as eu
 from harmonic_inference.data.data_types import (
     ALL_ONE_TYPE_REDUCTION,
@@ -28,6 +29,56 @@ from harmonic_inference.models.joint_model import (
 from harmonic_inference.utils.data_utils import load_models_from_argparse, load_pieces
 
 SPLITS = ["train", "valid", "test"]
+
+
+def load_forces_from_json(json_path: Union[str, Path]) -> Dict[str]:
+    """
+    Load forced labels, changes, and non-changes from a json file and return them
+    in a dictionary that can be passed through to JointModel.get_harmony(...) as kwargs.
+
+    Parameters
+    ----------
+    json_path : Union[str, Path]
+        A reference to a json file containing forced labels, changes, and non-changes,
+        to be used for JointModel.get_harmony(...). It may have the following keys:
+            - "forced_chord_changes": A list of integers at which the chord must change.
+            - "forced_chord_non_changes": A list of integers at which the chord cannot change.
+            - "forced_key_changes": A list of integers at which the key must change.
+            - "forced_key_non_changes": A list of integers at which the key cannot change.
+            - "forced_chords": A dictionary mapping the string form of a tuple in the form
+                               (start, end) to a chord_id, saying that the input indexes on
+                               the range start (inclusive) to end (exclusive) must be output
+                               as the given chord_id.
+            - "forced_keys": Same as forced_chords, but for keys.
+
+    Returns
+    -------
+    forces_kwargs: Dict[str]
+        A dictionary where the keyword arguments have been loaded (with the correct types)
+        from the json file, that can be passed directly as kwargs to JointModel.get_harmony(...).
+    """
+    with open(json_path, "r") as json_file:
+        raw_data = json.load(json_file)
+
+    forces_kwargs = dict()
+
+    for key in [
+        "forced_chord_changes",
+        "forced_chord_non_changes",
+        "forced_key_changes",
+        "forced_key_non_changes",
+    ]:
+        if key in raw_data:
+            forces_kwargs[key] = set(raw_data[key])
+
+    for key in ["forced_chords", "forced_keys"]:
+        if key in raw_data:
+            forces_kwargs[key] = {
+                tuple(map(int, range_tuple_str[1:-1].split(","))): label_id
+                for range_tuple_str, label_id in raw_data[key].items()
+            }
+
+    return forces_kwargs
 
 
 def write_tsvs_to_scores(
