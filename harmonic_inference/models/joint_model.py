@@ -595,6 +595,7 @@ class HarmonicInferenceModel:
         # Get chord change probabilities (with CTM)
         logging.info("Getting chord change probabilities")
         change_probs = self.get_chord_change_probs()
+        self._apply_forced_chord_changes(change_probs)
 
         # Debug log chord change probabilities
         if logging.getLogger().isEnabledFor(logging.DEBUG):
@@ -649,6 +650,23 @@ class HarmonicInferenceModel:
         for batch in ctm_loader:
             batch_output, batch_length = self.chord_transition_model.get_output(batch)
             return batch_output[0][: batch_length[0]].numpy()
+
+    def _apply_forced_chord_changes(self, change_probs: List[float]):
+        """
+        Apply forced chord changes and chord non-changes to the given change probabilities.
+        This can be done by simply setting each forced change to p=1 and each forced
+        non-change to p=0, since each state will be using the exact same probabilites
+        for each of these ranges. The change_probs list will be modified in place,
+        rather than a copy being returned.
+
+        Parameters
+        ----------
+        change_probs : List[float]
+            A List of the chord change probability on each input of the given Piece. This
+            will be modified in place.
+        """
+        change_probs[list(self.forced_chord_changes)] = 1.0
+        change_probs[list(self.forced_chord_non_changes)] = 0.0
 
     def get_chord_ranges(
         self,
