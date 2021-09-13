@@ -914,7 +914,12 @@ class HarmonicInferenceModel:
         ]
 
         # Add initial states
-        for key in range(len(hu.get_key_label_list(self.KEY_OUTPUT_TYPE))):
+        all_initial_keys = (
+            range(len(hu.get_key_label_list(self.KEY_OUTPUT_TYPE)))
+            if self.forced_key_ids[0] == -1
+            else [self.forced_key_ids[0]]
+        )
+        for key in all_initial_keys:
             key_mode = self.LABELS["key"][key][1]
             state = State(key=key, hash_length=self.hash_length)
             state.csm_log_prior = self.initial_chord_model.get_prior(
@@ -971,6 +976,12 @@ class HarmonicInferenceModel:
                 if max_index == 1 and chord_priors_argsort[0] == state.chord:
                     max_index = 2
 
+                # Check for any forced_chord_id and apply
+                forced_chord_ids = set(self.forced_chord_ids[current_start:range_end]) - set([-1])
+                if len(forced_chord_ids) > 0:
+                    chord_priors_argsort[0] = list(forced_chord_ids)[0]
+                    max_index = 1
+
                 # Branch
                 for chord_id in chord_priors_argsort[:max_index]:
                     if chord_id == state.chord:
@@ -1007,6 +1018,8 @@ class HarmonicInferenceModel:
                             # No other chord will fit in beam, since we are searching
                             # through chords by probability
                             break
+
+            # TODO: Apply forcing to key changes
 
             # Check for key changes
             change_probs = self.get_key_change_probs(to_check_for_key_change)
