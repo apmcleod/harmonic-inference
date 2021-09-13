@@ -719,20 +719,46 @@ class HarmonicInferenceModel:
             # Special case for start == 0 because it is always invalid, but can have duration > 0
             running_duration = self.duration_cache[start] if start == 0 else Fraction(0)
             reached_end = True
+            forced_chords = set(self.forced_chord_ids[start]) - set([-1])
+            forced_keys = set(self.forced_key_ids[start]) - set([-1])
 
             # Detect any next chord change positions
-            for index, (change_prob, change_log_prob, no_change_log_prob, duration) in enumerate(
+            for index, (
+                change_prob,
+                change_log_prob,
+                no_change_log_prob,
+                duration,
+                forced_chord,
+                forced_key,
+            ) in enumerate(
                 zip(
                     change_probs[start + 1 :],
                     change_log_probs[start + 1 :],
                     no_change_log_probs[start + 1 :],
                     self.duration_cache[start:],  # Off-by-one because cache is dur to next note
+                    self.forced_chord_ids[start + 1 :],
+                    self.forced_key_ids[start + 1 :],
                 ),
                 start=start + 1,
             ):
                 if invalid[index]:
                     continue
 
+                # Ensure range doesn't contain multiple different forced chords
+                if forced_chord != -1:
+                    forced_chords.add(forced_chord)
+                    if len(forced_chords) > 1:
+                        reached_end = False
+                        break
+
+                # Ensure range doesn't contain multiple different forced chords
+                if forced_key != -1:
+                    forced_keys.add(forced_key)
+                    if len(forced_keys) > 1:
+                        reached_end = False
+                        break
+
+                # Ensure duration is still <= max_chord_length
                 running_duration += duration
                 if running_duration > self.max_chord_length:
                     reached_end = False
