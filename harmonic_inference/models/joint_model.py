@@ -1019,8 +1019,6 @@ class HarmonicInferenceModel:
                             # through chords by probability
                             break
 
-            # TODO: Apply forcing to key changes
-
             # Check for key changes
             change_probs = self.get_key_change_probs(to_check_for_key_change)
             with np.errstate(divide="ignore"):
@@ -1038,6 +1036,20 @@ class HarmonicInferenceModel:
                     check_key=True
                 )
                 can_change = change_prob >= self.min_key_change_prob
+
+                # Enforce forced key change (or non-key change)
+                forced_key_ids = set(
+                    self.forced_chord_ids[state.prev_state.change_index : state.change_index]
+                ) - set([-1])
+                if len(forced_key_ids) > 0:
+                    forced_key_id = list(forced_key_ids)[0]
+                    if state.key == forced_key_id:
+                        can_change = False
+                        # Drop the max_no_key_change_prob requirement but keep the other
+                        can_not_change = state.is_valid(check_key=True)
+                    else:
+                        can_not_change = False
+                        can_change = True  # Drop the min_key_change_prob requirement
 
                 # Make a copy only if necessary
                 change_state = state.copy() if can_change and can_not_change else state
@@ -1259,6 +1271,12 @@ class HarmonicInferenceModel:
         ):
             valid_states = 0
 
+            # Load forced key id for this state transition
+            forced_key_ids = set(
+                self.forced_key_ids[state.prev_state.change_index : state.change_index]
+            ) - set([-1])
+            forced_key_id = None if len(forced_key_ids) == 0 else list(forced_key_ids)[0]
+
             # Branch
             for relative_key_id in prior_argsort:
                 mode, interval = self.LABELS["relative_key"][relative_key_id]
@@ -1271,6 +1289,10 @@ class HarmonicInferenceModel:
                     continue
 
                 key_id = hu.get_key_one_hot_index(mode, tonic, self.KEY_OUTPUT_TYPE)
+
+                if forced_key_id is not None and forced_key_id != key_id:
+                    # There is a forced key, but this isn't it
+                    continue
 
                 if key_id == state.key:
                     # Disallow self-transitions
@@ -1290,9 +1312,12 @@ class HarmonicInferenceModel:
                     new_states.append(new_state)
                     valid_states += 1
 
-                    if valid_states >= max_index:
-                        # Exit if we have branched enough times
+                    if valid_states >= max_index or forced_key_id == key_id:
+                        # Exit if we have branched enough times, or we found the forced key
                         break
+                elif forced_key_id == key_id:
+                    # Exit if this was the forced key, even if the transition is invalid
+                    break
 
         return new_states
 
