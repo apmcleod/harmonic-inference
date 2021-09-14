@@ -719,8 +719,8 @@ class HarmonicInferenceModel:
             # Special case for start == 0 because it is always invalid, but can have duration > 0
             running_duration = self.duration_cache[start] if start == 0 else Fraction(0)
             reached_end = True
-            forced_chords = set(self.forced_chord_ids[start]) - set([-1])
-            forced_keys = set(self.forced_key_ids[start]) - set([-1])
+            forced_chords = set()
+            forced_keys = set()
 
             # Detect any next chord change positions
             for index, (
@@ -736,8 +736,8 @@ class HarmonicInferenceModel:
                     change_log_probs[start + 1 :],
                     no_change_log_probs[start + 1 :],
                     self.duration_cache[start:],  # Off-by-one because cache is dur to next note
-                    self.forced_chord_ids[start + 1 :],
-                    self.forced_key_ids[start + 1 :],
+                    self.forced_chord_ids[start:],  # Off-by-one to ignore next range
+                    self.forced_key_ids[start:],
                 ),
                 start=start + 1,
             ):
