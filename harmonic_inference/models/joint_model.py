@@ -1039,7 +1039,7 @@ class HarmonicInferenceModel:
 
                 # Enforce forced key change (or non-key change)
                 forced_key_ids = set(
-                    self.forced_chord_ids[state.prev_state.change_index : state.change_index]
+                    self.forced_key_ids[state.prev_state.change_index : state.change_index]
                 ) - set([-1])
                 if len(forced_key_ids) > 0:
                     forced_key_id = list(forced_key_ids)[0]
