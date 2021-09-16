@@ -733,8 +733,8 @@ def get_label_df(
     """
     labels_list = []
 
-    gt_chord_labels = np.full(len(piece.get_inputs()), None, dtype=int)
-    if piece.get_chords():
+    gt_chord_labels = np.full(len(piece.get_inputs()), -1, dtype=int)
+    if len(piece.get_chords()) > 0:
         gt_chords = piece.get_chords()
         gt_changes = piece.get_chord_change_indices()
         for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
@@ -750,8 +750,8 @@ def get_label_df(
     for chord, start, end in zip(chords, changes[:-1], changes[1:]):
         estimated_chord_labels[start:end] = chord
 
-    gt_key_labels = np.full(len(piece.get_inputs()), None, dtype=int)
-    if piece.get_keys():
+    gt_key_labels = np.full(len(piece.get_inputs()), -1, dtype=int)
+    if len(piece.get_keys()) > 0:
         gt_keys = piece.get_keys()
         gt_changes = piece.get_key_change_input_indices()
         gt_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
