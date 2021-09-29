@@ -1,6 +1,7 @@
 """Utility functions for working with the corpus DataFrames."""
 import logging
 import warnings
+from fractions import Fraction
 from typing import List, Tuple
 
 import numpy as np
@@ -232,7 +233,15 @@ def add_chord_metrical_data(chords: pd.DataFrame, measures: pd.DataFrame) -> pd.
             (full_merge["next"] == full_merge["mc_next"]) | full_merge["next"].isnull()
         )
 
-    return chords.drop(["mc_current", "on_fixed", "on_next_fixed"], axis="columns")
+    chords = chords.drop(["mc_current", "on_fixed", "on_next_fixed"], axis="columns")
+
+    # Bugfix for chords whose mc_next and mn_onset_next are still null (should never happen)
+    # This happens if the measures_df's next pointers are incorrect somehow.
+    null_mask = chords["mc_next"].isnull()
+    chords.loc[null_mask, "mc_next"] = chords.loc[null_mask, "mc"]
+    chords.loc[null_mask, "mn_onset_next"] = chords.loc[null_mask, "timesig"].apply(Fraction)
+
+    return chords
 
 
 def add_note_offsets(notes: pd.DataFrame, measures: pd.DataFrame) -> pd.DataFrame:
