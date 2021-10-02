@@ -1,12 +1,14 @@
+import bisect
 import re
 from fractions import Fraction
 from pathlib import Path
-from typing import Tuple, Union
+from typing import List, Tuple, Union
 
 import pandas as pd
 from ms3 import Score
 
 from harmonic_inference.data.data_types import KeyMode, PitchType
+from harmonic_inference.data.piece import ScorePiece
 from harmonic_inference.utils.harmonic_constants import CHORD_TYPE_TO_STRING, STRING_TO_CHORD_TYPE
 from harmonic_inference.utils.harmonic_utils import (
     get_chord_one_hot_index,
@@ -27,6 +29,43 @@ CHORD_REGEX = re.compile(
     r"(_[0-3])?"  # Inversion
 )
 KEY_REGEX = re.compile(f"K={PITCH_REGEX}")
+
+
+def convert_score_positions_to_note_indexes(
+    forces: Union[List[Tuple[int, Fraction]], List[Tuple[int, Fraction, int]]],
+    piece: ScorePiece,
+) -> Union[List[int], List[Tuple[int, int]]]:
+    """
+    Convert a list of forces whose positions are encoded as (mc, mn_onset) into
+    one with positions encoded as note_indexes into the given piece.
+
+    Parameters
+    ----------
+    forces : Union[List[Tuple[int, Fraction]], List[Tuple[int, Fraction, int]]]
+        A list of forces, either (mc, mn_onset) tuples, or (mc, mn_onset, id) tuples.
+
+    piece : ScorePiece
+        A score in which to extract note indexes.
+
+    Returns
+    -------
+    forces : Union[List[int], List[Tuple[int, int]]]
+        A list of forces, where the (mc, mn_onset) position is converted into a note index.
+    """
+    note_positions = [note.onset for note in piece.get_inputs()]
+
+    new_forces = [0] * len(forces)
+    for i, force in enumerate(forces):
+        index = bisect.bisect_left(note_positions, force[:2])
+
+        if note_positions[index] != force[:2]:
+            raise ValueError(
+                f"Position {force[:2]} is not a note onset. Closest is {note_positions[index]}"
+            )
+
+        new_forces[i] = index if len(force) == 2 else (index, force[-1])
+
+    return new_forces
 
 
 def extract_forces_from_musescore(
