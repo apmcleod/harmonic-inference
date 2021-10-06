@@ -214,7 +214,7 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
     labels_list = []
 
     chords = piece.get_chords()
-    onsets = [chord.onset for chord in chords]
+    onsets = [note.onset for note in piece.get_inputs()]
     chord_changes = piece.get_chord_change_indices()
     chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
     chord_suspensions_midi = np.full(len(piece.get_inputs()), "", dtype=object)
