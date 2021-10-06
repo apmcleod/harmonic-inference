@@ -214,6 +214,7 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
     labels_list = []
 
     chords = piece.get_chords()
+    onsets = [chord.onset for chord in chords]
     chord_changes = piece.get_chord_change_indices()
     chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
     chord_suspensions_midi = np.full(len(piece.get_inputs()), "", dtype=object)
@@ -251,12 +252,13 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
         slice(len(hu.get_key_label_list(PitchType.TPC))), PitchType.TPC
     )
 
-    for duration, chord_label, key_label, suspension_tpc, suspension_midi in zip(
+    for duration, chord_label, key_label, suspension_tpc, suspension_midi, onset in zip(
         piece.get_duration_cache(),
         chord_labels,
         key_labels,
         chord_suspensions_tpc,
         chord_suspensions_midi,
+        onsets,
     ):
         if duration == 0:
             continue
@@ -283,6 +285,8 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
                 "key_tonic_midi": tonic_midi,
                 "key_mode": mode,
                 "duration": duration,
+                "mc": onset[0],
+                "mn_onset": onset[1],
             }
         )
 
