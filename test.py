@@ -527,6 +527,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--no_h5",
+        action="store_true",
+        help="Do not read file_ids and piece_dicts from the `--h5_dir` directory.",
+    )
+
+    parser.add_argument(
         "-s",
         "--seed",
         default=0,
@@ -576,14 +582,17 @@ if __name__ == "__main__":
 
     data_type = "test" if ARGS.test else "valid"
 
-    # Load data for ctm
+    # Load data for ctm to get file_ids
     h5_path = Path(ARGS.h5_dir / f"ChordTransitionDataset_{data_type}_seed_{ARGS.seed}.h5")
-    with h5py.File(h5_path, "r") as h5_file:
-        if "file_ids" not in h5_file:
-            logging.error("file_ids not found in %s. Re-create with create_h5_data.py", h5_path)
-            sys.exit(1)
+    if not ARGS.no_h5 and h5_path.exists():
+        with h5py.File(h5_path, "r") as h5_file:
+            if "file_ids" not in h5_file:
+                logging.error("file_ids not found in %s. Re-create with create_h5_data.py", h5_path)
+                sys.exit(1)
 
-        file_ids = list(h5_file["file_ids"])
+            file_ids = list(h5_file["file_ids"])
+    else:
+        file_ids = None
 
     # Load pieces
     pieces = load_pieces(

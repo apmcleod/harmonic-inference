@@ -272,7 +272,7 @@ class Piece:
         assert stop is None or stop >= start, "stop must be None or >= start"
 
         chords = self.get_chords()
-        if not chords:
+        if chords is None:
             return None
 
         chord_change_indices = self.get_chord_change_indices()
