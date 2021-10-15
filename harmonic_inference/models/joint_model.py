@@ -557,9 +557,7 @@ class HarmonicInferenceModel:
         assert piece.DATA_TYPE == self.INPUT_TYPE, "Piece type doesn't match expected input type"
 
         self.debugger = DebugLogger(
-            self.current_piece,
-            self.CHORD_OUTPUT_TYPE,
-            self.KEY_OUTPUT_TYPE,
+            self,
             self.max_chord_branching_factor,
             self.max_key_branching_factor,
         )
@@ -1383,9 +1381,7 @@ class DebugLogger:
 
     def __init__(
         self,
-        piece: Piece,
-        chord_type: PitchType,
-        key_type: PitchType,
+        joint_model: HarmonicInferenceModel,
         max_chords_to_print: int = 20,
         max_keys_to_print: int = 5,
     ):
@@ -1394,25 +1390,28 @@ class DebugLogger:
 
         Parameters
         ----------
-        piece : Piece
-            The piece to print debug messages for.
-        chord_type : PitchType
-            The pitch type for chord root labels and priors.
-        key_type : PitchType
-            The pitch type for key tonic labels and priors.
+        joint_model : HarmonicInferenceModel
+            The joint model currently being used.
         max_chords_to_print : int
             The maximum number of chords to print, until the correct chord.
         max_keys_to_print : int
             The maximum number of keys to print, until the correct key.
         """
-        self.piece = piece
-        self.CHORD_OUTPUT_TYPE = chord_type
-        self.KEY_OUTPUT_TYPE = key_type
+        self.joint_model = joint_model
+        self.piece = joint_model.current_piece
         self.max_chords_to_print = max_chords_to_print
         self.max_keys_to_print = max_keys_to_print
 
-        self.chord_labels = np.array(hu.get_chord_label_list(self.CHORD_OUTPUT_TYPE))
-        self.key_labels = np.array(hu.get_key_label_list(self.KEY_OUTPUT_TYPE))
+        self.ccm_chord_labels = np.array(
+            hu.get_chord_label_list(
+                joint_model.chord_classifier.OUTPUT_PITCH,
+                use_inversions=joint_model.chord_classifier.use_inversions,
+                reduction=joint_model.chord_classifier.reduction,
+            )
+        )
+        self.key_labels = np.array(
+            hu.get_key_label_list(joint_model.key_sequence_model.OUTPUT_PITCH_TYPE)
+        )
 
     def debug_key_transitions(self, key_change_probs: List[float], states: List[State]):
         """
@@ -1437,7 +1436,9 @@ class DebugLogger:
         change_index = states[0].prev_state.change_index
         new_key_index = bisect.bisect_left(key_changes, change_index)
         new_chord_index = bisect.bisect_left(chord_changes, change_index)
-        correct_key = keys[new_key_index - 1]
+        correct_key = keys[new_key_index - 1].to_pitch_type(
+            self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE
+        )
 
         if len(chord_changes) < new_chord_index and chord_changes[new_chord_index] == change_index:
             # Chord change is at the correct location
@@ -1463,14 +1464,7 @@ class DebugLogger:
             )
         logging.debug(
             "  Recent correct chords: %s",
-            "; ".join(
-                self.chord_labels[
-                    [
-                        chord.get_one_hot_index(relative=False, use_inversion=True, pad=False)
-                        for chord in correct_chords
-                    ]
-                ]
-            ),
+            "; ".join([str(chord) for chord in correct_chords]),
         )
 
         total = 0
@@ -1482,7 +1476,14 @@ class DebugLogger:
                 continue
 
             if (
-                correct_chords[-1].get_one_hot_index(relative=False, use_inversion=True, pad=False)
+                correct_chords[-1]
+                .to_pitch_type(self.joint_model.chord_classifier.OUTPUT_PITCH)
+                .get_one_hot_index(
+                    relative=False,
+                    use_inversion=self.joint_model.chord_classifier.use_inversions,
+                    pad=False,
+                    reduction=self.joint_model.chord_classifier.reduction,
+                )
                 != state.chord
             ):
                 # Skip if current state's chord is incorrect
@@ -1503,7 +1504,7 @@ class DebugLogger:
             logging.debug("    Current key: %s", self.key_labels[state.key])
             logging.debug(
                 "    Recent chords: %s",
-                "; ".join([self.chord_labels[s.chord] for s in [state.prev_state, state]]),
+                "; ".join([self.ccm_chord_labels[s.chord] for s in [state.prev_state, state]]),
             )
             logging.debug("        p(change) = %s", change_prob)
 
@@ -1546,8 +1547,12 @@ class DebugLogger:
             # Piece doesn't have a key change here
             return
 
-        correct_prev_key = keys[new_key_index - 1]
-        correct_next_key = keys[new_key_index]
+        correct_prev_key = keys[new_key_index - 1].to_pitch_type(
+            self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE
+        )
+        correct_next_key = keys[new_key_index].to_pitch_type(
+            self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE
+        )
         correct_key_change_one_hot = correct_prev_key.get_key_change_one_hot_index(correct_next_key)
 
         if chord_changes[new_chord_index] == change_index:
@@ -1565,14 +1570,7 @@ class DebugLogger:
         )
         logging.debug(
             "  Recent correct chords: %s",
-            "; ".join(
-                self.chord_labels[
-                    [
-                        chord.get_one_hot_index(relative=False, use_inversion=True, pad=False)
-                        for chord in correct_chords
-                    ]
-                ]
-            ),
+            "; ".join([str(chord) for chord in correct_chords]),
         )
 
         total = 0
@@ -1581,7 +1579,7 @@ class DebugLogger:
         total_chord_correct_correct = 0
 
         relative_key_labels = hu.get_key_label_list(
-            self.KEY_OUTPUT_TYPE,
+            self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE,
             relative=True,
             relative_to=correct_prev_key.relative_tonic,
         )
@@ -1593,7 +1591,14 @@ class DebugLogger:
 
             is_chord_correct = False
             if (
-                correct_chords[-1].get_one_hot_index(relative=False, use_inversion=True, pad=False)
+                correct_chords[-1]
+                .to_pitch_type(self.joint_model.chord_classifier.OUTPUT_PITCH)
+                .get_one_hot_index(
+                    relative=False,
+                    use_inversion=self.joint_model.chord_classifier.use_inversions,
+                    pad=False,
+                    reduction=self.joint_model.chord_classifier.reduction,
+                )
                 == state.chord
             ):
                 # State's chord is incorrect
@@ -1615,7 +1620,7 @@ class DebugLogger:
             logging.debug("    Current key: %s", self.key_labels[state.key])
             logging.debug(
                 "    Recent chords: %s",
-                "; ".join([self.chord_labels[s.chord] for s in [state.prev_state, state]]),
+                "; ".join([self.ccm_chord_labels[s.chord] for s in [state.prev_state, state]]),
             )
             logging.debug(
                 "      p(%s)=%s, rank=%s",
@@ -1693,28 +1698,40 @@ class DebugLogger:
             return
 
         correct_key = keys[key_index - 1]
-        correct_key_one_hot = correct_key.get_one_hot_index()
+        correct_key_one_hot = correct_key.to_pitch_type(
+            self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE
+        ).get_one_hot_index()
 
         correct_next_chord = chords[chord_index]
-        correct_next_chord_one_hot = correct_next_chord.get_one_hot_index(
-            relative=False, use_inversion=True, pad=False
-        )
-        correct_next_chord_relative_one_hot = correct_next_chord.get_one_hot_index(
-            relative=True, use_inversion=True, pad=False
+        correct_next_chord_relative_one_hot = correct_next_chord.to_pitch_type(
+            self.joint_model.chord_sequence_model.OUTPUT_PITCH
+        ).get_one_hot_index(
+            relative=True,
+            use_inversion=self.joint_model.chord_sequence_model.use_output_inversions,
+            pad=False,
+            reduction=self.joint_model.chord_sequence_model.output_reduction,
         )
 
         correct_prev_chords = chords[max(0, chord_index - 5) : chord_index]
         correct_prev_chords_one_hots = [
-            chord.get_one_hot_index(relative=False, use_inversion=True, pad=False)
+            chord.to_pitch_type(self.joint_model.chord_classifier.OUTPUT_PITCH).get_one_hot_index(
+                relative=False,
+                use_inversion=self.joint_model.chord_classifier.use_inversions,
+                pad=False,
+                reduction=self.joint_model.chord_classifier.reduction,
+            )
             for chord in correct_prev_chords
         ]
 
         relative_chord_labels = hu.get_chord_label_list(
-            self.CHORD_OUTPUT_TYPE,
-            use_inversions=True,
+            self.joint_model.chord_sequence_model.OUTPUT_PITCH_TYPE,
+            use_inversions=self.joint_model.chord_sequence_model.use_output_inversions,
             relative=True,
-            relative_to=correct_key.relative_tonic,
+            relative_to=correct_key.to_pitch_type(
+                self.joint_model.chord_sequence_model.OUTPUT_PITCH_TYPE
+            ).relative_tonic,
             pad=False,
+            reduction=self.joint_model.chord_sequence_model.output_reduction,
         )
 
         logging.debug(
@@ -1724,9 +1741,9 @@ class DebugLogger:
         )
         logging.debug(
             "  Recent correct chords: %s",
-            "; ".join(self.chord_labels[correct_prev_chords_one_hots]),
+            "; ".join([str(chord) for chord in correct_prev_chords]),
         )
-        logging.debug("  Correct next chord: %s", self.chord_labels[correct_next_chord_one_hot])
+        logging.debug("  Correct next chord: %s", correct_next_chord)
 
         total = 0
         total_correct = 0
@@ -1749,7 +1766,7 @@ class DebugLogger:
             correct_rank = rankings.index(correct_next_chord_relative_one_hot)
             logging.debug(
                 "    p(%s)=%s rank=%s",
-                self.chord_labels[correct_next_chord_one_hot],
+                correct_next_chord,
                 correct_prob,
                 correct_rank,
             )
@@ -1762,7 +1779,7 @@ class DebugLogger:
             state_prev_chords_one_hots = state_prev_chords_one_hots[-6:-1]
             logging.debug(
                 "      Previous chords: %s",
-                "; ".join(self.chord_labels[state_prev_chords_one_hots]),
+                "; ".join(self.ccm_chord_labels[state_prev_chords_one_hots]),
             )
 
             logging.debug("      Top chords:")
@@ -1867,7 +1884,14 @@ class DebugLogger:
 
             correct_chords = self.piece.get_chords_within_range(range_start, range_end)
             correct_chords_one_hot = [
-                chord.get_one_hot_index(relative=False, use_inversion=True, pad=False)
+                chord.to_pitch_type(
+                    self.joint_model.chord_classifier.OUTPUT_PITCH
+                ).get_one_hot_index(
+                    relative=False,
+                    use_inversion=self.joint_model.chord_classifier.use_inversions,
+                    pad=False,
+                    reduction=self.joint_model.chord_classifier.reduction,
+                )
                 for chord in correct_chords
             ]
 
@@ -1905,12 +1929,12 @@ class DebugLogger:
             )
             logging.debug(
                 "    correct chords: %s",
-                "; ".join(self.chord_labels[correct_chords_one_hot]),
+                "; ".join([str(chord) for chord in correct_chords]),
             )
             for one_hot, prob, rank in zip(correct_chords_one_hot, correct_probs, correct_rank):
                 logging.debug(
                     "        p(%s)=%s, rank=%s",
-                    self.chord_labels[one_hot],
+                    self.ccm_chord_labels[one_hot],
                     prob,
                     rank,
                 )
@@ -1923,7 +1947,7 @@ class DebugLogger:
                     "       %s%s: p(%s) = %s",
                     "*" if one_hot in correct_chords_one_hot else " ",
                     rank,
-                    self.chord_labels[one_hot],
+                    self.ccm_chord_labels[one_hot],
                     chord_probs[one_hot],
                 )
 
@@ -1949,29 +1973,29 @@ class DebugLogger:
         correct_chord = self.piece.get_chords()[0]
         correct_key = self.piece.get_keys()[0]
 
-        correct_chord_one_hot_relative = correct_chord.get_one_hot_index(
+        correct_chord_one_hot_relative = correct_chord.to_pitch_type(
+            self.joint_model.initial_chord_model.PITCH_TYPE
+        ).get_one_hot_index(
             relative=True,
-            use_inversion=True,
+            use_inversion=self.joint_model.initial_chord_model.use_inversions,
             pad=False,
-        )
-        correct_chord_one_hot = correct_chord.get_one_hot_index(
-            relative=False,
-            use_inversion=True,
-            pad=False,
+            reduction=self.joint_model.initial_chord_model.reduction,
         )
 
         correct_prob = icm_prior[correct_chord_one_hot_relative]
         correct_rank = rankings.index(correct_chord_one_hot_relative)
 
         logging.debug("Initial chord prior relative to key %s:", correct_key)
-        logging.debug("  Correct chord: %s", self.chord_labels[correct_chord_one_hot])
+        logging.debug("  Correct chord: %s", correct_chord)
         logging.debug("    prob=%s rank=%s", correct_prob, correct_rank)
 
         relative_chord_labels = hu.get_chord_label_list(
-            correct_chord.pitch_type,
-            use_inversions=True,
+            self.joint_model.initial_chord_model.PITCH_TYPE,
+            use_inversions=self.joint_model.initial_chord_model.use_inversions,
             relative=True,
-            relative_to=correct_key.relative_tonic,
+            relative_to=correct_key.to_pitch_type(
+                self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE
+            ).relative_tonic,
             pad=False,
         )
 
