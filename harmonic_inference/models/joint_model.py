@@ -925,7 +925,10 @@ class HarmonicInferenceModel:
             )
             all_states[0].add(state, force=True)
 
-        if logging.getLogger().isEnabledFor(logging.DEBUG):
+        if (
+            logging.getLogger().isEnabledFor(logging.DEBUG)
+            and self.current_piece.get_keys() is not None
+        ):
             self.debugger.debug_initial_chord_prior(
                 self.initial_chord_model.get_prior(
                     KeyMode.MINOR == self.current_piece.get_keys()[0].relative_mode, log=False
@@ -1434,49 +1437,59 @@ class DebugLogger:
 
         # Previous change is the same for all states here
         change_index = states[0].prev_state.change_index
-        new_key_index = bisect.bisect_left(key_changes, change_index)
-        new_chord_index = bisect.bisect_left(chord_changes, change_index)
-        correct_key = keys[new_key_index - 1].to_pitch_type(
-            self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE
-        )
-
-        if len(chord_changes) < new_chord_index and chord_changes[new_chord_index] == change_index:
-            # Chord change is at the correct location
-            if new_chord_index == len(chords):
-                new_chord_index -= 1
-            correct_chords = [chords[new_chord_index - 1], chords[new_chord_index]]
-        else:
-            correct_chords = [chords[new_chord_index - 1]]
-
-        if new_key_index < len(key_changes) and key_changes[new_key_index] == change_index:
-            logging.debug(
-                "Key change at index %s: %s -> %s",
-                change_index,
-                correct_key,
-                keys[new_key_index],
+        if key_changes is not None:
+            new_key_index = bisect.bisect_left(key_changes, change_index)
+            new_chord_index = bisect.bisect_left(chord_changes, change_index)
+            correct_key = keys[new_key_index - 1].to_pitch_type(
+                self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE
             )
 
-        else:
+            if (
+                len(chord_changes) < new_chord_index
+                and chord_changes[new_chord_index] == change_index
+            ):
+                # Chord change is at the correct location
+                if new_chord_index == len(chords):
+                    new_chord_index -= 1
+                correct_chords = [chords[new_chord_index - 1], chords[new_chord_index]]
+            else:
+                correct_chords = [chords[new_chord_index - 1]]
+
+            if new_key_index < len(key_changes) and key_changes[new_key_index] == change_index:
+                logging.debug(
+                    "Key change at index %s: %s -> %s",
+                    change_index,
+                    correct_key,
+                    keys[new_key_index],
+                )
+
+            else:
+                logging.debug(
+                    "No key change at index %s: %s",
+                    change_index,
+                    correct_key,
+                )
             logging.debug(
-                "No key change at index %s: %s",
-                change_index,
-                correct_key,
+                "  Recent correct chords: %s",
+                "; ".join([str(chord) for chord in correct_chords]),
             )
-        logging.debug(
-            "  Recent correct chords: %s",
-            "; ".join([str(chord) for chord in correct_chords]),
-        )
+        else:
+            new_key_index = None
+            new_chord_index = None
+            correct_key = None
+            correct_chords = None
 
         total = 0
         total_correct = 0
 
         for change_prob, state in zip(key_change_probs, states):
-            if correct_key.get_one_hot_index() != state.key:
+            if correct_key is not None and correct_key.get_one_hot_index() != state.key:
                 # Skip if current state's key is incorrect
                 continue
 
             if (
-                correct_chords[-1]
+                correct_chords is not None
+                and correct_chords[-1]
                 .to_pitch_type(self.joint_model.chord_classifier.OUTPUT_PITCH)
                 .get_one_hot_index(
                     relative=False,
@@ -1491,12 +1504,16 @@ class DebugLogger:
 
             total += 1
 
-            if new_key_index < len(key_changes) and key_changes[new_key_index] == change_index:
+            if (
+                key_changes is not None
+                and new_key_index < len(key_changes)
+                and key_changes[new_key_index] == change_index
+            ):
                 if change_prob > 0.5:
                     total_correct += 1
                     continue
 
-            else:
+            elif key_changes is not None:
                 if change_prob < 0.5:
                     total_correct += 1
                     continue
@@ -1508,16 +1525,17 @@ class DebugLogger:
             )
             logging.debug("        p(change) = %s", change_prob)
 
-        logging.debug("KTM accuracy")
-        if total > 0:
-            logging.debug(
-                "    Correct key transitions / correct key/chord states: %s / %s = %s",
-                total_correct,
-                total,
-                total_correct / total,
-            )
-        else:
-            logging.debug("    No correct key/chord states")
+        if key_changes is not None:
+            logging.debug("KTM accuracy")
+            if total > 0:
+                logging.debug(
+                    "    Correct key transitions / correct key/chord states: %s / %s = %s",
+                    total_correct,
+                    total,
+                    total_correct / total,
+                )
+            else:
+                logging.debug("    No correct key/chord states")
 
     def debug_key_sequences(self, key_log_priors: List[List[float]], states: List[State]):
         """
@@ -1540,58 +1558,78 @@ class DebugLogger:
 
         # Previous change is the same for all states here
         change_index = states[0].prev_state.change_index
-        new_key_index = bisect.bisect_left(key_changes, change_index)
-        new_chord_index = bisect.bisect_left(chord_changes, change_index)
+        if key_changes is not None:
+            new_key_index = bisect.bisect_left(key_changes, change_index)
+            new_chord_index = bisect.bisect_left(chord_changes, change_index)
 
-        if new_key_index == len(key_changes) or key_changes[new_key_index] != change_index:
-            # Piece doesn't have a key change here
-            return
+            if new_key_index == len(key_changes) or key_changes[new_key_index] != change_index:
+                # Piece doesn't have a key change here
+                return
 
-        correct_prev_key = keys[new_key_index - 1].to_pitch_type(
-            self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE
-        )
-        correct_next_key = keys[new_key_index].to_pitch_type(
-            self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE
-        )
-        correct_key_change_one_hot = correct_prev_key.get_key_change_one_hot_index(correct_next_key)
+            correct_prev_key = keys[new_key_index - 1].to_pitch_type(
+                self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE
+            )
+            correct_next_key = keys[new_key_index].to_pitch_type(
+                self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE
+            )
+            correct_key_change_one_hot = correct_prev_key.get_key_change_one_hot_index(
+                correct_next_key
+            )
 
-        if chord_changes[new_chord_index] == change_index:
-            if new_chord_index == len(chords):
-                new_chord_index -= 1
-            correct_chords = [chords[new_chord_index - 1], chords[new_chord_index]]
+            if chord_changes[new_chord_index] == change_index:
+                if new_chord_index == len(chords):
+                    new_chord_index -= 1
+                correct_chords = [chords[new_chord_index - 1], chords[new_chord_index]]
+            else:
+                correct_chords = [chords[new_chord_index - 1]]
+
+            relative_key_labels = hu.get_key_label_list(
+                self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE,
+                relative=True,
+                relative_to=correct_prev_key.relative_tonic,
+            )
+
+            logging.debug(
+                "Key change at index %s: %s -> %s",
+                change_index,
+                correct_prev_key,
+                correct_next_key,
+            )
+            logging.debug(
+                "  Recent correct chords: %s",
+                "; ".join([str(chord) for chord in correct_chords]),
+            )
         else:
-            correct_chords = [chords[new_chord_index - 1]]
-
-        logging.debug(
-            "Key change at index %s: %s -> %s",
-            change_index,
-            correct_prev_key,
-            correct_next_key,
-        )
-        logging.debug(
-            "  Recent correct chords: %s",
-            "; ".join([str(chord) for chord in correct_chords]),
-        )
+            new_key_index = None
+            new_chord_index = None
+            correct_prev_key = None
+            correct_next_key = None
+            correct_key_change_one_hot = None
+            correct_chords = None
+            relative_key_labels = None
 
         total = 0
         total_chord_correct = 0
         total_correct = 0
         total_chord_correct_correct = 0
 
-        relative_key_labels = hu.get_key_label_list(
-            self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE,
-            relative=True,
-            relative_to=correct_prev_key.relative_tonic,
-        )
-
         for state, key_prior in zip(states, np.exp(key_log_priors)):
-            if correct_prev_key.get_one_hot_index() != state.key:
+            if correct_prev_key is not None and correct_prev_key.get_one_hot_index() != state.key:
                 # Skip if state's key is incorrect
                 continue
+            elif correct_prev_key is None:
+                relative_key_labels = hu.get_key_label_list(
+                    self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE,
+                    relative=True,
+                    relative_to=hu.get_key_from_one_hot_index(
+                        state.key, self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE
+                    )[0],
+                )
 
             is_chord_correct = False
             if (
-                correct_chords[-1]
+                correct_chords is not None
+                and correct_chords[-1]
                 .to_pitch_type(self.joint_model.chord_classifier.OUTPUT_PITCH)
                 .get_one_hot_index(
                     relative=False,
@@ -1601,33 +1639,37 @@ class DebugLogger:
                 )
                 == state.chord
             ):
-                # State's chord is incorrect
+                # State's chord is correct
                 is_chord_correct = True
                 total_chord_correct += 1
 
             total += 1
 
             rankings = list(np.argsort(-key_prior))
-            correct_prob = key_prior[correct_key_change_one_hot]
-            correct_rank = rankings.index(correct_key_change_one_hot)
+            if correct_chords is not None:
+                correct_prob = key_prior[correct_key_change_one_hot]
+                correct_rank = rankings.index(correct_key_change_one_hot)
 
-            if correct_rank == 0:
-                if is_chord_correct:
-                    total_chord_correct_correct += 1
-                total_correct += 1
-                continue
+                if correct_rank == 0:
+                    if is_chord_correct:
+                        total_chord_correct_correct += 1
+                    total_correct += 1
+                    continue
+            else:
+                correct_rank = self.max_keys_to_print
 
             logging.debug("    Current key: %s", self.key_labels[state.key])
             logging.debug(
                 "    Recent chords: %s",
                 "; ".join([self.ccm_chord_labels[s.chord] for s in [state.prev_state, state]]),
             )
-            logging.debug(
-                "      p(%s)=%s, rank=%s",
-                correct_next_key,
-                correct_prob,
-                correct_rank,
-            )
+            if correct_chords is not None:
+                logging.debug(
+                    "      p(%s)=%s, rank=%s",
+                    correct_next_key,
+                    correct_prob,
+                    correct_rank,
+                )
 
             logging.debug("      Top keys:")
             for rank, one_hot in enumerate(
@@ -1635,32 +1677,35 @@ class DebugLogger:
             ):
                 logging.debug(
                     "         %s%s: p(%s) = %s",
-                    "*" if one_hot == correct_key_change_one_hot else " ",
+                    "*"
+                    if correct_chords is not None and one_hot == correct_key_change_one_hot
+                    else " ",
                     rank,
                     relative_key_labels[one_hot],
                     key_prior[one_hot],
                 )
 
-        logging.debug("KSM accuracy")
-        if total > 0:
-            logging.debug(
-                "    Correct key states accuracy: %s / %s = %s",
-                total_correct,
-                total,
-                total_correct / total,
-            )
-        else:
-            logging.debug("    No correct key states")
+        if correct_chords is not None:
+            logging.debug("KSM accuracy")
+            if total > 0:
+                logging.debug(
+                    "    Correct key states accuracy: %s / %s = %s",
+                    total_correct,
+                    total,
+                    total_correct / total,
+                )
+            else:
+                logging.debug("    No correct key states")
 
-        if total_chord_correct > 0:
-            logging.debug(
-                "    Correct key/chord states accuracy: %s / %s = %s",
-                total_chord_correct_correct,
-                total_chord_correct,
-                total_chord_correct_correct / total_chord_correct,
-            )
-        else:
-            logging.debug("    No correct key/chord states")
+            if total_chord_correct > 0:
+                logging.debug(
+                    "    Correct key/chord states accuracy: %s / %s = %s",
+                    total_chord_correct_correct,
+                    total_chord_correct,
+                    total_chord_correct_correct / total_chord_correct,
+                )
+            else:
+                logging.debug("    No correct key/chord states")
 
     def debug_chord_sequence_priors(self, states: List[State], max_to_print: int = 20):
         """
@@ -1687,96 +1732,123 @@ class DebugLogger:
         keys = self.piece.get_keys()
         key_changes = self.piece.get_key_change_input_indices()
 
-        chord_index = bisect.bisect_left(chord_changes, change_index)
-        if chord_index == len(chord_changes) or chord_changes[chord_index] != change_index:
-            # Change index is incorrect
-            return
+        if keys is not None:
+            chord_index = bisect.bisect_left(chord_changes, change_index)
+            if chord_index == len(chord_changes) or chord_changes[chord_index] != change_index:
+                # Change index is incorrect
+                return
 
-        key_index = bisect.bisect_left(key_changes, change_index)
-        if key_index != len(key_changes) and key_changes[key_index] == change_index:
-            # Key change here (csm is unused)
-            return
+            key_index = bisect.bisect_left(key_changes, change_index)
+            if key_index != len(key_changes) and key_changes[key_index] == change_index:
+                # Key change here (csm is unused)
+                return
 
-        correct_key = keys[key_index - 1]
-        correct_key_one_hot = correct_key.to_pitch_type(
-            self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE
-        ).get_one_hot_index()
+            correct_key = keys[key_index - 1]
+            correct_key_one_hot = correct_key.to_pitch_type(
+                self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE
+            ).get_one_hot_index()
 
-        correct_next_chord = chords[chord_index]
-        correct_next_chord_relative_one_hot = correct_next_chord.to_pitch_type(
-            self.joint_model.chord_sequence_model.OUTPUT_PITCH
-        ).get_one_hot_index(
-            relative=True,
-            use_inversion=self.joint_model.chord_sequence_model.use_output_inversions,
-            pad=False,
-            reduction=self.joint_model.chord_sequence_model.output_reduction,
-        )
-
-        correct_prev_chords = chords[max(0, chord_index - 5) : chord_index]
-        correct_prev_chords_one_hots = [
-            chord.to_pitch_type(self.joint_model.chord_classifier.OUTPUT_PITCH).get_one_hot_index(
-                relative=False,
-                use_inversion=self.joint_model.chord_classifier.use_inversions,
-                pad=False,
-                reduction=self.joint_model.chord_classifier.reduction,
-            )
-            for chord in correct_prev_chords
-        ]
-
-        relative_chord_labels = hu.get_chord_label_list(
-            self.joint_model.chord_sequence_model.OUTPUT_PITCH_TYPE,
-            use_inversions=self.joint_model.chord_sequence_model.use_output_inversions,
-            relative=True,
-            relative_to=correct_key.to_pitch_type(
+            correct_next_chord = chords[chord_index]
+            correct_next_chord_relative_one_hot = correct_next_chord.to_pitch_type(
                 self.joint_model.chord_sequence_model.OUTPUT_PITCH_TYPE
-            ).relative_tonic,
-            pad=False,
-            reduction=self.joint_model.chord_sequence_model.output_reduction,
-        )
+            ).get_one_hot_index(
+                relative=True,
+                use_inversion=self.joint_model.chord_sequence_model.use_output_inversions,
+                pad=False,
+                reduction=self.joint_model.chord_sequence_model.output_reduction,
+            )
 
-        logging.debug(
-            "Chord prior for index %s relative to key %s:",
-            change_index,
-            correct_key,
-        )
-        logging.debug(
-            "  Recent correct chords: %s",
-            "; ".join([str(chord) for chord in correct_prev_chords]),
-        )
-        logging.debug("  Correct next chord: %s", correct_next_chord)
+            correct_prev_chords = chords[max(0, chord_index - 5) : chord_index]
+            correct_prev_chords_one_hots = [
+                chord.to_pitch_type(
+                    self.joint_model.chord_classifier.OUTPUT_PITCH
+                ).get_one_hot_index(
+                    relative=False,
+                    use_inversion=self.joint_model.chord_classifier.use_inversions,
+                    pad=False,
+                    reduction=self.joint_model.chord_classifier.reduction,
+                )
+                for chord in correct_prev_chords
+            ]
+
+            relative_chord_labels = hu.get_chord_label_list(
+                self.joint_model.chord_sequence_model.OUTPUT_PITCH_TYPE,
+                use_inversions=self.joint_model.chord_sequence_model.use_output_inversions,
+                relative=True,
+                relative_to=correct_key.to_pitch_type(
+                    self.joint_model.chord_sequence_model.OUTPUT_PITCH_TYPE
+                ).relative_tonic,
+                pad=False,
+                reduction=self.joint_model.chord_sequence_model.output_reduction,
+            )
+
+            logging.debug(
+                "Chord prior for index %s relative to key %s:",
+                change_index,
+                correct_key,
+            )
+            logging.debug(
+                "  Recent correct chords: %s",
+                "; ".join([str(chord) for chord in correct_prev_chords]),
+            )
+            logging.debug("  Correct next chord: %s", correct_next_chord)
+        else:
+            chord_index = None
+            key_index = None
+            correct_key = None
+            correct_key_one_hot = None
+            correct_next_chord = None
+            correct_next_chord_relative_one_hot = None
+            correct_prev_chords = None
+            correct_prev_chords_one_hots = None
 
         total = 0
         total_correct = 0
 
         for state in states:
-            if state.prev_state.chord != correct_prev_chords_one_hots[-1]:
+            if keys is not None and state.prev_state.chord != correct_prev_chords_one_hots[-1]:
                 # Most recent chord is incorrect
                 continue
 
-            if state.key != correct_key_one_hot:
+            if keys is not None and state.key != correct_key_one_hot:
                 # Current key is incorrect
                 continue
 
             total += 1
 
+            relative_chord_labels = hu.get_chord_label_list(
+                self.joint_model.chord_sequence_model.OUTPUT_PITCH_TYPE,
+                use_inversions=self.joint_model.chord_sequence_model.use_output_inversions,
+                relative=True,
+                relative_to=hu.get_key_from_one_hot_index(
+                    state.key, self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE
+                )[0],
+                pad=False,
+                reduction=self.joint_model.chord_sequence_model.output_reduction,
+            )
+
             csm_prior = np.exp(state.csm_log_prior)
 
             rankings = list(np.argsort(-csm_prior))
-            correct_prob = csm_prior[correct_next_chord_relative_one_hot]
-            correct_rank = rankings.index(correct_next_chord_relative_one_hot)
-            logging.debug(
-                "    p(%s)=%s rank=%s",
-                correct_next_chord,
-                correct_prob,
-                correct_rank,
-            )
+            if keys is not None:
+                correct_prob = csm_prior[correct_next_chord_relative_one_hot]
+                correct_rank = rankings.index(correct_next_chord_relative_one_hot)
+                logging.debug(
+                    "    p(%s)=%s rank=%s",
+                    correct_next_chord,
+                    correct_prob,
+                    correct_rank,
+                )
 
-            if correct_rank == 0:
-                total_correct += 1
-                continue
+                if correct_rank == 0:
+                    total_correct += 1
+                    continue
+            else:
+                correct_rank = self.max_chords_to_print
 
             state_prev_chords_one_hots, _ = state.get_chords()
             state_prev_chords_one_hots = state_prev_chords_one_hots[-6:-1]
+            logging.debug("State key: %s", self.key_labels[state.key])
             logging.debug(
                 "      Previous chords: %s",
                 "; ".join(self.ccm_chord_labels[state_prev_chords_one_hots]),
@@ -1786,22 +1858,25 @@ class DebugLogger:
             for rank, one_hot in enumerate(rankings[: min(max_to_print, correct_rank + 1)]):
                 logging.debug(
                     "           %s%s: p(%s) = %s",
-                    "*" if one_hot == correct_next_chord_relative_one_hot else " ",
+                    "*"
+                    if keys is not None and one_hot == correct_next_chord_relative_one_hot
+                    else " ",
                     rank,
                     relative_chord_labels[one_hot],
                     csm_prior[one_hot],
                 )
 
-        logging.debug("CSM accuracy")
-        if total > 0:
-            logging.debug(
-                "    Correct chord priors / correct key/prev chord states: %s / %s = %s",
-                total_correct,
-                total,
-                total_correct / total,
-            )
-        else:
-            logging.debug("    No correct key/prev chord states")
+        if keys is not None:
+            logging.debug("CSM accuracy")
+            if total > 0:
+                logging.debug(
+                    "    Correct chord priors / correct key/prev chord states: %s / %s = %s",
+                    total_correct,
+                    total,
+                    total_correct / total,
+                )
+            else:
+                logging.debug("    No correct key/prev chord states")
 
     def debug_chord_change_probs(self, change_probs: List[float]):
         """
@@ -1824,7 +1899,10 @@ class DebugLogger:
             if invalid:
                 continue
 
-            if i in self.piece.get_chord_change_indices():
+            if (
+                self.piece.get_chord_change_indices() is not None
+                and i in self.piece.get_chord_change_indices()
+            ):
                 change_total += 1
                 if change_prob < 0.5:
                     logging.debug(
@@ -1846,16 +1924,20 @@ class DebugLogger:
                 else:
                     no_change_correct += 1
 
-        logging.debug("CTM accuracy")
-        logging.debug(
-            "    Change: %s / %s = %s", change_correct, change_total, change_correct / change_total
-        )
-        logging.debug(
-            "    No change: %s / %s = %s",
-            no_change_correct,
-            no_change_total,
-            no_change_correct / no_change_total,
-        )
+        if self.piece.get_chord_change_indices() is not None:
+            logging.debug("CTM accuracy")
+            logging.debug(
+                "    Change: %s / %s = %s",
+                change_correct,
+                change_total,
+                change_correct / change_total,
+            )
+            logging.debug(
+                "    No change: %s / %s = %s",
+                no_change_correct,
+                no_change_total,
+                no_change_correct / no_change_total,
+            )
 
     def debug_chord_classifications(
         self,
@@ -1951,13 +2033,14 @@ class DebugLogger:
                     chord_probs[one_hot],
                 )
 
-        logging.debug("CCM accuracy")
-        logging.debug(
-            "    correct_chords / correct_ranges: %s / %s = %s",
-            num_correct_chords,
-            num_correct_ranges,
-            num_correct_chords / num_correct_ranges,
-        )
+        if change_indices is not None:
+            logging.debug("CCM accuracy")
+            logging.debug(
+                "    correct_chords / correct_ranges: %s / %s = %s",
+                num_correct_chords,
+                num_correct_ranges,
+                num_correct_chords / num_correct_ranges,
+            )
 
     def debug_initial_chord_prior(self, icm_prior: List[float]):
         """
@@ -1988,29 +2071,6 @@ class DebugLogger:
         logging.debug("Initial chord prior relative to key %s:", correct_key)
         logging.debug("  Correct chord: %s", correct_chord)
         logging.debug("    prob=%s rank=%s", correct_prob, correct_rank)
-
-        relative_chord_labels = hu.get_chord_label_list(
-            self.joint_model.initial_chord_model.PITCH_TYPE,
-            use_inversions=self.joint_model.initial_chord_model.use_inversions,
-            relative=True,
-            relative_to=correct_key.to_pitch_type(
-                self.joint_model.key_sequence_model.OUTPUT_PITCH_TYPE
-            ).relative_tonic,
-            pad=False,
-        )
-
-        if correct_rank != 0:
-            logging.debug("      Top chords:")
-            for rank, one_hot in enumerate(
-                rankings[: min(self.max_chords_to_print, correct_rank + 1)]
-            ):
-                logging.debug(
-                    "         %s%s: p(%s) = %s",
-                    "*" if one_hot == correct_chord_one_hot_relative else " ",
-                    rank,
-                    relative_chord_labels[one_hot],
-                    icm_prior[one_hot],
-                )
 
 
 def from_args(models: Dict, ARGS: Namespace) -> HarmonicInferenceModel:

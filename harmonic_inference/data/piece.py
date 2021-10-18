@@ -273,7 +273,7 @@ class Piece:
 
         chords = self.get_chords()
         if chords is None:
-            return None
+            return []
 
         chord_change_indices = self.get_chord_change_indices()
 
@@ -415,11 +415,11 @@ class ScorePiece(Piece):
         self.measures_df = measures_df
 
         self.notes = np.array(notes)
-        self.chords = np.array(chords)
-        self.keys = np.array(keys)
-        self.chord_changes = np.array(chord_changes)
-        self.chord_ranges = np.array(chord_ranges)
-        self.key_changes = np.array(key_changes)
+        self.chords = np.array(chords) if chords is not None else None
+        self.keys = np.array(keys) if keys is not None else None
+        self.chord_changes = np.array(chord_changes) if chord_changes is not None else None
+        self.chord_ranges = np.array(chord_ranges) if chord_ranges is not None else None
+        self.key_changes = np.array(key_changes) if key_changes is not None else None
 
     def get_duration_cache(self):
         if self.duration_cache is None:

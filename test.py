@@ -234,6 +234,10 @@ def evaluate(
 
         if state is None:
             logging.info("Returned None")
+            continue
+
+        if piece.get_chords() is None:
+            logging.info("Cannot compute accuracy. Ground truth unknown.")
         else:
             chord_acc_full = eu.evaluate_chords(
                 piece,
@@ -294,89 +298,89 @@ def evaluate(
             )
             logging.info("Full accuracy = %s", full_acc)
 
-            if logging.getLogger().isEnabledFor(logging.DEBUG):
-                eu.log_state(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            eu.log_state(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)
 
-            labels_df = eu.get_label_df(
-                state,
-                piece,
-                model.CHORD_OUTPUT_TYPE,
-                model.KEY_OUTPUT_TYPE,
-            )
+        labels_df = eu.get_label_df(
+            state,
+            piece,
+            model.CHORD_OUTPUT_TYPE,
+            model.KEY_OUTPUT_TYPE,
+        )
 
-            # Write outputs tsv
-            results_df = eu.get_results_df(
-                piece,
-                state,
-                model.CHORD_OUTPUT_TYPE,
-                model.KEY_OUTPUT_TYPE,
-                PitchType.TPC,
-                PitchType.TPC,
-            )
+        # Write outputs tsv
+        results_df = eu.get_results_df(
+            piece,
+            state,
+            model.CHORD_OUTPUT_TYPE,
+            model.KEY_OUTPUT_TYPE,
+            PitchType.TPC,
+            PitchType.TPC,
+        )
 
-            # Write MIDI outputs for SPS chord-eval testing
-            results_midi_df = eu.get_results_df(
-                piece,
-                state,
-                model.CHORD_OUTPUT_TYPE,
-                model.KEY_OUTPUT_TYPE,
-                PitchType.MIDI,
-                PitchType.MIDI,
-            )
+        # Write MIDI outputs for SPS chord-eval testing
+        results_midi_df = eu.get_results_df(
+            piece,
+            state,
+            model.CHORD_OUTPUT_TYPE,
+            model.KEY_OUTPUT_TYPE,
+            PitchType.MIDI,
+            PitchType.MIDI,
+        )
 
-            if piece.name is not None and output_tsv_dir is not None:
-                piece_name = Path(piece.name.split(" ")[-1])
-                output_tsv_path = output_tsv_dir / piece_name
+        if piece.name is not None and output_tsv_dir is not None:
+            piece_name = Path(piece.name.split(" ")[-1])
+            output_tsv_path = output_tsv_dir / piece_name
 
-                try:
-                    output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
-                    results_tsv_path = output_tsv_path.parent / (
-                        output_tsv_path.name[:-4] + "_results.tsv"
-                    )
-                    results_df.to_csv(results_tsv_path, sep="\t")
-                    logging.info("Results TSV written out to %s", results_tsv_path)
-                except Exception:
-                    logging.exception("Error writing to csv %s", results_tsv_path)
-                    logging.debug(results_df)
+            try:
+                output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
+                results_tsv_path = output_tsv_path.parent / (
+                    output_tsv_path.name[:-4] + "_results.tsv"
+                )
+                results_df.to_csv(results_tsv_path, sep="\t")
+                logging.info("Results TSV written out to %s", results_tsv_path)
+            except Exception:
+                logging.exception("Error writing to csv %s", results_tsv_path)
+                logging.debug(results_df)
 
-                try:
-                    output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
-                    results_tsv_path = output_tsv_path.parent / (
-                        output_tsv_path.name[:-4] + "_results_midi.tsv"
-                    )
-                    results_midi_df.to_csv(results_tsv_path, sep="\t")
-                    logging.info("MIDI results TSV written out to %s", results_tsv_path)
-                except Exception:
-                    logging.exception("Error writing to csv %s", results_tsv_path)
-                    logging.debug(results_midi_df)
+            try:
+                output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
+                results_tsv_path = output_tsv_path.parent / (
+                    output_tsv_path.name[:-4] + "_results_midi.tsv"
+                )
+                results_midi_df.to_csv(results_tsv_path, sep="\t")
+                logging.info("MIDI results TSV written out to %s", results_tsv_path)
+            except Exception:
+                logging.exception("Error writing to csv %s", results_tsv_path)
+                logging.debug(results_midi_df)
 
-                try:
-                    output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
-                    labels_df.to_csv(output_tsv_path, sep="\t")
-                    logging.info("Labels TSV written out to %s", output_tsv_path)
-                except Exception:
-                    logging.exception("Error writing to csv %s", output_tsv_path)
-                    logging.debug(labels_df)
-                else:
-                    if annotations_base_dir is not None:
-                        try:
-                            eu.write_labels_to_score(
-                                output_tsv_dir / piece_name.parent,
-                                annotations_base_dir / piece_name.parent,
-                                piece_name.stem,
-                            )
-                            logging.info(
-                                "Writing score out to %s",
-                                output_tsv_dir / piece_name.parent,
-                            )
-                        except Exception:
-                            logging.exception(
-                                "Error writing score out to %s",
-                                output_tsv_dir / piece_name.parent,
-                            )
-
-            else:
+            try:
+                output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
+                labels_df.to_csv(output_tsv_path, sep="\t")
+                logging.info("Labels TSV written out to %s", output_tsv_path)
+            except Exception:
+                logging.exception("Error writing to csv %s", output_tsv_path)
                 logging.debug(labels_df)
+            else:
+                if annotations_base_dir is not None:
+                    try:
+                        eu.write_labels_to_score(
+                            output_tsv_dir / piece_name.parent,
+                            annotations_base_dir / piece_name.parent,
+                            piece_name.stem,
+                        )
+                        logging.info(
+                            "Writing score out to %s",
+                            output_tsv_dir / piece_name.parent,
+                        )
+                    except Exception:
+                        logging.exception(
+                            "Error writing score out to %s",
+                            output_tsv_dir / piece_name.parent,
+                        )
+
+        else:
+            logging.debug(labels_df)
 
 
 if __name__ == "__main__":
@@ -598,7 +602,9 @@ if __name__ == "__main__":
     pieces = load_pieces(
         xml=ARGS.xml,
         input_path=ARGS.input,
-        piece_dicts_path=Path(ARGS.h5_dir / f"pieces_{data_type}_seed_{ARGS.seed}.pkl"),
+        piece_dicts_path=None
+        if ARGS.no_h5
+        else Path(ARGS.h5_dir / f"pieces_{data_type}_seed_{ARGS.seed}.pkl"),
         file_ids=file_ids,
         specific_id=ARGS.id,
     )
