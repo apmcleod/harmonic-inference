@@ -20,3 +20,5 @@ results*/**
 baseline/**
 ismir/**
 corpus_data-platti/**
+beethoven_corpus_data/**
+Scratch-local.ipynb
