@@ -33,6 +33,7 @@ class Note:
         offset: Union[float, Tuple[int, Fraction]],
         offset_level: int,
         pitch_type: PitchType,
+        mc_onset: Fraction = None,
     ):
         """
         Create a new musical Note.
@@ -61,6 +62,8 @@ class Note:
         pitch_type : PitchType
             The PitchType in which this note's pitch_class is stored. If this is TPC, the
             pitch_class can be later converted into MIDI, but not vice versa.
+        mc_onset : Fraction
+            The mc_onset of this note, if wanted later. If None, onset[1] is stored as mc_onset.
         """
         self.pitch_class = pitch_class
         self.octave = octave
@@ -70,6 +73,7 @@ class Note:
         self.offset = offset
         self.offset_level = offset_level
         self.pitch_type = pitch_type
+        self.mc_onset = self.onset[1] if mc_onset is None else mc_onset
 
         self.params = inspect.getfullargspec(Note.__init__).args[1:]
 
@@ -412,6 +416,7 @@ class Note:
                 offset,
                 offset_level,
                 pitch_type,
+                mc_onset=note_row["mc_onset"],
             )
 
         except Exception as exception:

@@ -146,6 +146,8 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
             - key_tonic_midi
             - key_mode
             - duration
+            - mc
+            - onset_mc
     """
 
     def get_suspension_strings(chord: Chord) -> Tuple[str, str]:
@@ -258,7 +260,7 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
         key_labels,
         chord_suspensions_tpc,
         chord_suspensions_midi,
-        onsets,
+        piece.get_inputs(),
     ):
         if duration == 0:
             continue
@@ -690,7 +692,7 @@ def get_annotation_df(
                 {
                     "label": est_key_string,
                     "mc": note.onset[0],
-                    "mc_onset": note.onset[1],
+                    "mc_onset": note.mc_onset,
                 }
             )
 
@@ -699,7 +701,7 @@ def get_annotation_df(
                 {
                     "label": est_chord_string,
                     "mc": note.onset[0],
-                    "mc_onset": note.onset[1],
+                    "mc_onset": note.mc_onset,
                 }
             )
 
@@ -832,7 +834,7 @@ def get_label_df(
                 {
                     "label": est_key_string if est_key_string != prev_est_key_string else "--",
                     "mc": note.onset[0],
-                    "mc_onset": note.onset[1],
+                    "mc_onset": note.mc_onset,
                     "color_name": color,
                 }
             )
@@ -880,7 +882,7 @@ def get_label_df(
                     if est_chord_string != prev_est_chord_string
                     else "--",
                     "mc": note.onset[0],
-                    "mc_onset": note.onset[1],
+                    "mc_onset": note.mc_onset,
                     "color_name": color,
                 }
             )
