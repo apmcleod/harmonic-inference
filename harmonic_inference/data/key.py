@@ -14,7 +14,7 @@ from harmonic_inference.utils.harmonic_constants import (
 )
 from harmonic_inference.utils.harmonic_utils import (
     absolute_to_relative,
-    get_interval_from_numeral,
+    decode_relative_keys,
     get_interval_from_scale_degree,
     get_key_one_hot_index,
     get_pitch_from_string,
@@ -320,27 +320,17 @@ class Key:
             global_mode = KeyMode.MINOR if chord_row["globalkey_is_minor"] else KeyMode.MAJOR
 
             # Local key is listed relative to global. We want it absolute.
-            local_mode = KeyMode.MINOR if chord_row["localkey_is_minor"] else KeyMode.MAJOR
-            local_transposition = get_interval_from_numeral(
-                chord_row["localkey"], global_mode, pitch_type=tonic_type
+            local_tonic, local_mode = decode_relative_keys(
+                chord_row["localkey"], global_tonic, global_mode, tonic_type
             )
-            local_tonic = transpose_pitch(global_tonic, local_transposition, pitch_type=tonic_type)
 
             # Treat applied dominants (and other slash chords) as new keys
-            relative_full = chord_row["relativeroot"]
-            relative_tonic = local_tonic
-            relative_mode = local_mode
-            if not pd.isna(relative_full):
-                # Handle doubly-relative chords iteratively
-                for relative in reversed(relative_full.split("/")):
-                    # Relativeroot is listed relative to local key. We want it absolute.
-                    relative_transposition = get_interval_from_numeral(
-                        relative, relative_mode, pitch_type=tonic_type
-                    )
-                    relative_mode = KeyMode.MINOR if relative[-1].islower() else KeyMode.MAJOR
-                    relative_tonic = transpose_pitch(
-                        relative_tonic, relative_transposition, pitch_type=tonic_type
-                    )
+            if not pd.isna(chord_row["relativeroot"]):
+                relative_tonic, relative_mode = decode_relative_keys(
+                    chord_row["relativeroot"], local_tonic, local_mode, tonic_type
+                )
+            else:
+                relative_tonic, relative_mode = local_tonic, local_mode
 
             return Key(
                 relative_tonic,

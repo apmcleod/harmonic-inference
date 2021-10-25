@@ -1,16 +1,17 @@
 """Script to test (evaluate) a joint model for harmonic inference."""
 import argparse
+import json
 import logging
 import os
 import sys
 from glob import glob
 from pathlib import Path
-from typing import List, Union
+from typing import Dict, List, Set, Union
 
+import h5py
 import torch
 from tqdm import tqdm
 
-import h5py
 import harmonic_inference.utils.eval_utils as eu
 from harmonic_inference.data.data_types import (
     ALL_ONE_TYPE_REDUCTION,
@@ -28,6 +29,121 @@ from harmonic_inference.models.joint_model import (
 from harmonic_inference.utils.data_utils import load_models_from_argparse, load_pieces
 
 SPLITS = ["train", "valid", "test"]
+
+
+def load_forces_from_json(json_path: Union[str, Path]) -> Dict[str, Dict[str, Union[Set, Dict]]]:
+    """
+    Load forced labels, changes, and non-changes from a json file and return them
+    in a dictionary that can be passed through to JointModel.get_harmony(...) as kwargs.
+
+    Parameters
+    ----------
+    json_path : Union[str, Path]
+        A reference to a json file containing forced labels, changes, and non-changes,
+        to be used for JointModel.get_harmony(...). It may have the following keys:
+            - "forced_chord_changes": A list of integers at which the chord must change.
+            - "forced_chord_non_changes": A list of integers at which the chord cannot change.
+            - "forced_key_changes": A list of integers at which the key must change.
+            - "forced_key_non_changes": A list of integers at which the key cannot change.
+            - "forced_chords": A dictionary mapping the string form of a tuple in the form
+                               (start, end) to a chord_id, saying that the input indexes on
+                               the range start (inclusive) to end (exclusive) must be output
+                               as the given chord_id.
+            - "forced_keys": Same as forced_chords, but for keys.
+
+    Returns
+    -------
+    forces_kwargs: Dict[str, Dict[str, Union[Set, Dict]]]
+        A nested dictionary containing the loaded keyword arguments for each input.
+        The outer-most keys should reference a specific input by string name,
+        or be the keyword "default", in which case the loaded kwargs will be used for all
+        input pieces not otherwise matched by string name.
+        In the inner dictionaries, keyword arguments have been loaded (with the correct types)
+        from the json file that can be passed directly as kwargs to JointModel.get_harmony(...)
+        for that particular piece.
+    """
+
+    def load_forces_from_nested_json(raw_data: Dict) -> Dict[str, Union[Set, Dict]]:
+        """
+        Load an inner forces_kwargs dict from a nested json forces_kwargs dict data.
+
+        Parameters
+        ----------
+        raw_data : Dict
+            The inner nested dictionary from which we will load the kwargs.
+            See load_forces_from_json for details.
+
+        Returns
+        -------
+        Dict[str, Union[Set, Dict]]
+            The kwargs for a single piece, unnested.
+        """
+        forces_kwargs = dict()
+
+        for key in [
+            "forced_chord_changes",
+            "forced_chord_non_changes",
+            "forced_key_changes",
+            "forced_key_non_changes",
+        ]:
+            if key in raw_data:
+                forces_kwargs[key] = set(raw_data[key])
+
+        for key in ["forced_chords", "forced_keys"]:
+            if key in raw_data:
+                forces_kwargs[key] = {
+                    tuple(map(int, range_tuple_str[1:-1].split(","))): label_id
+                    for range_tuple_str, label_id in raw_data[key].items()
+                }
+
+        for key in raw_data:
+            if key not in [
+                "forced_chord_changes",
+                "forced_chord_non_changes",
+                "forced_key_changes",
+                "forced_key_non_changes",
+                "forced_chords",
+                "forced_keys",
+            ]:
+                logging.warning(
+                    "--forces-json inner key not recognized: %s. Ignoring that key.", key
+                )
+
+        logging.info("Forces:" if len(forces_kwargs) > 0 else "Forces: None")
+        for key, item in sorted(forces_kwargs.items()):
+            if type(item) == dict:
+                logging.info("    %s:", key)
+                for inner_key, inner_item in sorted(item.items()):
+                    logging.info("        %s = %s", inner_key, inner_item)
+            else:
+                logging.info("    %s = %s", key, item)
+
+        return forces_kwargs
+
+    with open(json_path, "r") as json_file:
+        raw_data = json.load(json_file)
+
+    if (
+        "forced_chord_changes" in raw_data
+        or "forced_chord_non_changes" in raw_data
+        or "forced_key_changes" in raw_data
+        or "forced_key_non_changes" in raw_data
+        or "forced_chords" in raw_data
+        or "forced_keys" in raw_data
+    ):
+        logging.info(
+            "Given --json-forces not a nested, piece-specific mapping. Treating as default for "
+            "all inputs."
+        )
+        raw_data = {"default": raw_data}
+
+    all_forces_kwargs = {}
+
+    for key, nested_raw_data in raw_data.items():
+        logging.info("Loading forces for %s", key)
+        all_forces_kwargs[key] = load_forces_from_nested_json(nested_raw_data)
+
+    return all_forces_kwargs
 
 
 def write_tsvs_to_scores(
@@ -70,6 +186,7 @@ def evaluate(
     pieces: List[Piece],
     output_tsv_dir: Union[Path, str] = None,
     annotations_base_dir: Union[Path, str] = None,
+    forces_path: Union[Path, str] = None,
 ):
     """
     Get estimated chords and keys on the given pieces using the given model.
@@ -86,6 +203,8 @@ def evaluate(
     annotations_base_dir : Union[Path, str]
         A directory containing annotated scores, which the estimated labels can be written
         onto and then saved into the output_tsv directory.
+    forces_path : Union[Path, str]
+        The path to a json file containing forced labels, changes, or non-changes.
     """
     if output_tsv_dir is not None:
         output_tsv_dir = Path(output_tsv_dir)
@@ -93,14 +212,32 @@ def evaluate(
     if annotations_base_dir is not None:
         annotations_base_dir = Path(annotations_base_dir)
 
+    all_forces_dict = {} if forces_path is None else load_forces_from_json(forces_path)
+
     for piece in tqdm(pieces, desc="Getting harmony for pieces"):
         if piece.name is not None:
             logging.info("Running piece %s", piece.name)
 
-        state = model.get_harmony(piece)
+        # Load forces dict for this file
+        forces_dict = None
+        if piece.name is not None:
+            for key in set(all_forces_dict.keys()) - set(["default"]):
+                if key in piece.name:
+                    logging.info("Using forces with key %s", key)
+                    forces_dict = all_forces_dict[key]
+                    break
+
+        if forces_dict is None:
+            forces_dict = all_forces_dict["default"] if "default" in all_forces_dict else {}
+
+        state = model.get_harmony(piece, **forces_dict)
 
         if state is None:
             logging.info("Returned None")
+            continue
+
+        if piece.get_chords() is None:
+            logging.info("Cannot compute accuracy. Ground truth unknown.")
         else:
             chord_acc_full = eu.evaluate_chords(
                 piece,
@@ -161,89 +298,89 @@ def evaluate(
             )
             logging.info("Full accuracy = %s", full_acc)
 
-            if logging.getLogger().isEnabledFor(logging.DEBUG):
-                eu.log_state(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            eu.log_state(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)
 
-            labels_df = eu.get_label_df(
-                state,
-                piece,
-                model.CHORD_OUTPUT_TYPE,
-                model.KEY_OUTPUT_TYPE,
-            )
+        labels_df = eu.get_label_df(
+            state,
+            piece,
+            model.CHORD_OUTPUT_TYPE,
+            model.KEY_OUTPUT_TYPE,
+        )
 
-            # Write outputs tsv
-            results_df = eu.get_results_df(
-                piece,
-                state,
-                model.CHORD_OUTPUT_TYPE,
-                model.KEY_OUTPUT_TYPE,
-                PitchType.TPC,
-                PitchType.TPC,
-            )
+        # Write outputs tsv
+        results_df = eu.get_results_df(
+            piece,
+            state,
+            model.CHORD_OUTPUT_TYPE,
+            model.KEY_OUTPUT_TYPE,
+            PitchType.TPC,
+            PitchType.TPC,
+        )
 
-            # Write MIDI outputs for SPS chord-eval testing
-            results_midi_df = eu.get_results_df(
-                piece,
-                state,
-                model.CHORD_OUTPUT_TYPE,
-                model.KEY_OUTPUT_TYPE,
-                PitchType.MIDI,
-                PitchType.MIDI,
-            )
+        # Write MIDI outputs for SPS chord-eval testing
+        results_midi_df = eu.get_results_df(
+            piece,
+            state,
+            model.CHORD_OUTPUT_TYPE,
+            model.KEY_OUTPUT_TYPE,
+            PitchType.MIDI,
+            PitchType.MIDI,
+        )
 
-            if piece.name is not None and output_tsv_dir is not None:
-                piece_name = Path(piece.name.split(" ")[-1])
-                output_tsv_path = output_tsv_dir / piece_name
+        if piece.name is not None and output_tsv_dir is not None:
+            piece_name = Path(piece.name.split(" ")[-1])
+            output_tsv_path = output_tsv_dir / piece_name
 
-                try:
-                    output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
-                    results_tsv_path = output_tsv_path.parent / (
-                        output_tsv_path.name[:-4] + "_results.tsv"
-                    )
-                    results_df.to_csv(results_tsv_path, sep="\t")
-                    logging.info("Results TSV written out to %s", results_tsv_path)
-                except Exception:
-                    logging.exception("Error writing to csv %s", results_tsv_path)
-                    logging.debug(results_df)
+            try:
+                output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
+                results_tsv_path = output_tsv_path.parent / (
+                    output_tsv_path.name[:-4] + "_results.tsv"
+                )
+                results_df.to_csv(results_tsv_path, sep="\t")
+                logging.info("Results TSV written out to %s", results_tsv_path)
+            except Exception:
+                logging.exception("Error writing to csv %s", results_tsv_path)
+                logging.debug(results_df)
 
-                try:
-                    output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
-                    results_tsv_path = output_tsv_path.parent / (
-                        output_tsv_path.name[:-4] + "_results_midi.tsv"
-                    )
-                    results_midi_df.to_csv(results_tsv_path, sep="\t")
-                    logging.info("MIDI results TSV written out to %s", results_tsv_path)
-                except Exception:
-                    logging.exception("Error writing to csv %s", results_tsv_path)
-                    logging.debug(results_midi_df)
+            try:
+                output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
+                results_tsv_path = output_tsv_path.parent / (
+                    output_tsv_path.name[:-4] + "_results_midi.tsv"
+                )
+                results_midi_df.to_csv(results_tsv_path, sep="\t")
+                logging.info("MIDI results TSV written out to %s", results_tsv_path)
+            except Exception:
+                logging.exception("Error writing to csv %s", results_tsv_path)
+                logging.debug(results_midi_df)
 
-                try:
-                    output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
-                    labels_df.to_csv(output_tsv_path, sep="\t")
-                    logging.info("Labels TSV written out to %s", output_tsv_path)
-                except Exception:
-                    logging.exception("Error writing to csv %s", output_tsv_path)
-                    logging.debug(labels_df)
-                else:
-                    if annotations_base_dir is not None:
-                        try:
-                            eu.write_labels_to_score(
-                                output_tsv_dir / piece_name.parent,
-                                annotations_base_dir / piece_name.parent,
-                                piece_name.stem,
-                            )
-                            logging.info(
-                                "Writing score out to %s",
-                                output_tsv_dir / piece_name.parent,
-                            )
-                        except Exception:
-                            logging.exception(
-                                "Error writing score out to %s",
-                                output_tsv_dir / piece_name.parent,
-                            )
-
-            else:
+            try:
+                output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
+                labels_df.to_csv(output_tsv_path, sep="\t")
+                logging.info("Labels TSV written out to %s", output_tsv_path)
+            except Exception:
+                logging.exception("Error writing to csv %s", output_tsv_path)
                 logging.debug(labels_df)
+            else:
+                if annotations_base_dir is not None:
+                    try:
+                        eu.write_labels_to_score(
+                            output_tsv_dir / piece_name.parent,
+                            annotations_base_dir / piece_name.parent,
+                            piece_name.stem,
+                        )
+                        logging.info(
+                            "Writing score out to %s",
+                            output_tsv_dir / piece_name.parent,
+                        )
+                    except Exception:
+                        logging.exception(
+                            "Error writing score out to %s",
+                            output_tsv_dir / piece_name.parent,
+                        )
+
+        else:
+            logging.debug(labels_df)
 
 
 if __name__ == "__main__":
@@ -273,6 +410,16 @@ if __name__ == "__main__":
         help=(
             "The --input data comes from the funtional-harmony repository, as MusicXML "
             "files and labels CSV files."
+        ),
+    )
+
+    parser.add_argument(
+        "--forces-json",
+        type=Path,
+        default=None,
+        help=(
+            "A json file containing forced labels changes or non-changes, to be passed to "
+            "JointModel.get_harmony(...)."
         ),
     )
 
@@ -384,6 +531,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--no_h5",
+        action="store_true",
+        help="Do not read file_ids and piece_dicts from the `--h5_dir` directory.",
+    )
+
+    parser.add_argument(
         "-s",
         "--seed",
         default=0,
@@ -433,20 +586,25 @@ if __name__ == "__main__":
 
     data_type = "test" if ARGS.test else "valid"
 
-    # Load data for ctm
+    # Load data for ctm to get file_ids
     h5_path = Path(ARGS.h5_dir / f"ChordTransitionDataset_{data_type}_seed_{ARGS.seed}.h5")
-    with h5py.File(h5_path, "r") as h5_file:
-        if "file_ids" not in h5_file:
-            logging.error("file_ids not found in %s. Re-create with create_h5_data.py", h5_path)
-            sys.exit(1)
+    if not ARGS.no_h5 and h5_path.exists():
+        with h5py.File(h5_path, "r") as h5_file:
+            if "file_ids" not in h5_file:
+                logging.error("file_ids not found in %s. Re-create with create_h5_data.py", h5_path)
+                sys.exit(1)
 
-        file_ids = list(h5_file["file_ids"])
+            file_ids = list(h5_file["file_ids"])
+    else:
+        file_ids = None
 
     # Load pieces
     pieces = load_pieces(
         xml=ARGS.xml,
         input_path=ARGS.input,
-        piece_dicts_path=Path(ARGS.h5_dir / f"pieces_{data_type}_seed_{ARGS.seed}.pkl"),
+        piece_dicts_path=None
+        if ARGS.no_h5
+        else Path(ARGS.h5_dir / f"pieces_{data_type}_seed_{ARGS.seed}.pkl"),
         file_ids=file_ids,
         specific_id=ARGS.id,
     )
@@ -456,4 +614,5 @@ if __name__ == "__main__":
         pieces,
         output_tsv_dir=ARGS.output,
         annotations_base_dir=ARGS.annotations,
+        forces_path=ARGS.forces_json,
     )

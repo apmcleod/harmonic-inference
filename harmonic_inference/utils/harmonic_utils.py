@@ -511,6 +511,44 @@ def get_key_one_hot_index(key_mode: KeyMode, tonic: int, pitch_type: PitchType) 
     return hc.NUM_PITCHES[pitch_type] * key_mode.value + tonic
 
 
+def decode_relative_keys(
+    relative_string: str,
+    tonic: int,
+    mode: KeyMode,
+    pitch_type: PitchType,
+) -> Tuple[int, KeyMode]:
+    """
+    [summary]
+
+    Parameters
+    ----------
+    relative_string : str
+        [description]
+    tonic : int
+        [description]
+    mode : KeyMode
+        [description]
+    pitch_type : PitchType
+        [description]
+
+    Returns
+    -------
+    relative_tonic : int
+        [description]
+
+    relative_mode : KeyMode
+        [description]
+    """
+    # Handle doubly-relative chords iteratively
+    for relative in reversed(relative_string.split("/")):
+        # Relativeroot is listed relative to local key. We want it absolute.
+        relative_transposition = get_interval_from_numeral(relative, mode, pitch_type=pitch_type)
+        mode = KeyMode.MINOR if relative[-1].islower() else KeyMode.MAJOR
+        tonic = transpose_pitch(tonic, relative_transposition, pitch_type)
+
+    return tonic, mode
+
+
 def get_bass_note(
     chord_type: ChordType,
     root: int,
