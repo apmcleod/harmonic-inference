@@ -1,0 +1,15 @@
+dropout: 0.0
+hidden_dim: 128
+input_pitch: &id001 !!python/object/apply:harmonic_inference.data.data_types.PitchType
+- 0
+input_type: !!python/object/apply:harmonic_inference.data.data_types.PieceType
+- 0
+learning_rate: 0.001
+lstm_hidden_dim: 256
+lstm_layers: 1
+output_pitch: *id001
+reduction: null
+transposition_range:
+- -7
+- 7
+use_inversions: true

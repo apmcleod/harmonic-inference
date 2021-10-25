@@ -1,0 +1,50 @@
+dropout: 0.0
+embed_dim: 256
+hidden_dim: 128
+input_chord_pitch_type: &id001 !!python/object/apply:harmonic_inference.data.data_types.PitchType
+- 0
+input_key_pitch_type: *id001
+input_reduction: null
+learning_rate: 0.001
+lstm_hidden_dim: 256
+lstm_layers: 1
+output_pitch_type: *id001
+output_reduction:
+  ? &id002 !!python/object/apply:harmonic_inference.data.data_types.ChordType
+  - 0
+  : *id002
+  ? &id003 !!python/object/apply:harmonic_inference.data.data_types.ChordType
+  - 1
+  : *id003
+  ? &id004 !!python/object/apply:harmonic_inference.data.data_types.ChordType
+  - 2
+  : *id004
+  ? &id005 !!python/object/apply:harmonic_inference.data.data_types.ChordType
+  - 3
+  : *id005
+  ? !!python/object/apply:harmonic_inference.data.data_types.ChordType
+  - 4
+  : *id002
+  ? !!python/object/apply:harmonic_inference.data.data_types.ChordType
+  - 5
+  : *id002
+  ? !!python/object/apply:harmonic_inference.data.data_types.ChordType
+  - 6
+  : *id003
+  ? !!python/object/apply:harmonic_inference.data.data_types.ChordType
+  - 7
+  : *id003
+  ? !!python/object/apply:harmonic_inference.data.data_types.ChordType
+  - 8
+  : *id004
+  ? !!python/object/apply:harmonic_inference.data.data_types.ChordType
+  - 9
+  : *id004
+  ? !!python/object/apply:harmonic_inference.data.data_types.ChordType
+  - 10
+  : *id005
+  ? !!python/object/apply:harmonic_inference.data.data_types.ChordType
+  - 11
+  : *id005
+use_input_inversions: true
+use_output_inversions: false
