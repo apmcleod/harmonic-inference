@@ -1,0 +1,4 @@
+{
+    "hidden_dim": 128,
+    "lstm_hidden_dim": 128
+}

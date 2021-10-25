@@ -1,11 +1,10 @@
 **/__pycache__
 **/.ipynb_checkpoints
 checkpoints*/**
-model_jsons/**
 *.old/**
 .idea/**
 data/**
-h5_data*/**
+h5_data/**
 results/**
 .pytest_cache/**
 .vscode/**
@@ -19,6 +18,6 @@ output*/**
 results*/**
 baseline/**
 ismir/**
-corpus_data-platti/**
+corpus_data*/**
 beethoven_corpus_data/**
 Scratch-local.ipynb
