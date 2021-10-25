@@ -1,6 +1,6 @@
 # harmonic-inference
 
-This is the repository for our [ismir2021.pdf](ISMIR 2021 paper) "A Modular System for the Harmonic Analysis of Musical Scores using a Large Vocabulary".
+This is the repository for our ISMIR 2021 paper "A Modular System for the Harmonic Analysis of Musical Scores using a Large Vocabulary".
 
 ## Citing
 If you use this code, please cite using the following Bibtex:
