@@ -1,6 +1,6 @@
 # harmonic-inference
 
-This is the repository for my ISMIR 2021 paper "A Modular System for the Harmonic Analysis of Musical Scores using a Large Vocabulary".
+This is the repository for our [ismir2021.pdf](ISMIR 2021 paper) "A Modular System for the Harmonic Analysis of Musical Scores using a Large Vocabulary".
 
 ## Citing
 If you use this code, please cite using the following Bibtex:
@@ -16,7 +16,7 @@ If you use this code, please cite using the following Bibtex:
 
 ## Installation
 1. Clone this repository
-2. Set up an envoriment using your favorite environment manager with python 3, e.g.:
+2. Set up an environment using your favorite environment manager with python 3, e.g.:
 ```
 conda create -n harmony python=3
 conda activate harmony
@@ -26,14 +26,11 @@ conda activate harmony
 pip install -e .[dev]
 ```
 
-## Pre-trained Models
-
-
 ## Usage
 
 
 ### Data Creation
-For training the modules, h5 data files need to be created from the raw data.
+For training the modules, h5 data files must be created from the raw data.
 
 #### DCML Pre-processing
 From a DCML annotation corpus (e.g., any of those listed [here](https://github.com/DCMLab/dcml_corpora)), you must first create aggregated tsv data with the `aggregate_corpus_data.py` script:
@@ -71,7 +68,7 @@ For the other models: `python train.py -m {ctm,ccm,csm,ktm,ksm} -h5 h5_data`
 Other arguments (GPU training, etc.) are listed with `python train.py -h`
 
 #### Model kwargs
-The `--model-kwargs` argument can be used for training models with different dimensionality for a grid search, as well as CSMs and ICMs with different reductions (e.g., CSM-I and CSM-T in the paper). This argument takes a json file name and passes through the values as keyword arguments to the networks `__init__` method.
+The `--model-kwargs` argument can be used for training models with different dimensionality for a grid search, as well as CSMs and ICMs with different reductions (e.g., CSM-I and CSM-T in the paper). This argument takes a json file name and passes through the values as keyword arguments to the network's `__init__` method.
 
 The json files used for grid search for the results in the paper are in the [model_jsons-grid_search](model_jsons-grid_search) directory.  
 The best json files corresponding with the best models from our grid search are in the [model_jsons-best](model_jsons-best) (internal corpus) and [model_jsons-fh-best](model_jsons-fh-best) (FH corpus) directories.
