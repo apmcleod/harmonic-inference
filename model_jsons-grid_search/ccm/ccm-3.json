@@ -1,0 +1,8 @@
+{
+    "hidden_dim": 256,
+    "lstm_hidden_dim": 256,
+    "transposition_range": [
+        -7,
+        7
+    ]
+}

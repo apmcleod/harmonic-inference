@@ -1,6 +1,0 @@
-{
-    "embed_dim": 128,
-    "hidden_dim": 256,
-    "lstm_hidden_dim": 128,
-    "use_output_inversions": true
-}
