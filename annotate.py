@@ -162,6 +162,24 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--defaults",
+        action="store_true",
+        help=(
+            "Use the default hyperparameter settings from the internal-corpus-trained system, "
+            "according to the chosen `--csm-version` (0, 1, or 2)."
+        ),
+    )
+
+    parser.add_argument(
+        "--fh-defaults",
+        action="store_true",
+        help=(
+            "Use the default hyperparameter settings from the FH-corpus-trained system, "
+            "according to the chosen `--csm-version` (0, 1, or 2)."
+        ),
+    )
+
+    parser.add_argument(
         "--scores",
         action="store_true",
         help=(
@@ -277,6 +295,100 @@ if __name__ == "__main__":
             raise ValueError("--output must be given with --scores option.")
         write_tsvs_to_scores(ARGS.output, ARGS.annotations)
         sys.exit(0)
+
+    if ARGS.defaults:
+        if ARGS.csm_version == 0:
+            ARGS.min_chord_change_prob = 0.25
+            ARGS.max_no_chord_change_prob = 0.45
+            ARGS.max_chord_length = 8
+            ARGS.min_key_change_prob = 0.1
+            ARGS.max_no_key_change_prob = 0.75
+            ARGS.beam_size = 50
+            ARGS.max_chord_branching_factor = 5
+            ARGS.target_chord_branch_prob = 0.75
+            ARGS.max_key_branching_factor = 2
+            ARGS.target_key_branch_prob = 0.5
+            ARGS.hash_length = 5
+            ARGS.ksm_exponent = 100
+
+        elif ARGS.csm_version == 1:
+            ARGS.min_chord_change_prob = 0.25
+            ARGS.max_no_chord_change_prob = 0.5
+            ARGS.max_chord_length = 8
+            ARGS.min_key_change_prob = 0.05
+            ARGS.max_no_key_change_prob = 0.75
+            ARGS.beam_size = 50
+            ARGS.max_chord_branching_factor = 5
+            ARGS.target_chord_branch_prob = 0.75
+            ARGS.max_key_branching_factor = 2
+            ARGS.target_key_branch_prob = 0.5
+            ARGS.hash_length = 5
+            ARGS.ksm_exponent = 50
+
+        elif ARGS.csm_version == 2 or ARGS.csm_version is None:
+            ARGS.min_chord_change_prob = 0.25
+            ARGS.max_no_chord_change_prob = 0.45
+            ARGS.max_chord_length = 8
+            ARGS.min_key_change_prob = 0.05
+            ARGS.max_no_key_change_prob = 0.75
+            ARGS.beam_size = 50
+            ARGS.max_chord_branching_factor = 5
+            ARGS.target_chord_branch_prob = 0.5
+            ARGS.max_key_branching_factor = 2
+            ARGS.target_key_branch_prob = 0.5
+            ARGS.hash_length = 5
+            ARGS.ksm_exponent = 50
+
+        else:
+            logging.error("--defaults is only valid with --csm-version 0, 1, or 2.")
+            sys.exit(1)
+
+    if ARGS.fh_defaults:
+        if ARGS.csm_version == 0:
+            ARGS.min_chord_change_prob = 0.3
+            ARGS.max_no_chord_change_prob = 0.4
+            ARGS.max_chord_length = 8
+            ARGS.min_key_change_prob = 0.1
+            ARGS.max_no_key_change_prob = 0.7
+            ARGS.beam_size = 50
+            ARGS.max_chord_branching_factor = 5
+            ARGS.target_chord_branch_prob = 0.75
+            ARGS.max_key_branching_factor = 2
+            ARGS.target_key_branch_prob = 0.5
+            ARGS.hash_length = 5
+            ARGS.ksm_exponent = 30
+
+        elif ARGS.csm_version == 1:
+            ARGS.min_chord_change_prob = 0.3
+            ARGS.max_no_chord_change_prob = 0.4
+            ARGS.max_chord_length = 8
+            ARGS.min_key_change_prob = 0.1
+            ARGS.max_no_key_change_prob = 0.7
+            ARGS.beam_size = 50
+            ARGS.max_chord_branching_factor = 5
+            ARGS.target_chord_branch_prob = 0.75
+            ARGS.max_key_branching_factor = 2
+            ARGS.target_key_branch_prob = 0.5
+            ARGS.hash_length = 5
+            ARGS.ksm_exponent = 30
+
+        elif ARGS.csm_version == 2 or ARGS.csm_version is None:
+            ARGS.min_chord_change_prob = 0.3
+            ARGS.max_no_chord_change_prob = 0.4
+            ARGS.max_chord_length = 8
+            ARGS.min_key_change_prob = 0.1
+            ARGS.max_no_key_change_prob = 0.7
+            ARGS.beam_size = 50
+            ARGS.max_chord_branching_factor = 5
+            ARGS.target_chord_branch_prob = 0.75
+            ARGS.max_key_branching_factor = 2
+            ARGS.target_key_branch_prob = 0.5
+            ARGS.hash_length = 5
+            ARGS.ksm_exponent = 30
+
+        else:
+            logging.error("--fh-defaults is only valid with --csm-version 0, 1, or 2.")
+            sys.exit(1)
 
     # Load models
     models = load_models_from_argparse(ARGS)
