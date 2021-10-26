@@ -943,6 +943,18 @@ def get_score_piece_from_music_xml(
     measures_df = get_measures_df_from_music21_score(m21_score)
     notes = get_notes_from_music_xml(m21_score, measures_df)
 
+    if label_csv_path is None:
+        return ScorePiece(
+            measures_df,
+            notes,
+            None,
+            None,
+            None,
+            None,
+            None,
+            name=name,
+        )
+
     # Parse the labels csv
     labels_df = pd.read_csv(
         label_csv_path,
