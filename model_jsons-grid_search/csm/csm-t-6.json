@@ -1,0 +1,20 @@
+{
+    "embed_dim": 128,
+    "hidden_dim": 256,
+    "lstm_hidden_dim": 256,
+    "use_output_inversions": false,
+    "output_reduction": {
+        "ChordType.MAJOR": "ChordType.MAJOR",
+        "ChordType.MINOR": "ChordType.MINOR",
+        "ChordType.DIMINISHED": "ChordType.DIMINISHED",
+        "ChordType.AUGMENTED": "ChordType.AUGMENTED",
+        "ChordType.MAJ_MAJ7": "ChordType.MAJOR",
+        "ChordType.MAJ_MIN7": "ChordType.MAJOR",
+        "ChordType.MIN_MAJ7": "ChordType.MINOR",
+        "ChordType.MIN_MIN7": "ChordType.MINOR",
+        "ChordType.DIM7": "ChordType.DIMINISHED",
+        "ChordType.HALF_DIM7": "ChordType.DIMINISHED",
+        "ChordType.AUG_MIN7": "ChordType.AUGMENTED",
+        "ChordType.AUG_MAJ7": "ChordType.AUGMENTED"
+    }
+}
