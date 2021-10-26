@@ -109,7 +109,7 @@ def annotate(
 
             if piece.name is not None and output_tsv_dir is not None:
                 piece_name = Path(piece.name.split(" ")[-1])
-                output_tsv_path = output_tsv_dir / piece_name
+                output_tsv_path = output_tsv_dir / (piece_name.stem + ".tsv")
 
                 try:
                     output_tsv_path.parent.mkdir(parents=True, exist_ok=True)

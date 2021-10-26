@@ -104,6 +104,7 @@ def load_pieces(
         if Path(input_path).is_file():
             xmls = [input_path]
             csvs = [None]
+            input_path = Path(input_path).parent
 
         else:
             for file_path in sorted(
