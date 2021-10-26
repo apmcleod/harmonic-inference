@@ -28,6 +28,21 @@ pip install -e .[dev]
 
 ## Usage
 
+### Running on a MusicXML Score
+Given a MusicXML or DCML-style MS3 score, the `annotate.py` script can be used to generate harmonic annotations for it:
+
+MusicXML:
+```
+python annotate.py -x -i [MusicXML_dir] --checkpoints {checkpoints-best,checkpoints-fh-best} --csm-version {0,1,2}
+```
+
+Given a DCML annotation corpus, you must first create aggregated tsv data (see [DCML Pre-processing](#DCML-Pre-processing)). Then, you can use the following command:
+```
+python annotate.py -i corpus_data --checkpoints {checkpoints-best,checkpoints-fh-best} --csm-version {0,1,2}
+```
+
+* `--checkpoints` should point to the models you want to use (pre-trained FH, pre-trained internal, or your own; see [Training](#Training)).
+* `--csm-version 0` uses the standard CSM, `1` uses the CSM-I, and `2` uses the CSM-T (which achieves the performance in our tests).
 
 ### Data Creation
 For training the modules, h5 data files must be created from the raw data.
@@ -54,7 +69,7 @@ Now, `h5_data` will contain the h5 data files, split into train, test, and valid
 Pre-trained models for the internal data can be found in [checkpoints-best](checkpoints-best).  
 Pre-trained models for the Functional Harmony corpus can be found in [checkpoints-fh-best](checkpoints-fh-best).  
 
-You can inspect the hyperparameters and training logs using `tensorboard`.
+You can inspect the hyperparameters and training logs using `tensorboard --logdir [dir]`.
 
 To train new models from scratch, use the `train.py` script.
 
