@@ -33,16 +33,22 @@ Given a MusicXML or DCML-style MS3 score, the `annotate.py` script can be used t
 
 MusicXML:
 ```
-python annotate.py -x -i [MusicXML_dir] --checkpoints {checkpoints-best,checkpoints-fh-best} --csm-version {0,1,2}
+python annotate.py -x -i [MusicXML_dir] --checkpoint {checkpoints-best,checkpoints-fh-best} --csm-version {0,1,2}
 ```
 
 Given a DCML annotation corpus, you must first create aggregated tsv data (see [DCML Pre-processing](#DCML-Pre-processing)). Then, you can use the following command:
 ```
-python annotate.py -i corpus_data --checkpoints {checkpoints-best,checkpoints-fh-best} --csm-version {0,1,2}
+python annotate.py -i corpus_data --checkpoint {checkpoints-best,checkpoints-fh-best} --csm-version {0,1,2}
 ```
 
-* `--checkpoints` should point to the models you want to use (pre-trained FH, pre-trained internal, or your own; see [Training](#Training)).
-* `--csm-version 0` uses the standard CSM, `1` uses the CSM-I, and `2` uses the CSM-T (which achieves the performance in our tests).
+* `--checkpoint` should point to the models you want to use (pre-trained FH, pre-trained internal, or your own; see [Training](#Training)).
+* `--csm-version 0` uses the standard CSM, `1` uses the CSM-I, and `2` uses the CSM-T (which achieved the best performance in our tests).
+
+Other hyperparameters and options can be seen with `python annotate.py -h`.
+
+To use the exact hyperparameter settings from our paper's grid search, add the arguments `--defaults` (for the internal-trained checkpoints `checkpoints-best`) or `--fh-defaults` (for the F-H-trained checkpoints `checkpoints-fh-best`). __You must still set the `--checkpoint` and `--csm-version` manually.__
+
+For example, the best performing model from the internal corpus can be run with: `python annotate.py --checkpoint checkpoints-best --csm-version 2 --defaults -i [input]`
 
 ### Data Creation
 For training the modules, h5 data files must be created from the raw data.
