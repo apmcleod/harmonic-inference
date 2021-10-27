@@ -79,6 +79,50 @@ python annotate.py --annotations corpus --scores --output output_dir
 
 The annotated score will be saved in the directory `output_dir/MS3`.
 
+## Experimentation
+Instead of `annotate.py`, the `test.py` script can be used to run a trained model on a large set of annotated scores, and evaluate the results.
+
+Supported corpora are currently the [Functional Harmony corpus](https://gitlab.com/algomus.fr/functional-harmony), and DCML-style corpora (e.g., any of those listed [here](https://github.com/DCMLab/dcml_corpora)).
+
+To run experiments, follow these steps:
+1. If using a DCML-style corpus, you must first [aggregate the data](#DCML-corpus-aggregation).
+2. You must then [create h5 data files](#H5-files) for training, validation, and test splits. These are already created for the FH corpus with default settings in the `h5_data-fh` directory.
+3. [Train the 6 modules](#Training) using the test and validation data. Pre-trained versions from the paper are provided in this repository.
+4. Run experiments using the `test.py` script (instructions below).
+
+```
+python test.py --checkpoint checkpoint_dir --h5 h5_dir -i corpus_data
+```
+* By default, tests will run on the __validation set__. Include the argument `--test` to run on the test set.
+* To see other options, run `python test.py -h`.
+* If `corpus_data` points to the FH corpus, rather than aggregated DCML-style tsv data, you must also include the `-x` option.
+
+### Recreating our Experiments
+To recreate the settings from our experiments in the paper, use the following commands:
+
+Using models trained on the DCML internal corpora:
+* CSM: `python test.py --checkpoint checkpoints-best --defaults -i corpus_data --h5 h5_data --csm-version 0 --test`
+* CSM-I: `python test.py --checkpoint checkpoints-best --defaults -i corpus_data --h5 h5_data --csm-version 1 --test`
+* CSM-T __top performing model__: `python test.py --checkpoint checkpoints-best --defaults -i corpus_data --h5 h5_data --csm-version 2 --test`
+
+Using models trained on the FH corpus:
+* CSM: `python test.py --checkpoint checkpoints-fh-best --fh-defaults -i corpus_data --h5 h5_data --csm-version 0 --test`
+* CSM-I: `python test.py --checkpoint checkpoints-fh-best --fh-defaults -i corpus_data --h5 h5_data --csm-version 1 --test`
+* CSM-T: `python test.py --checkpoint checkpoints-fh-best --fh-defaults -i corpus_data --h5 h5_data --csm-version 2 --test`
+
+### Writing onto a score
+If you are running tests on data from a DCML-style corpus (e.g., [these](https://github.com/DCMLab/dcml_corpora)), the `test.py` script can also be used to write the outputs of the model directly onto the MuseScore3 files:
+
+```
+python test.py --annotations corpus_data --scores --output output_dir
+```
+* `corpus` should point to the DCML corpus directory containing the raw label tsvs and MuseScore3 score files.
+* `output_dir` should point to the directory containing the model's outputs. This directory will be searched recursively for output tsv files.
+
+The annotated score will be saved in the directory `output_dir/MS3`.
+
+In the resulting score, green labels are entirely correct, red labels are entirely incorrect, and yellow labels are partially correct.
+
 ## Data Creation
 For training the modules, h5 data files must be created from the raw data.
 
@@ -93,7 +137,7 @@ python aggregate_corpus_data.py --input [input_dir] --output corpus_data
 Now, `corpus_data` will contain aggregated tsv files for use in model training, annotation, and evaluation.
 
 ### H5 files
-To create h5 data files, use the `create_h5_data.py` script.
+To create h5 data files use the `create_h5_data.py` script.
 
 From a DCML corpus (aggregated as above): `python create_h5_data.py -i corpus_data -h5 h5_data`  
 From the Functional Harmony corpus: `python create_h5_data.py -x -i functional-harmony -h5 h5_data`  
@@ -107,7 +151,7 @@ Pre-trained models for the Functional Harmony corpus can be found in [checkpoint
 
 You can inspect the hyperparameters and training logs using `tensorboard --logdir [dir]`.
 
-To train new models from scratch, use the `train.py` script.
+To train new models from scratch, use the `train.py` script. __You must [create h5 data files first](#H5-files).__
 
 The models will save by default in the `checkpoints` directory, which can be changed with the `--checkpoint` argument.
 
