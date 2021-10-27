@@ -516,6 +516,7 @@ class Note:
             (offset_measure["mc"], offset_beat),
             offset_level,
             pitch_type,
+            mc_onset=onset_beat - onset_measure["mc_offset"],
         )
 
 
