@@ -110,7 +110,10 @@ Using models trained on the FH corpus:
 * CSM-I: `python test.py --checkpoint checkpoints-fh-best --fh-defaults -i corpus_data --h5 h5_data --csm-version 1 --test`
 * CSM-T: `python test.py --checkpoint checkpoints-fh-best --fh-defaults -i corpus_data --h5 h5_data --csm-version 2 --test`
 
-### Writing onto a score
+### Outputs
+The outputs are provided in four ways.
+
+#### Writing onto a score
 If you are running tests on data from a DCML-style corpus (e.g., [these](https://github.com/DCMLab/dcml_corpora)), the `test.py` script can also be used to write the outputs of the model directly onto the MuseScore3 files:
 
 ```
