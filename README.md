@@ -1,4 +1,4 @@
-# harmonic-inference
+# Harmonic Inference
 
 This is the repository for our ISMIR 2021 paper "A Modular System for the Harmonic Analysis of Musical Scores using a Large Vocabulary".
 
