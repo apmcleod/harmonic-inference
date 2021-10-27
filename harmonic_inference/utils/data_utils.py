@@ -171,7 +171,7 @@ def load_pieces(
         pieces = [
             get_score_piece_from_data_frames(
                 notes_df.loc[file_id],
-                chords_df.loc[file_id] if chords_df else None,
+                chords_df.loc[file_id] if chords_df is not None else None,
                 measures_df.loc[file_id],
                 name=(
                     f"{file_id}: {files_df.loc[file_id, 'corpus_name']}/"

@@ -47,7 +47,7 @@ def write_tsvs_to_scores(
     annotations_base_dir = Path(annotations_base_dir)
 
     output_paths = sorted(glob(str(output_tsv_dir / "**" / "*.tsv"), recursive=True))
-    for piece_name in tqdm(output_paths, desc="Writing labesl to scores"):
+    for piece_name in tqdm(output_paths, desc="Writing labels to scores"):
         piece_name = Path(piece_name).relative_to(output_tsv_dir)
         try:
             eu.write_labels_to_score(
@@ -152,6 +152,13 @@ if __name__ == "__main__":
         type=Path,
         default=Path("corpus_data"),
         help="The directory containing the raw corpus_data tsv of MusicXML files.",
+    )
+
+    parser.add_argument(
+        "--id",
+        type=int,
+        default=None,
+        help="Only evaluate the given file_id (from files.tsv).",
     )
 
     parser.add_argument(
@@ -394,7 +401,7 @@ if __name__ == "__main__":
     models = load_models_from_argparse(ARGS)
 
     # Load pieces
-    pieces = load_pieces(xml=ARGS.xml, input_path=ARGS.input)
+    pieces = load_pieces(xml=ARGS.xml, input_path=ARGS.input, specific_id=ARGS.id)
 
     annotate(
         from_args(models, ARGS),

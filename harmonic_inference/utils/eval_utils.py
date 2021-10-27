@@ -692,6 +692,7 @@ def get_annotation_df(
                 {
                     "label": est_key_string,
                     "mc": note.onset[0],
+                    "mc_onset": note.mc_onset,
                     "mn_onset": note.onset[1],
                 }
             )
@@ -701,6 +702,7 @@ def get_annotation_df(
                 {
                     "label": est_chord_string,
                     "mc": note.onset[0],
+                    "mc_onset": note.mc_onset,
                     "mn_onset": note.onset[1],
                 }
             )
