@@ -56,7 +56,7 @@ The output will go into a directory specified by `--output dir` (default `output
 
 * `label` is the chord or key label, like `Ab:KeyMode.MINOR` (for the key of Ab minor) or `C:Mm7, inv:1` (for a first inversion C7 chord).
 * `mc` is the measure index for this label. __These do not necessarily align with the measure numbers written on the score.__ Rather, they are simply a 0-indexed list of all measures according to the input score file (MusicXML or DCML internal). For example, most score formats do not support repeat signs or key changes in the middle of a measure, so these will be split into multiple `mc`s.
-* `mc_onset` is the position, measured in whole notes after the __beginning of the mc__, where this label lies. __This column only works properly for DCML-style inputs.__ For MusicXML input, it will just be equal to `mn_onset`.
+* `mc_onset` is the position, measured in whole notes after the __beginning of the mc__, where this label lies.
 * `mn_onset` is the position, measured in whole notes after the __downbeat__, where this label lies. Note that these are relative to the actual downbeat, not the beginning of the `mc`.
 
 #### Example Output
