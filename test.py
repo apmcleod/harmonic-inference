@@ -13,6 +13,7 @@ import torch
 from tqdm import tqdm
 
 import harmonic_inference.utils.eval_utils as eu
+from annotate import set_default_args
 from harmonic_inference.data.data_types import (
     ALL_ONE_TYPE_REDUCTION,
     NO_REDUCTION,
@@ -414,6 +415,24 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--defaults",
+        action="store_true",
+        help=(
+            "Use the default hyperparameter settings from the internal-corpus-trained system, "
+            "according to the chosen `--csm-version` (0, 1, or 2)."
+        ),
+    )
+
+    parser.add_argument(
+        "--fh-defaults",
+        action="store_true",
+        help=(
+            "Use the default hyperparameter settings from the FH-corpus-trained system, "
+            "according to the chosen `--csm-version` (0, 1, or 2)."
+        ),
+    )
+
+    parser.add_argument(
         "--forces-json",
         type=Path,
         default=None,
@@ -580,6 +599,8 @@ if __name__ == "__main__":
             raise ValueError("--output must be given with --scores option.")
         write_tsvs_to_scores(ARGS.output, ARGS.annotations)
         sys.exit(0)
+
+    set_default_args(ARGS)
 
     # Load models
     models = load_models_from_argparse(ARGS)

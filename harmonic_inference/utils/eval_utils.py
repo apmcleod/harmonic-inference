@@ -836,6 +836,7 @@ def get_label_df(
                 {
                     "label": est_key_string if est_key_string != prev_est_key_string else "--",
                     "mc": note.onset[0],
+                    "mc_onset": note.mc_onset,
                     "mn_onset": note.onset[1],
                     "color_name": color,
                 }
@@ -884,6 +885,7 @@ def get_label_df(
                     if est_chord_string != prev_est_chord_string
                     else "--",
                     "mc": note.onset[0],
+                    "mc_onset": note.mc_onset,
                     "mn_onset": note.onset[1],
                     "color_name": color,
                 }
