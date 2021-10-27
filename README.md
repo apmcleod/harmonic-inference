@@ -3,7 +3,7 @@
 This is the repository for our ISMIR 2021 paper "A Modular System for the Harmonic Analysis of Musical Scores using a Large Vocabulary".
 
 ## Citing
-If you use this code, please cite using the following Bibtex:
+If you use this code, or refer to the paper, please cite it using the following Bibtex:
 
 ```
 @inproceedings{McLeod:21,
@@ -27,7 +27,7 @@ pip install -e .[dev]
 ```
 
 ## Usage
-Given a MusicXML or DCML-style MS3 score (e.g., [these](https://github.com/DCMLab/dcml_corpora)), the `annotate.py` script can be used to generate harmonic annotations for it:
+Given a MusicXML or DCML-style MS3 score (e.g., [these](https://github.com/DCMLab/dcml_corpora)), the `annotate.py` script can be used to generate harmonic annotations for it. Note that in these harmonic annotations, applied roots (e.g., the `vii` of a `V/vii` chord) are treated as key modulations and output as such.
 
 ### MusicXML
 ```
@@ -36,11 +36,11 @@ python annotate.py -x -i input --checkpoint {checkpoints-best,checkpoints-fh-bes
 * If `input` is a directory, it directory will be searched recursively for any MusicXML files. Otherwise, only the given file will be processed.
 
 ### DCML
-Given a DCML annotation corpus (e.g., [these](https://github.com/DCMLab/dcml_corpora)), you must first create aggregated tsv data (see [DCML Pre-processing](#DCML-Pre-processing)). Then, you can use the following command:
+Given a DCML annotation corpus (e.g., [these](https://github.com/DCMLab/dcml_corpora)), you must first [aggregate the data](#DCML-Corpus-Aggregation)), then you can use the following command:
 ```
 python annotate.py -i corpus_data --checkpoint {checkpoints-best,checkpoints-fh-best} --csm-version {0,1,2}
 ```
-* The argument `--id num` can be used to only run on the file with id `num` (given in the file `corpus_data/files.tsv`).
+* The argument `--id num` can be used to only run on the file with id `num` (given in the file `corpus/files.tsv` after aggregation).
 
 ### Important Arguments
 * `--checkpoint` should point to the models you want to use (pre-trained FH, pre-trained internal, or your own; see [Training](#Training)).
@@ -56,27 +56,39 @@ The output will go into a directory specified by `--output dir` (default `output
 
 * `label` is the chord or key label, like `Ab:KeyMode.MINOR` (for the key of Ab minor) or `C:Mm7, inv:1` (for a first inversion C7 chord).
 * `mc` is the measure index for this label. __These do not necessarily align with the measure numbers written on the score.__ Rather, they are simply a 0-indexed list of all measures according to the input score file (MusicXML or DCML internal). For example, most score formats do not support repeat signs or key changes in the middle of a measure, so these will be split into multiple `mc`s.
-* `mn_onset` is the position (measured in whole notes after the __downbeat__) where this label lies. Note that these are relative to the actual downbeat, not the beginning of the `mc`.
+* `mc_onset` is the position, measured in whole notes after the __beginning of the mc__, where this label lies. __This column only works properly for DCML-style inputs.__ For MusicXML input, it will just be equal to `mn_onset`.
+* `mn_onset` is the position, measured in whole notes after the __downbeat__, where this label lies. Note that these are relative to the actual downbeat, not the beginning of the `mc`.
 
 #### Example Output
-&nbsp; | label | mc | mn_onset
---- | ------- | ---- | ---------
-0  | f:KeyMode.MINOR | 0 | 3/4
-1  | C:M, inv:0 | 0 | 3/4
-2  | F:m, inv:2 | 1 | 0
-3  | F:m, inv:0 | 2 | 0
+&nbsp; | label | mc | mc_onset | mn_onset
+------ | ----- | --- | ------- | --------
+0  | f:KeyMode.MINOR | 0 | 0 | 3/4
+1  | C:M, inv:0 | 0 | 0 | 3/4
+2  | F:m, inv:2 | 1 | 0 | 0
+3  | F:m, inv:0 | 2 | 0 | 0
 ...
 
+#### Writing onto a score
+If you are annotating a score from a DCML-style corpus (e.g., [these](https://github.com/DCMLab/dcml_corpora)), the `annotate.py` script can also be used to write the outputs of the program directly onto the MuseScore3 files:
+
+```
+python annotate.py --annotations corpus --scores --output output_dir
+```
+* `corpus` should point to the DCML corpus directory containing the raw label tsvs and MuseScore3 score files.
+* `output_dir` should point to the directory containing the model's outputs. This directory will be searched recursively for output tsv files.
+
+The annotated score will be saved in the directory `output_dir/MS3`.
 
 ## Data Creation
 For training the modules, h5 data files must be created from the raw data.
 
-### DCML Pre-processing
-From a DCML annotation corpus (e.g., any of those listed [here](https://github.com/DCMLab/dcml_corpora)), you must first create aggregated tsv data with the `aggregate_corpus_data.py` script:
+### DCML Corpus Aggregation
+To use a DCML annotation corpora (e.g., any of those listed [here](https://github.com/DCMLab/dcml_corpora)), you must first create aggregated tsv data with the `aggregate_corpus_data.py` script:
 
 ```
 python aggregate_corpus_data.py --input [input_dir] --output corpus_data
 ```
+* `input_dir` will be searched recursively for any DCML-style tsv data files.
 
 Now, `corpus_data` will contain aggregated tsv files for use in model training, annotation, and evaluation.
 
