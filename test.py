@@ -186,7 +186,6 @@ def evaluate(
     model: HarmonicInferenceModel,
     pieces: List[Piece],
     output_tsv_dir: Union[Path, str] = None,
-    annotations_base_dir: Union[Path, str] = None,
     forces_path: Union[Path, str] = None,
 ):
     """
@@ -201,17 +200,11 @@ def evaluate(
     output_tsv_dir : Union[Path, str]
         A directory to output TSV labels into. Each piece's output labels will go into
         a sub-directory according to its name field. If None, label TSVs are not generated.
-    annotations_base_dir : Union[Path, str]
-        A directory containing annotated scores, which the estimated labels can be written
-        onto and then saved into the output_tsv directory.
     forces_path : Union[Path, str]
         The path to a json file containing forced labels, changes, or non-changes.
     """
     if output_tsv_dir is not None:
         output_tsv_dir = Path(output_tsv_dir)
-
-    if annotations_base_dir is not None:
-        annotations_base_dir = Path(annotations_base_dir)
 
     all_forces_dict = {} if forces_path is None else load_forces_from_json(forces_path)
 
@@ -362,23 +355,6 @@ def evaluate(
             except Exception:
                 logging.exception("Error writing to csv %s", output_tsv_path)
                 logging.debug(labels_df)
-            else:
-                if annotations_base_dir is not None:
-                    try:
-                        eu.write_labels_to_score(
-                            output_tsv_dir / piece_name.parent,
-                            annotations_base_dir / piece_name.parent,
-                            piece_name.stem,
-                        )
-                        logging.info(
-                            "Writing score out to %s",
-                            output_tsv_dir / piece_name.parent,
-                        )
-                    except Exception:
-                        logging.exception(
-                            "Error writing score out to %s",
-                            output_tsv_dir / piece_name.parent,
-                        )
 
         else:
             logging.debug(labels_df)
@@ -634,6 +610,5 @@ if __name__ == "__main__":
         from_args(models, ARGS),
         pieces,
         output_tsv_dir=ARGS.output,
-        annotations_base_dir=ARGS.annotations,
         forces_path=ARGS.forces_json,
     )
