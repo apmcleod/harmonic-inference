@@ -67,7 +67,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "-s", "--seed", type=int, default=None, help="The random seed to use to create the data."
+        "-s", "--seed", type=int, default=0, help="The random seed to use to create the data."
     )
 
     parser.add_argument(
