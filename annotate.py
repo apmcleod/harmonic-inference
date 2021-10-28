@@ -4,7 +4,6 @@ import argparse
 import logging
 import os
 import sys
-from glob import glob
 from pathlib import Path
 from typing import List, Union
 
@@ -129,41 +128,6 @@ def set_default_args(ARGS: argparse.Namespace):
             sys.exit(1)
 
 
-def write_tsvs_to_scores(
-    output_tsv_dir: Union[Path, str],
-    annotations_base_dir: Union[Path, str],
-):
-    """
-    Write the labels TSVs from the given output directory onto annotated scores
-    (from the annotations_base_dir) in the output directory.
-
-    Parameters
-    ----------
-    output_tsv_dir : Union[Path, str]
-        The path to TSV files containing labels to write onto annotated scores.
-        The directory should contain sub-directories for each composer (aligned
-        with sub-dirs in the annotations base directory), and a single TSV for each
-        output.
-    annotations_base_dir : Union[Path, str]
-        The path to annotations and MuseScore3 scores, whose sub-directories and file names
-        are aligned with those in the output TSV directory.
-    """
-    output_tsv_dir = Path(output_tsv_dir)
-    annotations_base_dir = Path(annotations_base_dir)
-
-    output_paths = sorted(glob(str(output_tsv_dir / "**" / "*.tsv"), recursive=True))
-    for piece_name in tqdm(output_paths, desc="Writing labels to scores"):
-        piece_name = Path(piece_name).relative_to(output_tsv_dir)
-        try:
-            eu.write_labels_to_score(
-                output_tsv_dir / piece_name.parent,
-                annotations_base_dir / piece_name.parent,
-                piece_name.stem,
-            )
-        except Exception:
-            logging.exception("Error writing score out to %s", output_tsv_dir / piece_name.parent)
-
-
 def annotate(
     model: HarmonicInferenceModel,
     pieces: List[Piece],
@@ -268,31 +232,11 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--scores",
-        action="store_true",
-        help=(
-            "Write the output label TSVs onto annotated scores in the output directory. "
-            "Only works for DCML-format corpus_data tsv input and MuseScore3 scores."
-        ),
-    )
-
-    parser.add_argument(
         "-o",
         "--output",
         type=Path,
         default="outputs",
         help="The directory to write label tsvs and annotated MuseScore3 scores to.",
-    )
-
-    parser.add_argument(
-        "--annotations",
-        type=Path,
-        default=None,
-        help=(
-            "A directory containing corpora annotation tsvs and MuseScore3 scores, which "
-            "will be used to write out labels onto new MuseScore3 score files in the "
-            "--output directory."
-        ),
     )
 
     parser.add_argument(
@@ -375,14 +319,6 @@ if __name__ == "__main__":
         level=logging.DEBUG if ARGS.verbose else logging.INFO,
         filemode="w",
     )
-
-    if ARGS.scores:
-        if ARGS.annotations is None:
-            raise ValueError("--annotations must be given with --scores option.")
-        if ARGS.output is None:
-            raise ValueError("--output must be given with --scores option.")
-        write_tsvs_to_scores(ARGS.output, ARGS.annotations)
-        sys.exit(0)
 
     # Load models
     models = load_models_from_argparse(ARGS)

@@ -419,28 +419,11 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--scores",
-        action="store_true",
-        help="Write the output label TSVs onto annotated scores in the output directory.",
-    )
-
-    parser.add_argument(
         "-o",
         "--output",
         type=Path,
         default="outputs",
         help="The directory to write label tsvs and annotated MuseScore3 scores to.",
-    )
-
-    parser.add_argument(
-        "--annotations",
-        type=Path,
-        default=None,
-        help=(
-            "A directory containing corpora annotation tsvs and MuseScore3 scores, which "
-            "will be used to write out labels onto new MuseScore3 score files in the "
-            "--output directory."
-        ),
     )
 
     parser.add_argument(
@@ -566,14 +549,6 @@ if __name__ == "__main__":
     if ARGS.average:
         for key, average in eu.average_results(ARGS.average).items():
             print(f"Average {key} = {average}")
-        sys.exit(0)
-
-    if ARGS.scores:
-        if ARGS.annotations is None:
-            raise ValueError("--annotations must be given with --scores option.")
-        if ARGS.output is None:
-            raise ValueError("--output must be given with --scores option.")
-        write_tsvs_to_scores(ARGS.output, ARGS.annotations)
         sys.exit(0)
 
     set_default_args(ARGS)
