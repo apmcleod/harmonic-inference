@@ -85,7 +85,7 @@ Instead of `annotate.py`, the `test.py` script can be used to run a trained mode
 Supported corpora are currently the [Functional Harmony corpus](https://gitlab.com/algomus.fr/functional-harmony), and DCML-style corpora (e.g., any of those listed [here](https://github.com/DCMLab/dcml_corpora)).
 
 To run experiments, follow these steps:
-1. If using a DCML-style corpus, you must first [aggregate the data](#DCML-corpus-aggregation).
+1. If using a DCML-style corpus, you must first [aggregate the data](#DCML-Corpus-Aggregation).
 2. You must then [create h5 data files](#H5-files) for training, validation, and test splits. These are already created for the FH corpus with default settings in the `h5_data-fh` directory.
 3. [Train the 6 modules](#Training) using the test and validation data. Pre-trained versions from the paper are provided in this repository.
 4. Run experiments using the `test.py` script (instructions below).
