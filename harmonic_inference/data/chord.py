@@ -12,6 +12,7 @@ from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, KeyMode,
 from harmonic_inference.data.key import Key
 from harmonic_inference.utils.harmonic_constants import (
     CHORD_PITCHES,
+    DIATONIC_CHORDS,
     MAX_RELATIVE_TPC,
     MIN_RELATIVE_TPC,
     NUM_PITCHES,
@@ -142,6 +143,30 @@ class Chord:
             )
 
         return Chord(**new_params)
+
+    def is_diatonic(self) -> bool:
+        """
+        Return True if this chord is diatonic in it's key, and False otherwise.
+
+        Returns
+        -------
+        is_diatonic : bool
+            True if this chord is diatonic. False otherwise.
+        """
+        try:
+            relative_root = absolute_to_relative(
+                self.root,
+                self.key_tonic,
+                self.pitch_type,
+                False,
+            )
+        except ValueError:
+            # A pitch so far out of range of the tonic is not diatonic
+            return False
+
+        diatonic = DIATONIC_CHORDS[self.pitch_type][self.key_mode]
+
+        return relative_root in diatonic and self.chord_type in diatonic[relative_root]
 
     def get_one_hot_index(
         self,

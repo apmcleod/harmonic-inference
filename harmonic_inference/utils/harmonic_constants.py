@@ -216,3 +216,23 @@ RELATIVE_TPC_EXTRA = 5
 # Key change relative pitches
 MIN_KEY_CHANGE_INTERVAL_TPC = -14  # Inclusive
 MAX_KEY_CHANGE_INTERVAL_TPC = 15  # Exclusive
+
+# TODO: Diatonic chords
+DIATONIC_CHORDS = {
+    PitchType.TPC: {
+        KeyMode.MAJOR: {
+            0: set([ChordType.MAJOR]),
+        },
+        KeyMode.MINOR: {
+            0: set([ChordType.MINOR]),
+        },
+    },
+    PitchType.MIDI: {
+        KeyMode.MAJOR: {
+            0: set([ChordType.MAJOR]),
+        },
+        KeyMode.MINOR: {
+            0: set([ChordType.MINOR]),
+        },
+    },
+}
