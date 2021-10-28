@@ -113,7 +113,29 @@ Using models trained on the FH corpus:
 ### Outputs
 The outputs are provided in four ways.
 
-#### Writing onto a score
+1. Performance metrics (chord accuracy, key accuracy, etc.) are printed to the log. This is std out by default, but can be printed to a file instead with `--log logfile`. Note that this `logfile` path is relative to the `--output` directory.
+2. `filename.tsv` is identical to the [`annotations.py` output format](#Output), with an additional `color_name` column, related to [writing these labels onto a score with color](#Writing-on-a-score).
+3. `filename_results.tsv` contains one row per onset position in the score, with the columns `gt_key` (the correct key label), `gt_chord` (the correct chord label), `est_key` (the estimated key label), `est_chord` (the estimated chord label), and `duration` the duration (in whole notes) for which the given labels are valid. These are listed starting at the beginning of the piece, and duplicate labels are common. Here is an example:
+
+&nbsp; | gt_key | gt_chord | est_key | est_chord | duration 
+------ | ----- | --- | ------- | -------- | ----
+0 | d:KeyMode.MINOR | D:m, inv:0 | d:KeyMode.MINOR | D:m, inv:0 | 1/4
+1 | d:KeyMode.MINOR | D:m, inv:0 | d:KeyMode.MINOR | D:m, inv:0 | 1/8
+2 | d:KeyMode.MINOR | D:m, inv:0 | d:KeyMode.MINOR | D:m, inv:0 | 1/8
+3 | d:KeyMode.MINOR | C#:o, inv:2 | d:KeyMode.MINOR | D:m, inv:0 | 1/4
+...
+
+4. `filename_results_midi.tsv` is the same as `filename_results.tsv`, but the pitches are in semitone format, rather than TPC (i.e., `C#` and `Db` are the same pitch). Here is the same output, where this difference can be noticed in row id 3:
+
+&nbsp; | gt_key | gt_chord | est_key | est_chord | duration 
+------ | ----- | --- | ------- | -------- | ----
+0 | d:KeyMode.MINOR | D:m, inv:0 | d:KeyMode.MINOR | D:m, inv:0 | 1/4
+1 | d:KeyMode.MINOR | D:m, inv:0 | d:KeyMode.MINOR | D:m, inv:0 | 1/8
+2 | d:KeyMode.MINOR | D:m, inv:0 | d:KeyMode.MINOR | D:m, inv:0 | 1/8
+3 | d:KeyMode.MINOR | C#/Db:o, inv:2 | d:KeyMode.MINOR | D:m, inv:0 | 1/4
+...
+
+#### Writing on a score
 If you are running tests on data from a DCML-style corpus (e.g., [these](https://github.com/DCMLab/dcml_corpora)), the `test.py` script can also be used to write the outputs of the model directly onto the MuseScore3 files:
 
 ```
