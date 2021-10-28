@@ -168,7 +168,6 @@ def annotate(
     model: HarmonicInferenceModel,
     pieces: List[Piece],
     output_tsv_dir: Union[Path, str] = None,
-    annotations_base_dir: Union[Path, str] = None,
 ):
     """
     Get estimated chords and keys on the given pieces using the given model.
@@ -182,15 +181,9 @@ def annotate(
     output_tsv_dir : Union[Path, str]
         A directory to output TSV labels into. Each piece's output labels will go into
         a sub-directory according to its name field. If None, label TSVs are not generated.
-    annotations_base_dir : Union[Path, str]
-        A directory containing annotated scores, which the estimated labels can be written
-        onto and then saved into the output_tsv directory.
     """
     if output_tsv_dir is not None:
         output_tsv_dir = Path(output_tsv_dir)
-
-    if annotations_base_dir is not None:
-        annotations_base_dir = Path(annotations_base_dir)
 
     for piece in tqdm(pieces, desc="Getting harmony for pieces"):
         if piece.name is not None:
@@ -223,23 +216,6 @@ def annotate(
                 except Exception:
                     logging.exception("Error writing to csv %s", output_tsv_path)
                     logging.debug(annotation_df)
-                else:
-                    if annotations_base_dir is not None:
-                        try:
-                            eu.write_labels_to_score(
-                                output_tsv_dir / piece_name.parent,
-                                annotations_base_dir / piece_name.parent,
-                                piece_name.stem,
-                            )
-                            logging.info(
-                                "Writing score out to %s",
-                                output_tsv_dir / piece_name.parent,
-                            )
-                        except Exception:
-                            logging.exception(
-                                "Error writing score out to %s",
-                                output_tsv_dir / piece_name.parent,
-                            )
 
             else:
                 logging.debug(annotation_df)
@@ -418,5 +394,4 @@ if __name__ == "__main__":
         from_args(models, ARGS),
         pieces,
         output_tsv_dir=ARGS.output,
-        annotations_base_dir=ARGS.annotations,
     )
