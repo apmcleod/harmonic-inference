@@ -68,8 +68,8 @@ The output will go into a directory specified by `--output dir` (default `output
 3  | F:m, inv:0 | 2 | 0 | 0
 ...
 
-#### Writing onto a score
-If you are annotating a score from a DCML-style corpus (e.g., [these](https://github.com/DCMLab/dcml_corpora)), the `annotate.py` script can also be used to write the outputs of the program directly onto the MuseScore3 files:
+## Writing onto a Score
+If you are annotating a score from a DCML-style corpus (e.g., [these](https://github.com/DCMLab/dcml_corpora)), the `write_to_score.py` script can be used to write the outputs of the program (both [`annotate.py`](#Usage)) and [`test.py`](#Experimentation)) directly onto the MuseScore3 files:
 
 ```
 python annotate.py --annotations corpus --scores --output output_dir
@@ -113,8 +113,8 @@ Using models trained on the FH corpus:
 ### Outputs
 The outputs are provided in four ways.
 
-1. Performance metrics (chord accuracy, key accuracy, etc.) are printed to the log. This is std out by default, but can be printed to a file instead with `--log logfile`. Note that this `logfile` path is relative to the `--output` directory.
-2. `filename.tsv` is identical to the [`annotations.py` output format](#Output), with an additional `color_name` column, related to [writing these labels onto a score with color](#Writing-on-a-score).
+1. Performance metrics (chord accuracy, key accuracy, etc.) are printed to the log. This is std out by default, but can be printed to a file instead with `--log logfile`. Note that this `logfile` path is relative to the `--output` directory. These metrics results can be averaged using `python test.py --average logfile`.
+2. `filename.tsv` is identical to the [`annotations.py` output format](#Output), with an additional `color_name` column, used to [write these labels onto a score with color](#Writing-onto-a-Score). Green indicates that the label is entirely correct, red is entirely incorrect, and yellow is partially correct.
 3. `filename_results.tsv` contains one row per onset position in the score, with the columns `gt_key` (the correct key label), `gt_chord` (the correct chord label), `est_key` (the estimated key label), `est_chord` (the estimated chord label), and `duration` the duration (in whole notes) for which the given labels are valid. These are listed starting at the beginning of the piece, and duplicate labels are common. Here is an example:
 
 &nbsp; | gt_key | gt_chord | est_key | est_chord | duration 
@@ -134,19 +134,6 @@ The outputs are provided in four ways.
 2 | d:KeyMode.MINOR | D:m, inv:0 | d:KeyMode.MINOR | D:m, inv:0 | 1/8
 3 | d:KeyMode.MINOR | C#/Db:o, inv:2 | d:KeyMode.MINOR | D:m, inv:0 | 1/4
 ...
-
-#### Writing on a score
-If you are running tests on data from a DCML-style corpus (e.g., [these](https://github.com/DCMLab/dcml_corpora)), the `test.py` script can also be used to write the outputs of the model directly onto the MuseScore3 files:
-
-```
-python test.py --annotations corpus_data --scores --output output_dir
-```
-* `corpus` should point to the DCML corpus directory containing the raw label tsvs and MuseScore3 score files.
-* `output_dir` should point to the directory containing the model's outputs. This directory will be searched recursively for output tsv files.
-
-The annotated score will be saved in the directory `output_dir/MS3`.
-
-In the resulting score, green labels are entirely correct, red labels are entirely incorrect, and yellow labels are partially correct.
 
 ## Data Creation
 For training the modules, h5 data files must be created from the raw data.
