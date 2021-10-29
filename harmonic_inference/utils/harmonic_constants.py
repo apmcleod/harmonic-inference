@@ -217,22 +217,48 @@ RELATIVE_TPC_EXTRA = 5
 MIN_KEY_CHANGE_INTERVAL_TPC = -14  # Inclusive
 MAX_KEY_CHANGE_INTERVAL_TPC = 15  # Exclusive
 
-# TODO: Diatonic chords
+# Diatonic chords
 DIATONIC_CHORDS = {
     PitchType.TPC: {
         KeyMode.MAJOR: {
-            0: set([ChordType.MAJOR]),
+            0: set([ChordType.MAJOR, ChordType.MAJ_MAJ7]),
+            2: set([ChordType.MINOR, ChordType.MIN_MIN7]),
+            4: set([ChordType.MINOR, ChordType.MIN_MIN7]),
+            -1: set([ChordType.MAJOR, ChordType.MAJ_MAJ7]),
+            1: set([ChordType.MAJOR, ChordType.MAJ_MIN7]),
+            3: set([ChordType.MINOR, ChordType.MIN_MIN7]),
+            5: set([ChordType.DIMINISHED, ChordType.HALF_DIM7, ChordType.DIM7]),
         },
         KeyMode.MINOR: {
-            0: set([ChordType.MINOR]),
+            0: set([ChordType.MINOR, ChordType.MIN_MIN7]),
+            2: set([ChordType.DIMINISHED, ChordType.HALF_DIM7]),
+            -3: set([ChordType.MAJOR, ChordType.MAJ_MAJ7]),
+            -1: set([ChordType.MINOR, ChordType.MIN_MIN7]),
+            1: set([ChordType.MAJOR, ChordType.MAJ_MIN7]),
+            -4: set([ChordType.MAJOR, ChordType.MAJ_MAJ7]),
+            -2: set([ChordType.MAJOR, ChordType.MAJ_MIN7]),
+            5: set([ChordType.DIMINISHED, ChordType.DIM7]),
         },
     },
     PitchType.MIDI: {
         KeyMode.MAJOR: {
-            0: set([ChordType.MAJOR]),
+            0: set([ChordType.MAJOR, ChordType.MAJ_MAJ7]),
+            2: set([ChordType.MINOR, ChordType.MIN_MIN7]),
+            4: set([ChordType.MINOR, ChordType.MIN_MIN7]),
+            5: set([ChordType.MAJOR, ChordType.MAJ_MAJ7]),
+            7: set([ChordType.MAJOR, ChordType.MAJ_MIN7]),
+            9: set([ChordType.MINOR, ChordType.MIN_MIN7]),
+            11: set([ChordType.DIMINISHED, ChordType.HALF_DIM7, ChordType.DIM7]),
         },
         KeyMode.MINOR: {
-            0: set([ChordType.MINOR]),
+            0: set([ChordType.MINOR, ChordType.MIN_MIN7]),
+            2: set([ChordType.DIMINISHED, ChordType.HALF_DIM7]),
+            3: set([ChordType.MAJOR, ChordType.MAJ_MAJ7]),
+            5: set([ChordType.MINOR, ChordType.MIN_MIN7]),
+            7: set([ChordType.MAJOR, ChordType.MAJ_MIN7]),
+            8: set([ChordType.MAJOR, ChordType.MAJ_MAJ7]),
+            10: set([ChordType.MAJOR, ChordType.MAJ_MIN7]),
+            11: set([ChordType.DIMINISHED, ChordType.DIM7]),
         },
     },
 }
