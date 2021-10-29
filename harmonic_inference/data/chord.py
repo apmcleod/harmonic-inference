@@ -144,9 +144,15 @@ class Chord:
 
         return Chord(**new_params)
 
-    def is_diatonic(self) -> bool:
+    def is_diatonic(self, relative_to: "Key" = None) -> bool:
         """
         Return True if this chord is diatonic in it's key, and False otherwise.
+
+        Parameters
+        ----------
+        relative_to : Key
+            The Key in which we want to know whether this chord is diatonic. Only necessary
+            if this differs from the Chord's self.key.
 
         Returns
         -------
@@ -164,7 +170,9 @@ class Chord:
             # A pitch so far out of range of the tonic is not diatonic
             return False
 
-        diatonic = DIATONIC_CHORDS[self.pitch_type][self.key_mode]
+        diatonic = DIATONIC_CHORDS[self.pitch_type][
+            self.key_mode if relative_to is None else relative_to.relative_mode
+        ]
 
         return relative_root in diatonic and self.chord_type in diatonic[relative_root]
 
@@ -346,6 +354,9 @@ class Chord:
 
         # Binary -- is the current key major
         vectors.append([1 if key_mode == KeyMode.MAJOR else 0])
+
+        # Binary -- is this chord diatonic to the current key
+        vectors.append([1 if self.is_diatonic(relative_to=relative_to) else 0])
 
         return np.concatenate(vectors).astype(dtype=np.float16)
 
@@ -812,5 +823,5 @@ def get_chord_vector_length(
         num_pitches  # Root
         + num_pitches  # Bass
         + len(ChordType)  # chord type
-        + 14  # 4 each for inversion, onset level, offset level; 1 for duration, 1 for is_major
+        + 15  # 4 each for inversion, onset level, offset level; 1 for dur, 2 for is_major/diatonic
     )

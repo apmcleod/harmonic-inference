@@ -174,16 +174,19 @@ def decode_chord_vector(
     offset_level_vector = chord_vector[current_idx : current_idx + 4]
     offset_level = np.where(offset_level_vector == 1)[0][0]
 
-    is_major = chord_vector[-1] == 1
+    is_major = chord_vector[-2] == 1
     key_mode = KeyMode.MAJOR if is_major else KeyMode.MINOR
+
+    is_diatonic = chord_vector[-1] == 1
 
     print(f"Relative root: {relative_root}")
     print(f"Chord type: {chord_type}")
     print(f"Relative bass note: {relative_bass}")
     print(f"Inversion: {inversion}")
     print(f"Onset level: {onset_level}")
-    print(f"Offset_level: {offset_level}")
+    print(f"Offset level: {offset_level}")
     print(f"Key mode: {key_mode}")
+    print(f"Is_diatonic: {is_diatonic}")
 
     return Chord(
         relative_root,
