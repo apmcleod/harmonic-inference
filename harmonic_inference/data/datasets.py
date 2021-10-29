@@ -1045,18 +1045,28 @@ class KeySequenceDataset(KeyHarmonicDataset):
                 key_vectors = np.zeros((len(chord_vectors), key_vector_length))
 
                 if prev_key is not None:
-                    self.targets.append(prev_key.get_key_change_one_hot_index(key))
-                    key_vectors[0, :-1] = prev_key.get_key_change_vector(key)
-                    key_vectors[0, -1] = 1
+                    try:
+                        self.targets.append(prev_key.get_key_change_one_hot_index(key))
+                        key_vectors[0, :-1] = prev_key.get_key_change_vector(key)
+                        key_vectors[0, -1] = 1
+                    except ValueError:
+                        # Pitch outside of valid relative range
+                        logging.warning(
+                            "Key change from %s to %s falls outside of valid range. Not generating "
+                            "as a key change for the KSM",
+                            prev_key,
+                            key,
+                        )
+                        self.targets.append(-1)
 
-                self.key_change_replacements.append(
-                    np.concatenate(
-                        (
-                            chords[end].to_vec(relative_to=key, pad=True),
-                            np.zeros(key_vector_length),
+                    self.key_change_replacements.append(
+                        np.concatenate(
+                            (
+                                chords[end].to_vec(relative_to=key, pad=True),
+                                np.zeros(key_vector_length),
+                            )
                         )
                     )
-                )
 
                 piece_input.append(np.hstack([chord_vectors, key_vectors]))
 
