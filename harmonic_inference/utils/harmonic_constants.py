@@ -231,14 +231,13 @@ DIATONIC_CHORDS = {
         },
         KeyMode.MINOR: {
             0: set([ChordType.MINOR, ChordType.MIN_MIN7]),
-            -5: set([ChordType.MAJOR]),
             2: set([ChordType.DIMINISHED, ChordType.HALF_DIM7]),
             -3: set([ChordType.MAJOR, ChordType.MAJ_MAJ7]),
             -1: set([ChordType.MINOR, ChordType.MIN_MIN7]),
-            1: set([ChordType.MAJOR, ChordType.MAJ_MIN7]),
+            1: set([ChordType.MAJOR, ChordType.MAJ_MIN7, ChordType.MINOR, ChordType.MIN_MIN7]),
             -4: set([ChordType.MAJOR, ChordType.MAJ_MAJ7]),
-            -2: set([ChordType.MAJOR, ChordType.MAJ_MIN7]),
-            5: set([ChordType.DIMINISHED, ChordType.DIM7]),
+            -2: set([ChordType.MAJOR, ChordType.MAJ_MIN7]),  # VII
+            5: set([ChordType.DIMINISHED, ChordType.DIM7]),  # vii
         },
     },
     PitchType.MIDI: {
@@ -253,14 +252,13 @@ DIATONIC_CHORDS = {
         },
         KeyMode.MINOR: {
             0: set([ChordType.MINOR, ChordType.MIN_MIN7]),
-            1: set([ChordType.MAJOR]),
             2: set([ChordType.DIMINISHED, ChordType.HALF_DIM7]),
             3: set([ChordType.MAJOR, ChordType.MAJ_MAJ7]),
             5: set([ChordType.MINOR, ChordType.MIN_MIN7]),
-            7: set([ChordType.MAJOR, ChordType.MAJ_MIN7]),
+            7: set([ChordType.MAJOR, ChordType.MAJ_MIN7, ChordType.MINOR, ChordType.MIN_MIN7]),
             8: set([ChordType.MAJOR, ChordType.MAJ_MAJ7]),
-            10: set([ChordType.MAJOR, ChordType.MAJ_MIN7]),
-            11: set([ChordType.DIMINISHED, ChordType.DIM7]),
+            10: set([ChordType.MAJOR, ChordType.MAJ_MIN7]),  # VII
+            11: set([ChordType.DIMINISHED, ChordType.DIM7]),  # #vii
         },
     },
 }
