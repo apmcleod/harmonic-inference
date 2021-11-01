@@ -2,6 +2,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Tuple
 
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,7 +11,6 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-import pytorch_lightning as pl
 from harmonic_inference.data.chord import get_chord_vector_length
 from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.datasets import KeySequenceDataset
@@ -100,7 +100,7 @@ class KeySequenceModel(pl.LightningModule, ABC):
 
         outputs, _ = self(inputs, input_lengths)
 
-        loss = F.nll_loss(outputs, targets)
+        loss = F.nll_loss(outputs, targets, ignore_index=-1)
 
         self.log("train_loss", loss)
         return loss
@@ -110,7 +110,7 @@ class KeySequenceModel(pl.LightningModule, ABC):
 
         outputs, _ = self(inputs, input_lengths)
 
-        loss = F.nll_loss(outputs, targets)
+        loss = F.nll_loss(outputs, targets, ignore_index=-1)
         acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
 
         self.log("val_loss", loss)

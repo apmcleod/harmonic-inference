@@ -154,8 +154,10 @@ class Key:
             ] = 1
         except ValueError:
             logging.warning(
-                "Key change from {prev_key} to {key} falls outside of TPC key change range. "
-                "This key change target vector will not have a 1 for the key tonic."
+                "Key change from %s to %s falls outside of TPC key change range. "
+                "This key change target vector will not have a 1 for the key tonic.",
+                self,
+                next_key,
             )
 
         # Absolute mode of next key
