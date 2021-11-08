@@ -68,6 +68,31 @@ The output will go into a directory specified by `--output dir` (default `output
 3  | F:m, inv:0 | 2 | 0 | 0
 ...
 
+#### Applied Dominants
+Applied chords (e.g., `V/V` or `viio/III`) are represented in our model as key changes. For example, the following output should be interpreted as `I V/V V I` in `C major`:
+&nbsp; | label | mc | mc_onset | mn_onset
+------ | ----- | --- | ------- | --------
+0  | C:KeyMode.MAJOR | 0 | 0 | 0
+1  | C:M, inv:0 | 0 | 0 | 0
+2  | G:KeyMode.MAJOR | 1 | 0 | 0
+3  | D:M, inv:0 | 1 | 0 | 0
+4  | C:KeyMode.MAJOR | 2 | 0 | 0
+5  | G:M, inv:0 | 2 | 0 | 0
+6  | C:M, inv:0 | 3 | 0 | 0
+...
+
+Likewise, the following output should be interpreted as `i V/III III i` in `a minor`:
+&nbsp; | label | mc | mc_onset | mn_onset
+------ | ----- | --- | ------- | --------
+0  | a:KeyMode.MINOR | 0 | 0 | 0
+1  | A:m, inv:0 | 0 | 0 | 0
+2  | C:KeyMode.MAJOR | 1 | 0 | 0
+3  | G:M, inv:0 | 1 | 0 | 0
+4  | a:KeyMode.MINOR | 2 | 0 | 0
+5  | C:M, inv:0 | 2 | 0 | 0
+6  | A:m, inv:0 | 3 | 0 | 0
+...
+
 ## Writing onto a Score
 If you are annotating a score from a DCML-style corpus (e.g., [these](https://github.com/DCMLab/dcml_corpora)), the `write_to_score.py` script can be used to write the outputs of the program (both [`annotate.py`](#Usage)) and [`test.py`](#Experimentation)) directly onto the MuseScore3 files:
 
