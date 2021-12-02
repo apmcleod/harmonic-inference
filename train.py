@@ -5,10 +5,13 @@ import os
 import sys
 from pathlib import Path
 
+import h5py
+import pytorch_lightning as pl
 import torch
+from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
+from pytorch_lightning.profiler import AdvancedProfiler
 from torch.utils.data import DataLoader
 
-import h5py
 import harmonic_inference.data.datasets as ds
 import harmonic_inference.models.chord_classifier_models as ccm
 import harmonic_inference.models.chord_sequence_models as csm
@@ -16,12 +19,9 @@ import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.initial_chord_models as icm
 import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
-import pytorch_lightning as pl
 from harmonic_inference.data.data_types import PieceType, PitchType
 from harmonic_inference.models.joint_model import MODEL_CLASSES
 from harmonic_inference.utils.data_utils import load_kwargs_from_json, load_pieces
-from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
-from pytorch_lightning.profiler import AdvancedProfiler
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -284,7 +284,7 @@ if __name__ == "__main__":
         default_root_dir=ARGS.checkpoint,
         profiler=ARGS.profile,
         callbacks=[early_stopping_callback, lr_logger],
-        gpus=[ARGS.gpu],
+        gpus=[ARGS.gpu] if ARGS.gpu is not None else None,
         resume_from_checkpoint=ARGS.resume,
     )
     trainer.fit(model, dl_train, dl_valid)
