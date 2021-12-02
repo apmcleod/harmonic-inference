@@ -46,7 +46,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--gpu",
-        type=str,
+        type=int,
         default=None,
         help=(
             "The device number for the GPU to train on. "
@@ -284,7 +284,7 @@ if __name__ == "__main__":
         default_root_dir=ARGS.checkpoint,
         profiler=ARGS.profile,
         callbacks=[early_stopping_callback, lr_logger],
-        gpus=ARGS.gpu,
+        gpus=[ARGS.gpu],
         resume_from_checkpoint=ARGS.resume,
     )
     trainer.fit(model, dl_train, dl_valid)
