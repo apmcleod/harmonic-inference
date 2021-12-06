@@ -33,7 +33,7 @@ class Note:
         duration: Union[float, Fraction],
         offset: Union[float, Tuple[int, Fraction]],
         offset_level: int,
-        beat_duration: Fraction,
+        beat_duration: Union[float, Fraction],
         pitch_type: PitchType,
         mc_onset: Fraction = None,
     ):
@@ -61,7 +61,7 @@ class Note:
             (int, Fraction) tuple (representing measure count and beat in whole notes).
         offset_level : int
             The metrical level on which the offset lies. 0=none, 1=subbeat, 2=beat, 3=downbeat.
-        beat_duration : Fraction
+        beat_duration : Union[float, Fraction]
             The duration of a beat for this note's onset position. Used to convert whole-note-based
             durations into beat-based durations.
         pitch_type : PitchType
@@ -268,12 +268,16 @@ class Note:
         else:
             vectors.append(np.zeros(3, dtype=np.float16))
 
-        # Duration to surrounding notes
+        # Duration of this note and duration to surrounding notes
         durations = [
+            self.duration,
+            self.duration / self.beat_duration,
             0 if dur_from_prev is None else dur_from_prev,
+            0 if dur_from_prev is None else dur_from_prev / self.beat_duration,
             0 if dur_to_next is None else dur_to_next,
+            0 if dur_to_next is None else dur_to_next / self.beat_duration,
         ]
-        vectors.append(durations)
+        vectors.append(np.array(durations, dtype=np.float16))
 
         # Binary -- is this the lowest note in this set of notes
         midi_note_number = self.get_midi_note_number()
@@ -552,12 +556,11 @@ def get_note_vector_length(pitch_type: PitchType) -> int:
     # 4 onset level
     # 4 offset level
     # 3 onset, offset, duration relative to chord
-    # 2 whole-note and beat-based duration
-    # 4 durations to next and from prev (whole-note and beat-based)
+    # 6 durations: note, to_next, and from_prev (whole-note and beat-based)
     # 1 is_lowest
     # 1 normalized pitch height
     # 1 normalized pitch height relative to window
-    extra = 16
+    extra = 20
 
     return (
         NUM_PITCHES[pitch_type]  # Pitch class
