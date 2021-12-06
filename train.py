@@ -158,6 +158,20 @@ if __name__ == "__main__":
             learning_rate=ARGS.lr,
             **kwargs,
         )
+
+        if "input_mask" in kwargs:
+            kwargs["input_mask"] = ds.transform_input_mask_to_binary(
+                kwargs["input_mask"],
+                model.input_dim,
+            )
+            model = ccm.SimpleChordClassifier(
+                PieceType.SCORE,
+                PitchType.TPC,
+                PitchType.TPC,
+                learning_rate=ARGS.lr,
+                **kwargs,
+            )
+
         dataset = ds.ChordClassificationDataset
 
     elif ARGS.model == "ctm":
@@ -167,18 +181,35 @@ if __name__ == "__main__":
             learning_rate=ARGS.lr,
             **kwargs,
         )
-        dataset = ds.ChordTransitionDataset
 
-    elif ARGS.model == "csm":
-        if ARGS.pitch_based:
-            model = csm.PitchBasedChordSequenceModel(
-                PitchType.TPC,
-                PitchType.TPC,
+        if "input_mask" in kwargs:
+            kwargs["input_mask"] = ds.transform_input_mask_to_binary(
+                kwargs["input_mask"],
+                model.input_dim,
+            )
+            model = ctm.SimpleChordTransitionModel(
+                PieceType.SCORE,
                 PitchType.TPC,
                 learning_rate=ARGS.lr,
                 **kwargs,
             )
-        else:
+
+        dataset = ds.ChordTransitionDataset
+
+    elif ARGS.model == "csm":
+        model = csm.SimpleChordSequenceModel(
+            PitchType.TPC,
+            PitchType.TPC,
+            PitchType.TPC,
+            learning_rate=ARGS.lr,
+            **kwargs,
+        )
+
+        if "input_mask" in kwargs:
+            kwargs["input_mask"] = ds.transform_input_mask_to_binary(
+                kwargs["input_mask"],
+                model.input_dim,
+            )
             model = csm.SimpleChordSequenceModel(
                 PitchType.TPC,
                 PitchType.TPC,
@@ -186,6 +217,7 @@ if __name__ == "__main__":
                 learning_rate=ARGS.lr,
                 **kwargs,
             )
+
         dataset = ds.ChordSequenceDataset
 
     elif ARGS.model == "ktm":
@@ -195,6 +227,19 @@ if __name__ == "__main__":
             learning_rate=ARGS.lr,
             **kwargs,
         )
+
+        if "input_mask" in kwargs:
+            kwargs["input_mask"] = ds.transform_input_mask_to_binary(
+                kwargs["input_mask"],
+                model.input_dim,
+            )
+            model = ktm.SimpleKeyTransitionModel(
+                PitchType.TPC,
+                PitchType.TPC,
+                learning_rate=ARGS.lr,
+                **kwargs,
+            )
+
         dataset = ds.KeyTransitionDataset
 
     elif ARGS.model == "ksm":
@@ -205,6 +250,20 @@ if __name__ == "__main__":
             learning_rate=ARGS.lr,
             **kwargs,
         )
+
+        if "input_mask" in kwargs:
+            kwargs["input_mask"] = ds.transform_input_mask_to_binary(
+                kwargs["input_mask"],
+                model.input_dim,
+            )
+            model = ksm.SimpleKeySequenceModel(
+                PitchType.TPC,
+                PitchType.TPC,
+                PitchType.TPC,
+                learning_rate=ARGS.lr,
+                **kwargs,
+            )
+
         dataset = ds.KeySequenceDataset
 
     elif ARGS.model == "icm":

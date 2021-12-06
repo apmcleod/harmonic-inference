@@ -1420,3 +1420,34 @@ def get_dataset_splits(
             dataset_splits[dataset_index][split_index] = dataset_class(pieces)
 
     return dataset_splits, split_ids, split_pieces
+
+
+def transform_input_mask_to_binary(input_mask: List[int], input_length: int) -> List[int]:
+    """
+    Transform a given input mask into binary form. Specifically, if there are any
+    values in the given mask > 1, a new list is returned of length equal to the given
+    length, with 0s in the indexes given by the input mask and 1s everywhere else.
+
+    Parameters
+    ----------
+    input_mask : List[int]
+        A mask to use for inputs, either binary, with 0s indicating which indexes to mask
+        (in which case it is returned unchanged), or non-binary, whose values are indexes
+        to mask.
+    input_length : int
+        The length to make the resulting binary input mask.
+
+    Returns
+    -------
+    input_mask : List[int]
+        The input mask, if it is already binary and the correct length, or a new input
+        mask of length input_length with 0s in the indexes contained in the given
+        input_mask and 1s everywhere else.
+    """
+    if len(input_mask) == input_length and max(input_mask) <= 1:
+        return input_mask
+
+    binary_mask = np.ones(input_length, dtype=int)
+    binary_mask[np.array(input_mask)] = 0
+
+    return binary_mask
