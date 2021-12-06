@@ -208,7 +208,6 @@ class Note:
         vector : np.array
             The vector of this Note.
         """
-        # TODO: Add new duration info vectors
         vectors = []
 
         # Pitch as one-hot

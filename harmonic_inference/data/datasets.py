@@ -1448,6 +1448,7 @@ def transform_input_mask_to_binary(input_mask: List[int], input_length: int) -> 
         return input_mask
 
     binary_mask = np.ones(input_length, dtype=int)
-    binary_mask[np.array(input_mask)] = 0
+    if len(input_mask) > 0:
+        binary_mask[np.array(input_mask)] = 0
 
     return binary_mask

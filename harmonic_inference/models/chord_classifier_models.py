@@ -200,6 +200,7 @@ class SimpleChordClassifier(ChordClassifierModel):
         reduction: Dict[ChordType, ChordType] = None,
         use_inversions: bool = True,
         transposition_range: Union[List[int], Tuple[int, int]] = (0, 0),
+        embed_dim: int = 128,
         lstm_layers: int = 1,
         lstm_hidden_dim: int = 128,
         hidden_dim: int = 128,
@@ -228,6 +229,8 @@ class SimpleChordClassifier(ChordClassifierModel):
         use_inversions : bool
             Whether to use different inversions as different chords in the output. Used to
             derive the output length.
+        embed_dim : int
+            The size of the initial embedding layer.
         lstm_layers : int
             The number of Bi-LSTM layers to use.
         lstm_hidden_dim : int
@@ -267,11 +270,14 @@ class SimpleChordClassifier(ChordClassifierModel):
             reduction=reduction,
         )
 
+        self.embed_dim = embed_dim
+        self.embed = nn.Linear(self.input_dim, self.embed_dim)
+
         # LSTM hidden layer and depth
         self.lstm_hidden_dim = lstm_hidden_dim
         self.lstm_layers = lstm_layers
         self.lstm = nn.LSTM(
-            self.input_dim,
+            self.embed_dim,
             self.lstm_hidden_dim,
             num_layers=self.lstm_layers,
             bidirectional=True,
@@ -313,7 +319,9 @@ class SimpleChordClassifier(ChordClassifierModel):
         lengths = torch.clamp(lengths, min=1).cpu()
         h_0, c_0 = self.init_hidden(batch_size)
 
-        packed_notes = pack_padded_sequence(notes, lengths, enforce_sorted=False, batch_first=True)
+        embed = F.relu(self.embed(notes))
+
+        packed_notes = pack_padded_sequence(embed, lengths, enforce_sorted=False, batch_first=True)
         lstm_out_packed, (_, _) = self.lstm(packed_notes, (h_0, c_0))
         lstm_out_unpacked, lstm_out_lengths = pad_packed_sequence(lstm_out_packed, batch_first=True)
 
