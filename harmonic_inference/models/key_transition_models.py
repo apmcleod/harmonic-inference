@@ -1,7 +1,8 @@
 """Models that output the probability of a key change occurring on a given input."""
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,7 +11,6 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-import pytorch_lightning as pl
 from harmonic_inference.data.chord import get_chord_vector_length
 from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.datasets import KeyTransitionDataset
@@ -29,6 +29,7 @@ class KeyTransitionModel(pl.LightningModule, ABC):
         use_inversions: bool,
         reduction: Dict[ChordType, ChordType],
         learning_rate: float,
+        input_mask: List[int],
     ):
         """
         Create a new base KeySequenceModel with the given output and input data types.
@@ -45,6 +46,11 @@ class KeyTransitionModel(pl.LightningModule, ABC):
             The reduction to use for chord types.
         learning_rate : float
             The learning rate.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask in the Dataset code.
         """
         super().__init__()
         self.INPUT_CHORD_PITCH_TYPE = input_chord_pitch_type
@@ -54,6 +60,8 @@ class KeyTransitionModel(pl.LightningModule, ABC):
         self.use_inversions = use_inversions
 
         self.lr = learning_rate
+
+        self.input_mask = input_mask
 
     def get_dataset_kwargs(self) -> Dict[str, Any]:
         """
@@ -69,6 +77,7 @@ class KeyTransitionModel(pl.LightningModule, ABC):
         return {
             "reduction": self.reduction,
             "use_inversions": self.use_inversions,
+            "input_mask": self.input_mask,
         }
 
     def get_data_from_batch(self, batch):
@@ -200,6 +209,7 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
         learning_rate: float = 0.001,
         use_inversions: bool = True,
         reduction: Dict[ChordType, ChordType] = None,
+        input_mask: List[int] = None,
     ):
         """
         Create a new simple key transition model.
@@ -226,6 +236,11 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
             True to use inversions in the input vectors. False otherwise.
         reduction : Dict[ChordType, ChordType]
             The reduction to use for chord types.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask in the Dataset code.
         """
         super().__init__(
             input_chord_pitch_type,
@@ -233,6 +248,7 @@ class SimpleKeyTransitionModel(KeyTransitionModel):
             use_inversions,
             reduction,
             learning_rate,
+            input_mask,
         )
         self.save_hyperparameters()
 

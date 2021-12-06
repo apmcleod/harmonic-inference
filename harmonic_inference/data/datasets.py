@@ -48,6 +48,7 @@ class HarmonicDataset(Dataset):
         pad_targets: bool = True,
         save_padded_input_lengths: bool = True,
         save_padded_target_lengths: bool = True,
+        input_mask: List[int] = None,
     ):
         """
         Create a new base dataset.
@@ -64,6 +65,11 @@ class HarmonicDataset(Dataset):
             Save the returned lengths when padding inputs (when calling self.pad()).
         save_padded_target_lengths : bool
             Save the returned lengths when padding targets (when calling self.pad()).
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask.
         """
         self.h5_path = None
         self.padded = False
@@ -81,6 +87,8 @@ class HarmonicDataset(Dataset):
         self.max_target_length = None
         self.pad_targets = pad_targets
         self.save_padded_target_lengths = save_padded_target_lengths
+
+        self.input_mask = input_mask
 
         self.hidden_states = None
 
@@ -116,6 +124,9 @@ class HarmonicDataset(Dataset):
             )
 
         self.reduce(data, transposition=transposition)
+
+        if self.input_mask is not None:
+            data["inputs"][:] *= self.input_mask
 
         if self.transform:
             data.update(
@@ -314,7 +325,11 @@ class ChordTransitionDataset(HarmonicDataset):
     chunk_size = 64
 
     def __init__(
-        self, pieces: List[Piece], transform: Callable = None, dummy_targets: bool = False
+        self,
+        pieces: List[Piece],
+        transform: Callable = None,
+        dummy_targets: bool = False,
+        input_mask: List[int] = None,
     ):
         """
         Create a new Chord Transition Dataset from the given pieces.
@@ -327,8 +342,13 @@ class ChordTransitionDataset(HarmonicDataset):
             A function to transform numpy arrays returned by __getitem__ by default.
         dummy_targets : boolean
             True if the targets will be ignored. False to load targets from the given pieces.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask.
         """
-        super().__init__(transform=transform)
+        super().__init__(transform=transform, input_mask=input_mask)
         self.inputs = [
             np.vstack(
                 [
@@ -381,6 +401,7 @@ class ChordClassificationDataset(HarmonicDataset):
         reduction: Dict[ChordType, ChordType] = None,
         use_inversions: bool = True,
         transposition_range: Union[List[int], Tuple[int, int]] = (0, 0),
+        input_mask: List[int] = None,
     ):
         """
         Create a new chord classification dataset from the given pieces.
@@ -413,8 +434,13 @@ class ChordClassificationDataset(HarmonicDataset):
             dataset. Each __getitem__ call will return every possible transposition in this
             (min, max) range, inclusive on each side. The transpositions are measured in
             whatever PitchType is used in the dataset.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask.
         """
-        super().__init__(transform=transform, pad_targets=False)
+        super().__init__(transform=transform, pad_targets=False, input_mask=input_mask)
         self.target_pitch_type = []
 
         if ranges is None:
@@ -606,6 +632,7 @@ class ChordSequenceDataset(HarmonicDataset):
         use_inversions_input: bool = True,
         use_inversions_output: bool = True,
         pitch_based: bool = False,
+        input_mask: List[int] = None,
     ):
         """
         Create a chord sequence dataset from the given pieces.
@@ -636,8 +663,13 @@ class ChordSequenceDataset(HarmonicDataset):
             True to make the targets a pitch-based multi-hot mask, for pitches relative to the
             current key tonic. This is not applied when the data is loaded, but
             only when it is returned. So it is safe to change this after initialization.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask.
         """
-        super().__init__(transform=transform)
+        super().__init__(transform=transform, input_mask=input_mask)
         self.inputs = []
         self.targets = []
         self.target_pitch_type = []
@@ -758,6 +790,7 @@ class KeyHarmonicDataset(HarmonicDataset):
         transform: Callable = None,
         reduction: Dict[ChordType, ChordType] = None,
         use_inversions: bool = True,
+        input_mask: List[int] = None,
     ):
         """
         A base class for for key sequence and key transition datasets.
@@ -775,8 +808,18 @@ class KeyHarmonicDataset(HarmonicDataset):
             __getitem__. False to reduce all chords to root position. This is not
             applied when the data is loaded, but only when it is returned. So it is
             safe to change this after initialization.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask.
         """
-        super().__init__(transform=transform, pad_targets=False, save_padded_input_lengths=False)
+        super().__init__(
+            transform=transform,
+            pad_targets=False,
+            save_padded_input_lengths=False,
+            input_mask=input_mask,
+        )
         self.reduction = reduction
         self.use_inversions = use_inversions
 
@@ -896,6 +939,7 @@ class KeyTransitionDataset(KeyHarmonicDataset):
         transform: Callable = None,
         reduction: Dict[ChordType, ChordType] = None,
         use_inversions: bool = True,
+        input_mask: List[int] = None,
     ):
         """
         Create a key transition dataset from the given pieces.
@@ -915,8 +959,18 @@ class KeyTransitionDataset(KeyHarmonicDataset):
             __getitem__. False to reduce all chords to root position. This is not
             applied when the data is loaded, but only when it is returned. So it is
             safe to change this after initialization.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask.
         """
-        super().__init__(transform=transform, reduction=reduction, use_inversions=use_inversions)
+        super().__init__(
+            transform=transform,
+            reduction=reduction,
+            use_inversions=use_inversions,
+            input_mask=input_mask,
+        )
         self.inputs = []
         self.targets = []
 
@@ -994,6 +1048,7 @@ class KeySequenceDataset(KeyHarmonicDataset):
         transform: Callable = None,
         reduction: Dict[ChordType, ChordType] = None,
         use_inversions: bool = True,
+        input_mask: List[int] = None,
     ):
         """
         Create a key transition dataset from the given pieces.
@@ -1013,8 +1068,18 @@ class KeySequenceDataset(KeyHarmonicDataset):
             __getitem__. False to reduce all chords to root position. This is not
             applied when the data is loaded, but only when it is returned. So it is
             safe to change this after initialization.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask.
         """
-        super().__init__(transform=transform, reduction=reduction, use_inversions=use_inversions)
+        super().__init__(
+            transform=transform,
+            reduction=reduction,
+            use_inversions=use_inversions,
+            input_mask=input_mask,
+        )
         self.inputs = []
         self.targets = []
 

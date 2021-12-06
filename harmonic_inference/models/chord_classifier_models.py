@@ -2,6 +2,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Collection, Dict, List, Tuple, Union
 
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,7 +11,6 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-import pytorch_lightning as pl
 from harmonic_inference.data.chord import get_chord_vector_length
 from harmonic_inference.data.data_types import ChordType, PieceType, PitchType
 from harmonic_inference.data.datasets import ChordClassificationDataset
@@ -32,6 +32,7 @@ class ChordClassifierModel(pl.LightningModule, ABC):
         use_inversions: bool,
         learning_rate: float,
         transposition_range: Union[List[int], Tuple[int, int]],
+        input_mask: List[int],
     ):
         """
         Create a new base ChordClassifierModel with the given input and output formats.
@@ -55,6 +56,11 @@ class ChordClassifierModel(pl.LightningModule, ABC):
             dataset. Each __getitem__ call will return every possible transposition in this
             (min, max) range, inclusive on each side. The transpositions are measured in
             whatever PitchType is used in the dataset.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask in the Dataset code.
         """
         super().__init__()
         self.INPUT_TYPE = input_type
@@ -66,6 +72,8 @@ class ChordClassifierModel(pl.LightningModule, ABC):
         self.transposition_range = transposition_range
 
         self.lr = learning_rate
+
+        self.input_mask = input_mask
 
     def get_dataset_kwargs(self) -> Dict[str, Any]:
         """
@@ -82,6 +90,7 @@ class ChordClassifierModel(pl.LightningModule, ABC):
             "reduction": self.reduction,
             "use_inversions": self.use_inversions,
             "transposition_range": self.transposition_range,
+            "input_mask": self.input_mask,
         }
 
     def get_output(self, batch):
@@ -196,6 +205,7 @@ class SimpleChordClassifier(ChordClassifierModel):
         hidden_dim: int = 128,
         dropout: float = 0.0,
         learning_rate: float = 0.001,
+        input_mask: List[int] = None,
     ):
         """
         Create a new SimpleChordClassifier.
@@ -228,6 +238,11 @@ class SimpleChordClassifier(ChordClassifierModel):
             The dropout proportion of the first linear layer's output.
         learning_rate : float
             The learning rate.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask in the Dataset code.
         """
         super().__init__(
             input_type,
@@ -237,6 +252,7 @@ class SimpleChordClassifier(ChordClassifierModel):
             use_inversions,
             learning_rate,
             transposition_range,
+            input_mask,
         )
         self.save_hyperparameters()
 

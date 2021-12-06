@@ -1,7 +1,8 @@
 """Models that generate probability distributions over the next chord in a sequence."""
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,12 +11,10 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-import pytorch_lightning as pl
 from harmonic_inference.data.chord import get_chord_vector_length
 from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.datasets import ChordSequenceDataset
 from harmonic_inference.data.key import get_key_change_vector_length
-from harmonic_inference.utils.harmonic_constants import MAX_RELATIVE_TPC, MIN_RELATIVE_TPC
 
 
 class ChordSequenceModel(pl.LightningModule, ABC):
@@ -33,6 +32,7 @@ class ChordSequenceModel(pl.LightningModule, ABC):
         use_input_inversions: bool,
         use_output_inversions: bool,
         learning_rate: float,
+        input_mask: List[int],
     ):
         """
         Create a new base KeySequenceModel with the given output and input data types.
@@ -70,6 +70,8 @@ class ChordSequenceModel(pl.LightningModule, ABC):
 
         self.lr = learning_rate
 
+        self.input_mask = input_mask
+
     def get_dataset_kwargs(self) -> Dict[str, Any]:
         """
         Get a kwargs dict that can be used to create a dataset for this model with
@@ -87,6 +89,7 @@ class ChordSequenceModel(pl.LightningModule, ABC):
             "use_inversions_input": self.use_input_inversions,
             "use_inversions_output": self.use_output_inversions,
             "pitch_based": False,
+            "input_mask": self.input_mask,
         }
 
     def get_data_from_batch(self, batch):
@@ -224,6 +227,7 @@ class SimpleChordSequenceModel(ChordSequenceModel):
         hidden_dim: int = 256,
         dropout: float = 0.0,
         learning_rate: float = 0.001,
+        input_mask: List[int] = None,
     ):
         """
         Create a new simple chord sequence model.
@@ -257,6 +261,11 @@ class SimpleChordSequenceModel(ChordSequenceModel):
             The dropout proportion.
         learning_rate : float
             The learning rate.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask in the Dataset code.
         """
         super().__init__(
             input_chord_pitch_type,
@@ -267,6 +276,7 @@ class SimpleChordSequenceModel(ChordSequenceModel):
             use_input_inversions,
             use_output_inversions,
             learning_rate,
+            input_mask,
         )
         self.save_hyperparameters()
 
@@ -350,240 +360,3 @@ class SimpleChordSequenceModel(ChordSequenceModel):
         output = self.fc2(relu2)
 
         return F.log_softmax(output, dim=2), hidden_out
-
-
-class PitchBasedChordSequenceModel(ChordSequenceModel):
-    """
-    A pitch-based chord sequence model, with layers:
-        1. Linear embedding layer
-        2. LSTM
-        3. Linear layer
-        4. Dropout
-        5. Linear layer
-
-    Pitch-based means that the output is a length-NUM_PITCHES mask of priors, one per pitch,
-    for the next chord symbol.
-    """
-
-    def __init__(
-        self,
-        input_chord_pitch_type: PitchType,
-        input_key_pitch_type: PitchType,
-        output_pitch_type: PitchType,
-        input_reduction: Dict[ChordType, ChordType] = None,
-        use_input_inversions: bool = True,
-        embed_dim: int = 64,
-        lstm_layers: int = 1,
-        lstm_hidden_dim: int = 128,
-        hidden_dim: int = 256,
-        dropout: float = 0.0,
-        learning_rate: float = 0.001,
-    ):
-        """
-        Create a new simple chord sequence model.
-
-        Parameters
-        ----------
-        input_chord_pitch_type : PitchType
-            The type of pitch representation for the input chord root pitches.
-        input_key_pitch_type : PitchType
-            The type of pitch representation for the input key change vectors.
-        output_pitch_type : PitchType
-            The type of pitch representation for the target chord root pitches.
-        input_reduction : Dict[ChordType, ChordType]
-            The reduction used for input vector chord types.
-        use_input_inversions : bool
-            True to take inversions into account for the input. False to ignore them.
-        embed_dim : int
-            The size of the input embedding.
-        lstm_layers : int
-            The number of bi-directional LSTM layers.
-        lstm_hidden_dim : int
-            The size of the LSTM's hidden dimension.
-        hidden_dim : int
-            The size of the hidden dimension between the 2 consecutive linear layers.
-        dropout : float
-            The dropout proportion.
-        learning_rate : float
-            The learning rate.
-        """
-        super().__init__(
-            input_chord_pitch_type,
-            input_key_pitch_type,
-            output_pitch_type,
-            input_reduction,
-            None,
-            use_input_inversions,
-            True,
-            learning_rate,
-        )
-        self.save_hyperparameters()
-
-        # Input and output derived from input type and use_inversions
-        self.input_dim = (
-            get_chord_vector_length(
-                input_chord_pitch_type,
-                one_hot=False,
-                relative=True,
-                use_inversions=use_input_inversions,
-                pad=False,
-                reduction=input_reduction,
-            )
-            + get_key_change_vector_length(input_key_pitch_type, one_hot=False)  # Key change vector
-            + 1  # is_key_change
-        )
-        self.output_dim = MAX_RELATIVE_TPC - MIN_RELATIVE_TPC
-
-        self.embed_dim = embed_dim
-        self.embed = nn.Linear(self.input_dim, self.embed_dim)
-
-        # LSTM hidden layer and depth
-        self.lstm_hidden_dim = lstm_hidden_dim
-        self.lstm_layers = lstm_layers
-        self.lstm = nn.LSTM(
-            self.embed_dim,
-            self.lstm_hidden_dim,
-            num_layers=self.lstm_layers,
-            bidirectional=False,
-            batch_first=True,
-        )
-
-        # Linear layers post-LSTM
-        self.hidden_dim = hidden_dim
-        self.dropout = dropout
-        self.fc1 = nn.Linear(self.lstm_hidden_dim, self.hidden_dim)
-        self.fc2 = nn.Linear(self.hidden_dim, self.output_dim)
-        self.dropout1 = nn.Dropout(self.dropout)
-
-    def get_dataset_kwargs(self) -> Dict[str, Any]:
-        kwargs = super().get_dataset_kwargs()
-        kwargs["pitch_based"] = True
-
-        return kwargs
-
-    def get_data_from_batch(self, batch):
-        inputs = batch["inputs"].float()
-        targets = batch["targets"].long()
-        input_lengths = batch["input_lengths"]
-
-        longest = max(input_lengths)
-        inputs = inputs[:, :longest]
-
-        targets = targets[:, :longest]
-        targets = torch.roll(targets, -1, dims=1)
-
-        return inputs, input_lengths, targets
-
-    def training_step(self, batch, batch_idx):
-        inputs, input_lengths, targets = self.get_data_from_batch(batch)
-
-        outputs, _ = self(inputs, input_lengths)
-
-        flat_outputs = outputs.view(-1, outputs.shape[-1])
-        flat_targets = targets.view(-1, targets.shape[-1])
-        flat_mask = flat_targets[:, 0] == 0
-
-        flat_outputs = flat_outputs[flat_mask]
-        flat_targets = flat_targets[flat_mask]
-
-        loss = F.binary_cross_entropy(flat_outputs, flat_targets.float())
-
-        self.log("train_loss", loss)
-        return loss
-
-    def validation_step(self, batch, batch_idx):
-        inputs, input_lengths, targets = self.get_data_from_batch(batch)
-
-        outputs, _ = self(inputs, input_lengths)
-
-        flat_outputs = outputs.view(-1, outputs.shape[-1])
-        flat_targets = targets.view(-1, targets.shape[-1])
-        flat_mask = flat_targets[:, 0] == 0
-
-        flat_outputs = flat_outputs[flat_mask]
-        flat_targets = flat_targets[flat_mask]
-
-        loss = F.binary_cross_entropy(flat_outputs, flat_targets.float())
-
-        acc = (
-            100 * (flat_outputs.round() == flat_targets).sum().float() / len(flat_targets.view(-1))
-        )
-
-        self.log("val_loss", loss)
-        self.log("val_acc", acc)
-
-    def evaluate(self, dataset: ChordSequenceDataset):
-        # TODO
-        data_loader = DataLoader(dataset, batch_size=dataset.valid_batch_size)
-
-        total = 0
-        total_loss = 0
-        total_acc = 0
-
-        for batch in tqdm(data_loader, desc="Evaluating CSM"):
-            inputs, input_lengths, targets = self.get_data_from_batch(batch)
-
-            outputs, _ = self(inputs, input_lengths)
-
-            flat_outputs = outputs.view(-1, outputs.shape[-1])
-            flat_targets = targets.view(-1, targets.shape[-1])
-            flat_mask = flat_targets[:, 0] == 0
-            batch_count = len(flat_mask.view(-1))
-
-            flat_outputs = flat_outputs[flat_mask]
-            flat_targets = flat_targets[flat_mask]
-
-            loss = F.binary_cross_entropy(flat_outputs, flat_targets.float(), reduction="none")
-
-            acc = (
-                100
-                * (flat_outputs.round() == flat_targets).sum().float()
-                / len(flat_targets.view(-1))
-            )
-
-            total += batch_count
-            total_loss += loss * batch_count
-            total_acc += acc * batch_count
-
-        return {
-            "acc": (total_acc / total).item(),
-            "loss": (total_loss / total).item(),
-        }
-
-    def init_hidden(self, batch_size: int) -> Tuple[Variable, Variable]:
-        """
-        Initialize the LSTM's hidden layer for a given batch size.
-
-        Parameters
-        ----------
-        batch_size : int
-            The batch size.
-        """
-        return (
-            Variable(
-                torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim, device=self.device)
-            ),
-            Variable(
-                torch.zeros(self.lstm_layers, batch_size, self.lstm_hidden_dim, device=self.device)
-            ),
-        )
-
-    def forward(self, inputs, lengths, hidden=None):
-        # pylint: disable=arguments-differ
-        batch_size = inputs.shape[0]
-        lengths = torch.clamp(lengths, min=1).cpu()
-        h_0, c_0 = self.init_hidden(batch_size) if hidden is None else hidden
-
-        embedded = F.relu(self.embed(inputs))
-
-        packed = pack_padded_sequence(embedded, lengths, enforce_sorted=False, batch_first=True)
-        lstm_out_packed, hidden_out = self.lstm(packed, (h_0, c_0))
-        lstm_out, _ = pad_packed_sequence(lstm_out_packed, batch_first=True)
-
-        relu1 = F.relu(lstm_out)
-        drop1 = self.dropout1(relu1)
-        fc1 = self.fc1(drop1)
-        relu2 = F.relu(fc1)
-        output = self.fc2(relu2)
-
-        return torch.sigmoid(output), hidden_out

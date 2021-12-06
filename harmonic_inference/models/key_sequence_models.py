@@ -1,6 +1,6 @@
 """Models that generate probability distributions over the next key in a sequence."""
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
 import pytorch_lightning as pl
 import torch
@@ -30,6 +30,7 @@ class KeySequenceModel(pl.LightningModule, ABC):
         use_inversions: bool,
         reduction: Dict[ChordType, ChordType],
         learning_rate: float,
+        input_mask: List[int],
     ):
         """
         Create a new base KeySequenceModel with the given output and input data types.
@@ -48,6 +49,11 @@ class KeySequenceModel(pl.LightningModule, ABC):
             The reduction to use for chord types.
         learning_rate : float
             The learning rate.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask in the Dataset code.
         """
         super().__init__()
         self.INPUT_CHORD_PITCH_TYPE = input_chord_pitch_type
@@ -58,6 +64,8 @@ class KeySequenceModel(pl.LightningModule, ABC):
         self.reduction = reduction
 
         self.lr = learning_rate
+
+        self.input_mask = input_mask
 
     def get_dataset_kwargs(self) -> Dict[str, Any]:
         """
@@ -73,6 +81,7 @@ class KeySequenceModel(pl.LightningModule, ABC):
         return {
             "reduction": self.reduction,
             "use_inversions": self.use_inversions,
+            "input_mask": self.input_mask,
         }
 
     def get_data_from_batch(self, batch):
@@ -191,6 +200,7 @@ class SimpleKeySequenceModel(KeySequenceModel):
         learning_rate: float = 0.001,
         use_inversions: bool = True,
         reduction: Dict[ChordType, ChordType] = None,
+        input_mask: List[int] = None,
     ):
         """
         Vreate a new Simple Key Sequence Model.
@@ -219,6 +229,11 @@ class SimpleKeySequenceModel(KeySequenceModel):
             True to use inversions in the input vectors. False otherwise.
         reduction : Dict[ChordType, ChordType]
             The reduction to use for chord types.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask in the Dataset code.
         """
         super().__init__(
             input_chord_pitch_type,
@@ -227,6 +242,7 @@ class SimpleKeySequenceModel(KeySequenceModel):
             use_inversions,
             reduction,
             learning_rate,
+            input_mask,
         )
         self.save_hyperparameters()
 
