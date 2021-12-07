@@ -1186,6 +1186,11 @@ def h5_to_dataset(
         dataset.in_ram = False
         chunk_size = dataset.chunk_size
 
+        # This data is small and can be assumed to fit in RAM in any case
+        for key in ["piece_lengths", "key_change_replacements", "target_pitch_type"]:
+            if key in h5_file:
+                setattr(dataset, key, np.array(h5_file[key]))
+
         if not in_ram:
             dataset.padded = True
             logging.warning("Reading dataset from h5 file during runtime. This will be slower.")
@@ -1217,10 +1222,6 @@ def h5_to_dataset(
                         setattr(
                             dataset, f"{data}s", np.array(h5_file[f"{data}s"], dtype=np.float16)
                         )
-
-                for key in ["piece_lengths", "key_change_replacements", "target_pitch_type"]:
-                    if key in h5_file:
-                        setattr(dataset, key, np.array(h5_file[key]))
 
                 dataset.in_ram = True
 
