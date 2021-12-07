@@ -59,15 +59,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--no-ram",
-        action="store_true",
-        help=(
-            "Force the dataset to be kept in the h5 file and not loaded into RAM. "
-            "This will be slower."
-        ),
-    )
-
-    parser.add_argument(
         "--resume",
         type=Path,
         default=None,
@@ -309,14 +300,12 @@ if __name__ == "__main__":
         dataset,
         transform=torch.from_numpy,
         dataset_kwargs=model.get_dataset_kwargs(),
-        in_ram=not ARGS.no_ram,
     )
     dataset_valid = ds.h5_to_dataset(
         h5_path_valid,
         dataset,
         transform=torch.from_numpy,
         dataset_kwargs=model.get_dataset_kwargs(),
-        in_ram=not ARGS.no_ram,
     )
 
     dl_train = DataLoader(
