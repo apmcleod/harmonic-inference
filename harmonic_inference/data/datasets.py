@@ -1147,6 +1147,7 @@ def h5_to_dataset(
     dataset_class: HarmonicDataset,
     transform: Callable = None,
     dataset_kwargs: Dict[str, Any] = None,
+    in_ram: bool = True,
 ) -> HarmonicDataset:
     """
     Load a harmonic dataset object from an h5 file into the given HarmonicDataset subclass.
@@ -1162,6 +1163,9 @@ def h5_to_dataset(
         torch.from_numpy().
     dataset_kwargs : Dict[str, Any]
         Keyword arguments to pass to the dataset.init() call.
+    in_ram : bool
+        True to try to load the dataset into RAM. False to force reading in from the h5 file
+        during runtime.
 
     Returns
     -------
@@ -1182,40 +1186,47 @@ def h5_to_dataset(
         dataset.in_ram = False
         chunk_size = dataset.chunk_size
 
-        try:
-            for data in ["input", "target"]:
-                if f"{data}_lengths" in h5_file:
-                    lengths = np.array(h5_file[f"{data}_lengths"])
-                    data_list = []
+        if not in_ram:
+            dataset.padded = True
+            logging.warning("Reading dataset from h5 file during runtime. This will be slower.")
 
-                    for chunk_start in tqdm(
-                        range(0, len(lengths), chunk_size),
-                        desc=f"Loading {data} chunks from {h5_path}",
-                    ):
-                        chunk = h5_file[f"{data}s"][chunk_start : chunk_start + chunk_size]
-                        chunk_lengths = lengths[chunk_start : chunk_start + chunk_size]
-                        data_list.extend(
-                            [
-                                np.array(item[:length], dtype=np.float16)
-                                for item, length in zip(chunk, chunk_lengths)
-                            ]
+        else:
+            try:
+                for data in ["input", "target"]:
+                    if f"{data}_lengths" in h5_file:
+                        lengths = np.array(h5_file[f"{data}_lengths"])
+                        data_list = []
+
+                        for chunk_start in tqdm(
+                            range(0, len(lengths), chunk_size),
+                            desc=f"Loading {data} chunks from {h5_path}",
+                        ):
+                            chunk = h5_file[f"{data}s"][chunk_start : chunk_start + chunk_size]
+                            chunk_lengths = lengths[chunk_start : chunk_start + chunk_size]
+                            data_list.extend(
+                                [
+                                    np.array(item[:length], dtype=np.float16)
+                                    for item, length in zip(chunk, chunk_lengths)
+                                ]
+                            )
+
+                        setattr(dataset, f"{data}_lengths", lengths)
+                        setattr(dataset, f"{data}s", data_list)
+
+                    else:
+                        setattr(
+                            dataset, f"{data}s", np.array(h5_file[f"{data}s"], dtype=np.float16)
                         )
 
-                    setattr(dataset, f"{data}_lengths", lengths)
-                    setattr(dataset, f"{data}s", data_list)
+                for key in ["piece_lengths", "key_change_replacements", "target_pitch_type"]:
+                    if key in h5_file:
+                        setattr(dataset, key, np.array(h5_file[key]))
 
-                else:
-                    setattr(dataset, f"{data}s", np.array(h5_file[f"{data}s"], dtype=np.float16))
+                dataset.in_ram = True
 
-            for key in ["piece_lengths", "key_change_replacements", "target_pitch_type"]:
-                if key in h5_file:
-                    setattr(dataset, key, np.array(h5_file[key]))
-
-            dataset.in_ram = True
-
-        except MemoryError:
-            logging.exception("Dataset too large to fit into RAM. Reading from h5 file.")
-            dataset.padded = True
+            except MemoryError:
+                logging.exception("Dataset too large to fit into RAM. Reading from h5 file.")
+                dataset.padded = True
 
     return dataset
 

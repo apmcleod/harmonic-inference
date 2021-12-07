@@ -39,12 +39,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--pitch-based",
-        action="store_true",
-        help="Train a pitch-based CSM (CSM-P). Ignored if --model is not csm.",
-    )
-
-    parser.add_argument(
         "--gpu",
         type=int,
         default=None,
@@ -61,6 +55,15 @@ if __name__ == "__main__":
         help=(
             "The directory to save model checkpoints into, within a subdirectory of the model's "
             "name (e.g., CSM checkpoints will be saved into `--checkpoint`/csm)."
+        ),
+    )
+
+    parser.add_argument(
+        "--no-ram",
+        action="store_true",
+        help=(
+            "Force the dataset to be kept in the h5 file and not loaded into RAM. "
+            "This will be slower."
         ),
     )
 
@@ -306,12 +309,14 @@ if __name__ == "__main__":
         dataset,
         transform=torch.from_numpy,
         dataset_kwargs=model.get_dataset_kwargs(),
+        in_ram=not ARGS.no_ram,
     )
     dataset_valid = ds.h5_to_dataset(
         h5_path_valid,
         dataset,
         transform=torch.from_numpy,
         dataset_kwargs=model.get_dataset_kwargs(),
+        in_ram=not ARGS.no_ram,
     )
 
     dl_train = DataLoader(
