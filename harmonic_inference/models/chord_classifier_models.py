@@ -15,6 +15,7 @@ from harmonic_inference.data.chord import get_chord_vector_length
 from harmonic_inference.data.data_types import ChordType, PieceType, PitchType
 from harmonic_inference.data.datasets import ChordClassificationDataset
 from harmonic_inference.data.note import get_note_vector_length
+from harmonic_inference.utils.harmonic_constants import NUM_PITCHES
 
 
 class ChordClassifierModel(pl.LightningModule, ABC):
@@ -186,10 +187,11 @@ class ChordClassifierModel(pl.LightningModule, ABC):
 class SimpleChordClassifier(ChordClassifierModel):
     """
     The most simple chord classifier, with layers:
-        1. Bi-LSTM
-        2. Linear layer
-        3. Dropout
-        4. Linear layer
+        1. Linear layer (embedding)
+        2. Bi-LSTM
+        3. Linear layer
+        4. Dropout
+        5. Linear layer
     """
 
     def __init__(
@@ -343,6 +345,297 @@ class SimpleChordClassifier(ChordClassifierModel):
         output = self.fc2(drop1)
 
         return output
+
+
+class MultiTargetChordClassifier(ChordClassifierModel):
+    """
+    A simple chord classifier, with intermediate targets, using layers:
+        1. Linear layer (embedding)
+        2. Bi-LSTM
+        3. Linear layer
+        4. Dropout
+        5. Linear layer with intermediate targets
+        6. Linear output layer
+    """
+
+    def __init__(
+        self,
+        input_type: PieceType,
+        input_pitch: PitchType,
+        output_pitch: PitchType,
+        reduction: Dict[ChordType, ChordType] = None,
+        use_inversions: bool = True,
+        transposition_range: Union[List[int], Tuple[int, int]] = (0, 0),
+        embed_dim: int = 128,
+        lstm_layers: int = 1,
+        lstm_hidden_dim: int = 128,
+        hidden_dim: int = 128,
+        dropout: float = 0.0,
+        learning_rate: float = 0.001,
+        input_mask: List[int] = None,
+    ):
+        """
+        Create a new MultiTargetChordClassifier.
+
+        Parameters
+        ----------
+        input_type : PieceType
+            The type of piece that the input data is coming from.
+        input_pitch : PitchType
+            What pitch type the model is expecting for notes.
+        output_pitch : PitchType
+            The pitch type to use for outputs of this model. Used to derive the output length.
+        reduction : Dict[ChordType, ChordType]
+            The reduction used for the output chord types.
+        transposition_range : Union[List[int], Tuple[int, int]]
+            Minimum and maximum bounds by which to transpose each note and chord of the
+            dataset. Each __getitem__ call will return every possible transposition in this
+            (min, max) range, inclusive on each side. The transpositions are measured in
+            whatever PitchType is used in the dataset.
+        use_inversions : bool
+            Whether to use different inversions as different chords in the output. Used to
+            derive the output length.
+        embed_dim : int
+            The size of the initial embedding layer.
+        lstm_layers : int
+            The number of Bi-LSTM layers to use.
+        lstm_hidden_dim : int
+            The size of each LSTM layer's hidden vector.
+        hidden_dim : int
+            The size of the output vector of the first linear layer.
+        dropout : float
+            The dropout proportion of the first linear layer's output.
+        learning_rate : float
+            The learning rate.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask in the Dataset code.
+        """
+        super().__init__(
+            input_type,
+            input_pitch,
+            output_pitch,
+            reduction,
+            use_inversions,
+            learning_rate,
+            transposition_range,
+            input_mask,
+        )
+        self.save_hyperparameters()
+
+        # Input and output derived from pitch_type and use_inversions
+        self.input_dim = get_note_vector_length(input_pitch)
+        self.num_classes = get_chord_vector_length(
+            output_pitch,
+            one_hot=True,
+            relative=False,
+            use_inversions=use_inversions,
+            pad=False,
+            reduction=reduction,
+        )
+
+        # Intermediate target dim
+        self.int_target_dim = 3 * NUM_PITCHES[output_pitch]  # root, bass, and pitch presence
+
+        self.embed_dim = embed_dim
+        self.embed = nn.Linear(self.input_dim, self.embed_dim)
+
+        # LSTM hidden layer and depth
+        self.lstm_hidden_dim = lstm_hidden_dim
+        self.lstm_layers = lstm_layers
+        self.lstm = nn.LSTM(
+            self.embed_dim,
+            self.lstm_hidden_dim,
+            num_layers=self.lstm_layers,
+            bidirectional=True,
+            batch_first=True,
+        )
+
+        # Linear layers post-LSTM
+        self.hidden_dim = hidden_dim
+        self.dropout = dropout
+        self.fc1 = nn.Linear(2 * self.lstm_hidden_dim, self.hidden_dim)  # 2 because bi-directional
+
+        self.int_target_fc = nn.Linear(self.hidden_dim, self.int_target_dim)
+
+        self.fc2 = nn.Linear(self.int_target_dim, self.num_classes)
+        self.dropout1 = nn.Dropout(self.dropout)
+
+    def get_output(self, batch):
+        notes = batch["inputs"].float()
+        notes_lengths = batch["input_lengths"]
+
+        outputs, _ = self(notes, notes_lengths)
+
+        return F.softmax(outputs, dim=-1)
+
+    def training_step(self, batch, batch_idx):
+        notes = batch["inputs"].float()
+        notes_lengths = batch["input_lengths"]
+
+        root_targets = batch["intermediate_targets"]["root"]
+        bass_targets = batch["intermediate_targets"]["bass"]
+        pitch_targets = batch["intermediate_targets"]["pitches"].float()
+        targets = batch["targets"].long()
+
+        outputs, (root, bass, presence) = self(notes, notes_lengths)
+        output_loss = F.cross_entropy(outputs, targets, ignore_index=-1)
+
+        root_loss = F.nll_loss(root, root_targets, ignore_index=-1)
+        bass_loss = F.nll_loss(bass, bass_targets, ignore_index=-1)
+
+        mask = pitch_targets != -1
+        presence_loss = F.binary_cross_entropy(presence[mask], pitch_targets[mask])
+
+        loss = output_loss + root_loss + bass_loss + presence_loss
+
+        self.log("train_output_loss", output_loss)
+        self.log("train_root_loss", root_loss)
+        self.log("train_bass_loss", bass_loss)
+        self.log("train_presence_loss", presence_loss)
+        self.log("train_loss", loss)
+
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        notes = batch["inputs"].float()
+        notes_lengths = batch["input_lengths"]
+
+        root_targets = batch["intermediate_targets"]["root"]
+        bass_targets = batch["intermediate_targets"]["bass"]
+        pitch_targets = batch["intermediate_targets"]["pitches"].float()
+        targets = batch["targets"].long()
+
+        outputs, (root, bass, presence) = self(notes, notes_lengths)
+
+        mask = targets != -1
+        outputs = outputs[mask]
+        targets = targets[mask]
+
+        if len(targets) > 0:
+            output_acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
+            output_loss = F.cross_entropy(outputs, targets, ignore_index=-1)
+
+            root_loss = F.nll_loss(root, root_targets, ignore_index=-1)
+            bass_loss = F.nll_loss(bass, bass_targets, ignore_index=-1)
+
+            mask = root_targets != -1
+            presence_loss = F.binary_cross_entropy(presence[mask], pitch_targets[mask])
+
+            loss = output_loss + root_loss + bass_loss + presence_loss
+
+            root_acc = (
+                100 * (root[mask].argmax(-1) == root_targets[mask]).sum().float() / len(targets)
+            )
+            bass_acc = (
+                100 * (bass[mask].argmax(-1) == bass_targets[mask]).sum().float() / len(targets)
+            )
+            presence_acc = (
+                100
+                * (presence[mask].round() == pitch_targets[mask]).sum().float()
+                / len(pitch_targets[mask].flatten())
+            )
+
+            self.log("val_output_acc", output_acc)
+            self.log("val_root_acc", root_acc)
+            self.log("val_bass_acc", bass_acc)
+            self.log("val_presence_acc", presence_acc)
+
+            self.log("val_output_loss", output_loss)
+            self.log("val_root_loss", root_loss)
+            self.log("val_bass_loss", bass_loss)
+            self.log("val_presence_loss", presence_loss)
+            self.log("val_loss", loss)
+
+    def evaluate(self, dataset: ChordClassificationDataset):
+        dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
+
+        total = 0
+        total_loss = 0
+        total_acc = 0
+
+        for batch in tqdm(dl, desc="Evaluating CCM"):
+            notes = batch["inputs"].float()
+            notes_lengths = batch["input_lengths"]
+            targets = batch["targets"].long()
+
+            batch_count = len(targets)
+            outputs, (root, bass, presence) = self(notes, notes_lengths)
+            loss = F.cross_entropy(outputs, targets)
+            acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
+
+            total += batch_count
+            total_loss += loss * batch_count
+            total_acc += acc * batch_count
+
+        return {
+            "acc": (total_acc / total).item(),
+            "loss": (total_loss / total).item(),
+        }
+
+    def init_hidden(self, batch_size: int) -> Tuple[Variable, Variable]:
+        """
+        Initialize the LSTM's hidden layer for a given batch size.
+
+        Parameters
+        ----------
+        batch_size : int
+            The batch size.
+        """
+        return (
+            Variable(
+                torch.zeros(
+                    2 * self.lstm_layers, batch_size, self.lstm_hidden_dim, device=self.device
+                )
+            ),
+            Variable(
+                torch.zeros(
+                    2 * self.lstm_layers, batch_size, self.lstm_hidden_dim, device=self.device
+                )
+            ),
+        )
+
+    def forward(self, notes, lengths):
+        # pylint: disable=arguments-differ
+        batch_size = notes.shape[0]
+        lengths = torch.clamp(lengths, min=1).cpu()
+        h_0, c_0 = self.init_hidden(batch_size)
+
+        embed = F.relu(self.embed(notes))
+
+        packed_notes = pack_padded_sequence(embed, lengths, enforce_sorted=False, batch_first=True)
+        lstm_out_packed, (_, _) = self.lstm(packed_notes, (h_0, c_0))
+        lstm_out_unpacked, lstm_out_lengths = pad_packed_sequence(lstm_out_packed, batch_first=True)
+
+        # Reshape lstm outs
+        lstm_out_forward, lstm_out_backward = torch.chunk(lstm_out_unpacked, 2, 2)
+
+        # Get lengths in proper format
+        lstm_out_lengths_tensor = (
+            lstm_out_lengths.unsqueeze(1).unsqueeze(2).expand((-1, 1, lstm_out_forward.shape[2]))
+        ).to(self.device)
+        last_forward = torch.gather(lstm_out_forward, 1, lstm_out_lengths_tensor - 1).squeeze()
+        last_backward = lstm_out_backward[:, 0, :]
+        lstm_out = torch.cat((last_forward, last_backward), 1)
+
+        relu1 = F.relu(lstm_out)
+        fc1 = self.fc1(relu1)
+        relu2 = F.relu(fc1)
+        drop1 = self.dropout1(relu2)
+
+        int_targets_raw = self.int_target_fc(drop1)  # Batch x int_targets_dim
+        # Split values into root, bass, presence
+        root, bass, presence = torch.split(int_targets_raw, self.int_target_dim // 3, dim=-1)
+        root = F.softmax(root, dim=1)
+        bass = F.softmax(bass, dim=1)
+        presence = torch.sigmoid(presence)  # Multi-hot
+
+        int_targets_encoded = torch.cat([root, bass, presence], dim=-1)
+        output = self.fc2(int_targets_encoded)
+
+        return output, (root, bass, presence)
 
 
 class TranspositionInvariantCNNClassifier(nn.Module):

@@ -39,6 +39,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--int-targets",
+        action="store_true",
+        help=("Train the CCM with intermediate targets rather than the simple CCM."),
+    )
+
+    parser.add_argument(
         "--gpu",
         type=int,
         default=None,
@@ -145,7 +151,8 @@ if __name__ == "__main__":
     kwargs = load_kwargs_from_json(ARGS.model_kwargs)
 
     if ARGS.model == "ccm":
-        model = ccm.SimpleChordClassifier(
+        ccm_init = ccm.MultiTargetChordClassifier if ARGS.int_targets else ccm.SimpleChordClassifier
+        model = ccm_init(
             PieceType.SCORE,
             PitchType.TPC,
             PitchType.TPC,
@@ -158,7 +165,7 @@ if __name__ == "__main__":
                 kwargs["input_mask"],
                 model.input_dim,
             )
-            model = ccm.SimpleChordClassifier(
+            model = ccm_init(
                 PieceType.SCORE,
                 PitchType.TPC,
                 PitchType.TPC,
