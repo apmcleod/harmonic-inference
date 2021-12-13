@@ -596,7 +596,7 @@ class ChordClassificationDataset(HarmonicDataset):
             data["intermediate_targets"] = {
                 "bass": -1,
                 "root": -1,
-                "pitches": np.zeros(
+                "pitches": -np.ones(
                     NUM_PITCHES[PitchType(self.target_pitch_type[0])], dtype=np.long
                 ),
             }
