@@ -433,6 +433,7 @@ class ScorePiece(Piece):
                 Fraction(0),
                 (0, Fraction(0)),
                 0,
+                1,
                 PitchType.TPC,
             )
 

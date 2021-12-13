@@ -127,6 +127,11 @@ def remove_repeats(measures: pd.DataFrame, remove_unreachable: bool = True) -> p
         # Reset type
         measures["mc"] = measures["mc"].astype(mc_type)
 
+    # Ensure that each piece has a final measure (where next == pd.NA)
+    have_last = measures.loc[pd.isna(measures["next"])].index.droplevel(1)
+    no_last = measures.drop(have_last)
+    measures.loc[no_last.groupby(level=0).tail(1).index, "next"] = pd.NA
+
     return measures
 
 

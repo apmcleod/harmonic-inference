@@ -32,7 +32,7 @@ from harmonic_inference.utils.harmonic_utils import (
     tpc_interval_to_midi_interval,
     transpose_pitch,
 )
-from harmonic_inference.utils.rhythmic_utils import get_metrical_level
+from harmonic_inference.utils.rhythmic_utils import get_metrical_level, get_metrical_level_lengths
 
 
 class Chord:
@@ -53,6 +53,7 @@ class Chord:
         offset: Union[float, Tuple[int, Fraction]],
         offset_level: int,
         duration: Union[float, Fraction],
+        beat_duration: Union[float, Fraction],
         pitch_type: PitchType,
         suspension: str = None,
     ):
@@ -91,6 +92,9 @@ class Chord:
         duration : Union[float, Fraction]
             The duration of this Chord. Either a float (representing time in seconds), ar a
             Fraction (representing whole notes).
+        beat_duration : Union[float, Fraction]
+            The duration of a beat for this chord's onset position. Used to convert whole-note-based
+            durations into beat-based durations.
         pitch_type : PitchType
             The PitchType in which this chord's root and bass note are stored. If this is TPC, the
             values can be later converted into MIDI, but not vice versa.
@@ -108,6 +112,7 @@ class Chord:
         self.offset = offset
         self.offset_level = offset_level
         self.duration = duration
+        self.beat_duration = beat_duration
         self.pitch_type = pitch_type
         self.suspension = suspension
 
@@ -349,8 +354,8 @@ class Chord:
         offset_level[self.offset_level] = 1
         vectors.append(offset_level)
 
-        # Duration as float
-        vectors.append([float(self.duration)])
+        # Durations (whole note and beat-based) as float
+        vectors.append([float(self.duration), float(self.duration / self.beat_duration)])
 
         # Binary -- is the current key major
         vectors.append([1 if key_mode == KeyMode.MAJOR else 0])
@@ -578,6 +583,10 @@ class Chord:
             onset, offset = positions
             onset_level, offset_level = levels
 
+            _, beat_duration, _ = get_metrical_level_lengths(
+                measures_df.loc[measures_df["mc"] == mc].squeeze()["timesig"]
+            )
+
             duration = chord_row["duration"]
 
             suspension = chord_row["changes"] if not pd.isna(chord_row["changes"]) else None
@@ -594,6 +603,7 @@ class Chord:
                 offset,
                 offset_level,
                 duration,
+                beat_duration,
                 pitch_type,
                 suspension=suspension,
             )
@@ -742,6 +752,7 @@ class Chord:
                 levels[i] = level
 
             onset_level, offset_level = levels
+            _, beat_duration, _ = get_metrical_level_lengths(onset_measure["timesig"])
 
             return Chord(
                 root,
@@ -755,6 +766,7 @@ class Chord:
                 (offset_measure["mc"], offset_beat),
                 offset_level,
                 chord_row["off"] - chord_row["on"],
+                beat_duration,
                 pitch_type,
             )
         except Exception as e:
@@ -819,9 +831,12 @@ def get_chord_vector_length(
             )
         return num_pitches * len(set(reduction.values()))
 
-    return (
-        num_pitches  # Root
-        + num_pitches  # Bass
-        + len(ChordType)  # chord type
-        + 15  # 4 each for inversion, onset level, offset level; 1 for dur, 2 for is_major/diatonic
-    )
+    # 4 inversion
+    # 4 onset level
+    # 4 offset level
+    # 2 durations (whole-note and beat-based)
+    # 1 is_key_major
+    # 1 is_diatonic
+    extra = 16
+
+    return num_pitches + num_pitches + len(ChordType) + extra  # Root  # Bass  # chord type

@@ -14,6 +14,7 @@ from harmonic_inference.utils.harmonic_constants import NUM_PITCHES, TPC_C
 from harmonic_inference.utils.harmonic_utils import get_pitch_from_string, get_pitch_string
 from harmonic_inference.utils.rhythmic_utils import (
     get_metrical_level,
+    get_metrical_level_lengths,
     get_rhythmic_info_as_proportion_of_range,
 )
 
@@ -32,6 +33,7 @@ class Note:
         duration: Union[float, Fraction],
         offset: Union[float, Tuple[int, Fraction]],
         offset_level: int,
+        beat_duration: Union[float, Fraction],
         pitch_type: PitchType,
         mc_onset: Fraction = None,
     ):
@@ -59,6 +61,9 @@ class Note:
             (int, Fraction) tuple (representing measure count and beat in whole notes).
         offset_level : int
             The metrical level on which the offset lies. 0=none, 1=subbeat, 2=beat, 3=downbeat.
+        beat_duration : Union[float, Fraction]
+            The duration of a beat for this note's onset position. Used to convert whole-note-based
+            durations into beat-based durations.
         pitch_type : PitchType
             The PitchType in which this note's pitch_class is stored. If this is TPC, the
             pitch_class can be later converted into MIDI, but not vice versa.
@@ -73,6 +78,7 @@ class Note:
         self.offset = offset
         self.offset_level = offset_level
         self.pitch_type = pitch_type
+        self.beat_duration = beat_duration
         self.mc_onset = self.onset[1] if mc_onset is None else mc_onset
 
         self.params = inspect.getfullargspec(Note.__init__).args[1:]
@@ -261,12 +267,16 @@ class Note:
         else:
             vectors.append(np.zeros(3, dtype=np.float16))
 
-        # Duration to surrounding notes
+        # Duration of this note and duration to surrounding notes
         durations = [
+            self.duration,
+            self.duration / self.beat_duration,
             0 if dur_from_prev is None else dur_from_prev,
+            0 if dur_from_prev is None else dur_from_prev / self.beat_duration,
             0 if dur_to_next is None else dur_to_next,
+            0 if dur_to_next is None else dur_to_next / self.beat_duration,
         ]
-        vectors.append(durations)
+        vectors.append(np.array(durations, dtype=np.float16))
 
         # Binary -- is this the lowest note in this set of notes
         midi_note_number = self.get_midi_note_number()
@@ -406,6 +416,9 @@ class Note:
 
             onset, offset = positions
             onset_level, offset_level = levels
+            _, beat_duration, _ = get_metrical_level_lengths(
+                measures_df.loc[measures_df["mc"] == mc].squeeze()["timesig"]
+            )
 
             return Note(
                 pitch,
@@ -415,6 +428,7 @@ class Note:
                 note_row["duration"],
                 offset,
                 offset_level,
+                beat_duration,
                 pitch_type,
                 mc_onset=note_row["mc_onset"],
             )
@@ -486,6 +500,8 @@ class Note:
 
         levels = [None, None]
 
+        _, beat_duration, _ = get_metrical_level_lengths(onset_measure["timesig"])
+
         for i, (beat, measure) in enumerate(
             zip(
                 [onset_beat, offset_beat],
@@ -515,6 +531,7 @@ class Note:
             note_duration,
             (offset_measure["mc"], offset_beat),
             offset_level,
+            beat_duration,
             pitch_type,
             mc_onset=onset_beat - onset_measure["mc_offset"],
         )
@@ -538,11 +555,11 @@ def get_note_vector_length(pitch_type: PitchType) -> int:
     # 4 onset level
     # 4 offset level
     # 3 onset, offset, duration relative to chord
-    # 2 durations to next and from prev
+    # 6 durations: note, to_next, and from_prev (whole-note and beat-based)
     # 1 is_lowest
     # 1 normalized pitch height
     # 1 normalized pitch height relative to window
-    extra = 16
+    extra = 20
 
     return (
         NUM_PITCHES[pitch_type]  # Pitch class

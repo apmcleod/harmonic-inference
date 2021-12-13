@@ -1,7 +1,8 @@
 """Models that output the probability of a chord change occurring on a given input."""
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,7 +11,6 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-import pytorch_lightning as pl
 from harmonic_inference.data.data_types import PieceType, PitchType
 from harmonic_inference.data.datasets import ChordTransitionDataset
 from harmonic_inference.data.note import get_note_vector_length
@@ -26,6 +26,7 @@ class ChordTransitionModel(pl.LightningModule, ABC):
         input_type: PieceType,
         pitch_type: PitchType,
         learning_rate: float,
+        input_mask: List[int],
     ):
         """
         Create a new base model.
@@ -42,7 +43,10 @@ class ChordTransitionModel(pl.LightningModule, ABC):
         super().__init__()
         self.INPUT_TYPE = input_type
         self.PITCH_TYPE = pitch_type
+
         self.lr = learning_rate
+
+        self.input_mask = input_mask
 
     def get_dataset_kwargs(self) -> Dict[str, Any]:
         """
@@ -55,7 +59,9 @@ class ChordTransitionModel(pl.LightningModule, ABC):
             A keyword args dict that can be used to create a dataset for this model with
             the correct parameters.
         """
-        return {}
+        return {
+            "input_mask": self.input_mask,
+        }
 
     def get_data_from_batch(self, batch):
         inputs = batch["inputs"].float()
@@ -180,6 +186,7 @@ class SimpleChordTransitionModel(ChordTransitionModel):
         hidden_dim: int = 64,
         dropout: float = 0.0,
         learning_rate: float = 0.001,
+        input_mask: List[int] = None,
     ):
         """
         Create a new simple chord transition model.
@@ -202,8 +209,13 @@ class SimpleChordTransitionModel(ChordTransitionModel):
             The dropout proportion.
         learning_rate : float
             The learning rate.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask in the Dataset code.
         """
-        super().__init__(input_type, pitch_type, learning_rate)
+        super().__init__(input_type, pitch_type, learning_rate, input_mask)
         self.save_hyperparameters()
 
         # Input and output derived from input type and use_inversions
