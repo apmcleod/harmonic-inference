@@ -1088,6 +1088,65 @@ class KeySequenceDataset(KeyHarmonicDataset):
             self.key_change_replacements = np.vstack(self.key_change_replacements)
 
 
+class KeyPostProcessorDataset(HarmonicDataset):
+    """
+    A dataset taking in a sequence of absolute chord symbols, and outputting an aligned
+    sequence of absolute keys.
+
+    The inputs are one list per piece.
+    Each input list is a list of absolute chord vectors.
+
+    The targets are the one-hot index of the absolute key for each chord in the input.
+    """
+
+    train_batch_size = 32
+    valid_batch_size = 64
+    chunk_size = 256
+
+    def __init__(
+        self,
+        pieces: List[Piece],
+        transform: Callable = None,
+        reduction: Dict[ChordType, ChordType] = None,
+        use_inversions: bool = True,
+        transposition_range: Union[List[int], Tuple[int, int]] = (0, 0),
+        input_mask: List[int] = None,
+    ):
+        """
+        Create a chord sequence dataset from the given pieces.
+
+        Parameters
+        ----------
+        pieces : List[Piece]
+            The pieces to get the data from.
+        transform : Callable
+            A function to transform numpy arrays returned by __getitem__ by default.
+        reduction : Dict[ChordType, ChordType]
+            A chord type reduction to apply to the input chords when returning data with
+            __getitem__. This is not applied when the data is loaded, but only when it is
+            returned. So it is safe to change this after initialization.
+        use_inversions : bool
+            True to use input inversions when returning data with __getitem__. False to reduce
+            all input chords to root position. This is not applied when the data is loaded, but
+            only when it is returned. So it is safe to change this after initialization.
+        transposition_range : Union[List[int], Tuple[int, int]]
+            Minimum and maximum bounds by which to transpose each chord and target key of the
+            dataset. Each __getitem__ call will return every possible transposition in this
+            (min, max) range, inclusive on each side. The transpositions are measured in
+            whatever PitchType is used in the dataset.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask.
+        """
+        super().__init__(transform=transform, input_mask=input_mask)
+        raise NotImplementedError()
+
+    def reduce(self, data: Dict, transposition: int = None):
+        raise NotImplementedError()
+
+
 def h5_to_dataset(
     h5_path: Union[str, Path],
     dataset_class: HarmonicDataset,
