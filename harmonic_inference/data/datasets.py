@@ -23,11 +23,7 @@ from harmonic_inference.data.vector_decoding import (
     remove_chord_inversions,
     transpose_note_vector,
 )
-from harmonic_inference.utils.harmonic_constants import (
-    MAX_RELATIVE_TPC,
-    MIN_RELATIVE_TPC,
-    NUM_PITCHES,
-)
+from harmonic_inference.utils.harmonic_constants import NUM_PITCHES
 from harmonic_inference.utils.harmonic_utils import (
     get_bass_note,
     get_chord_from_one_hot_index,
@@ -596,7 +592,7 @@ class ChordClassificationDataset(HarmonicDataset):
             data["intermediate_targets"] = {
                 "bass": -1,
                 "root": -1,
-                "pitches": np.zeros(
+                "pitches": -np.ones(
                     NUM_PITCHES[PitchType(self.target_pitch_type[0])], dtype=np.long
                 ),
             }
@@ -631,7 +627,6 @@ class ChordSequenceDataset(HarmonicDataset):
         output_reduction: Dict[ChordType, ChordType] = None,
         use_inversions_input: bool = True,
         use_inversions_output: bool = True,
-        pitch_based: bool = False,
         input_mask: List[int] = None,
     ):
         """
@@ -658,10 +653,6 @@ class ChordSequenceDataset(HarmonicDataset):
         use_inversions_output : bool
             True to use target inversions when returning data with __getitem__. False to reduce
             all target chords to root position. This is not applied when the data is loaded, but
-            only when it is returned. So it is safe to change this after initialization.
-        pitch_based : bool
-            True to make the targets a pitch-based multi-hot mask, for pitches relative to the
-            current key tonic. This is not applied when the data is loaded, but
             only when it is returned. So it is safe to change this after initialization.
         input_mask : List[int]
             A binary input mask which is 1 in every location where each input vector
@@ -715,7 +706,6 @@ class ChordSequenceDataset(HarmonicDataset):
         self.output_reduction = output_reduction
         self.use_inversions_input = use_inversions_input
         self.use_inversions_output = use_inversions_output
-        self.pitch_based = pitch_based
 
     def reduce(self, data: Dict, transposition: int = None):
         reduce_chord_types(data["inputs"], self.input_reduction, pad=False)
@@ -732,50 +722,6 @@ class ChordSequenceDataset(HarmonicDataset):
             reduction=self.output_reduction,
             use_inversions=self.use_inversions_output,
         )
-
-        if self.pitch_based:
-            num_pitches = (
-                NUM_PITCHES[PitchType.MIDI]
-                if PitchType(self.target_pitch_type[0]) == PitchType.MIDI
-                else MAX_RELATIVE_TPC - MIN_RELATIVE_TPC
-            )
-            new_targets = np.ones((len(data["targets"]), num_pitches)) * -100
-
-            for i, (target, input_vec) in enumerate(
-                zip(
-                    data["targets"][1 : data["target_lengths"]],
-                    data["inputs"][1 : data["target_lengths"]],
-                ),
-                start=1,
-            ):
-                if input_vec[-1] == 1:
-                    # Key change
-                    continue
-
-                relative_root, chord_type, _ = get_chord_from_one_hot_index(
-                    int(target),
-                    PitchType(self.target_pitch_type[0]),
-                    use_inversions=self.use_inversions_output,
-                    relative=True,
-                    pad=False,
-                    reduction=self.output_reduction,
-                )
-
-                if PitchType(self.target_pitch_type[0]) == PitchType.TPC:
-                    relative_root -= MIN_RELATIVE_TPC
-
-                chord_vector = get_vector_from_chord_type(
-                    chord_type,
-                    PitchType(self.target_pitch_type[0]),
-                    root=relative_root,
-                )
-
-                assert (
-                    sum(chord_vector[num_pitches:]) == 0
-                ), "Warning: some pitches are lost in the CSM-P prior"
-                new_targets[i, :] = chord_vector[:num_pitches]
-
-            data["targets"] = new_targets
 
 
 class KeyHarmonicDataset(HarmonicDataset):

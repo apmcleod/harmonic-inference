@@ -88,7 +88,6 @@ class ChordSequenceModel(pl.LightningModule, ABC):
             "output_reduction": self.output_reduction,
             "use_inversions_input": self.use_input_inversions,
             "use_inversions_output": self.use_output_inversions,
-            "pitch_based": False,
             "input_mask": self.input_mask,
         }
 
