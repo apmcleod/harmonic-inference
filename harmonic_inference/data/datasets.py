@@ -28,6 +28,7 @@ from harmonic_inference.utils.harmonic_utils import (
     get_bass_note,
     get_chord_from_one_hot_index,
     get_chord_one_hot_index,
+    get_key_one_hot_index,
     get_vector_from_chord_type,
 )
 
@@ -1140,8 +1141,25 @@ class KeyPostProcessorDataset(HarmonicDataset):
             be masked to 0. Essentially, if given, each input vector is multiplied
             by this mask.
         """
-        super().__init__(transform=transform, input_mask=input_mask)
-        raise NotImplementedError()
+        super().__init__(
+            transform=transform,
+            reduction=reduction,
+            use_inversions=use_inversions,
+            input_mask=input_mask,
+            transposition_range=transposition_range,
+        )
+
+        self.inputs = []
+        self.targets = []
+
+        for piece in pieces:
+            self.inputs.append([chord.to_vec(absolute=True) for chord in piece.get_chords()])
+            self.targets.append(
+                [
+                    get_key_one_hot_index(chord.key_mode, chord.key_tonic, chord.pitch_type)
+                    for chord in piece.get_chords()
+                ]
+            )
 
     def reduce(self, data: Dict, transposition: int = None):
         raise NotImplementedError()
