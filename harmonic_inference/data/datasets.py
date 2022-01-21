@@ -1154,12 +1154,16 @@ class KeyPostProcessorDataset(HarmonicDataset):
         self.dummy_targets = dummy_targets
 
         self.inputs = []
+        self.input_lengths = []
         self.targets = []
 
         self.target_pitch_type = []
 
         for piece in pieces:
-            self.inputs.append([chord.to_vec(absolute=True) for chord in piece.get_chords()])
+            self.inputs.append(
+                np.vstack([chord.to_vec(absolute=True) for chord in piece.get_chords()])
+            )
+            self.input_lengths.append(len(piece.get_chords()))
             self.targets.append(
                 [
                     get_key_one_hot_index(chord.key_mode, chord.key_tonic, chord.pitch_type)
@@ -1177,25 +1181,26 @@ class KeyPostProcessorDataset(HarmonicDataset):
 
         try:
             if transposition != 0:
-                tonic, mode = get_key_from_one_hot_index(
-                    data["targets"],
-                    PitchType(self.target_pitch_type[0]),
-                )
+                for target_index, target in enumerate(data["targets"]):
+                    tonic, mode = get_key_from_one_hot_index(
+                        target,
+                        PitchType(self.target_pitch_type[0]),
+                    )
 
-                data["targets"] = get_key_one_hot_index(
-                    mode,
-                    tonic + transposition,
-                    PitchType(self.target_pitch_type[0]),
-                )
+                    data["targets"][target_index] = get_key_one_hot_index(
+                        mode,
+                        tonic + transposition,
+                        PitchType(self.target_pitch_type[0]),
+                    )
 
                 for chord_index, chord_vector in enumerate(data["inputs"][: data["input_lengths"]]):
                     data["inputs"][chord_index] = transpose_chord_vector(
-                        chord_vector, transposition, pitch_type=PitchType(self.target_pitch_type[0])
+                        chord_vector, transposition
                     )
 
         except ValueError:
             # Something transposed out of the valid pitch range
-            data["targets"] = -1
+            data["targets"][:] = -1
             data["input_lengths"] = -1
             data["inputs"] *= 0
             return

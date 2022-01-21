@@ -551,7 +551,7 @@ def transpose_chord_vector(
         A copy of the input vector with its root and bass pitches transposed by the
         given amount.
     """
-    num_pitches = (len(chord_vector) - CHORD_VECTOR_NO_PITCHES_LENGTH) / 2
+    num_pitches = (len(chord_vector) - CHORD_VECTOR_NO_PITCHES_LENGTH) // 2
 
     root_index = 0
     bass_index = num_pitches + len(ChordType)

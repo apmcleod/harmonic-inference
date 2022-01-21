@@ -18,6 +18,7 @@ DATASET_CLASSES = [
     ds.ChordSequenceDataset,
     ds.KeyTransitionDataset,
     ds.KeySequenceDataset,
+    ds.KeyPostProcessorDataset,
 ]
 
 SPLITS = ["train", "valid", "test"]
