@@ -21,6 +21,7 @@ from harmonic_inference.data.vector_decoding import (
     reduce_chord_one_hots,
     reduce_chord_types,
     remove_chord_inversions,
+    transpose_chord_vector,
     transpose_note_vector,
 )
 from harmonic_inference.utils.harmonic_constants import NUM_PITCHES
@@ -28,6 +29,7 @@ from harmonic_inference.utils.harmonic_utils import (
     get_bass_note,
     get_chord_from_one_hot_index,
     get_chord_one_hot_index,
+    get_key_from_one_hot_index,
     get_key_one_hot_index,
     get_vector_from_chord_type,
 )
@@ -1112,6 +1114,7 @@ class KeyPostProcessorDataset(HarmonicDataset):
         use_inversions: bool = True,
         transposition_range: Union[List[int], Tuple[int, int]] = (0, 0),
         input_mask: List[int] = None,
+        dummy_targets: bool = False,
     ):
         """
         Create a chord sequence dataset from the given pieces.
@@ -1140,17 +1143,20 @@ class KeyPostProcessorDataset(HarmonicDataset):
             should be left unchanged, and 0 elsewhere where the input vectors should
             be masked to 0. Essentially, if given, each input vector is multiplied
             by this mask.
+        dummy_targets : bool
+            Use dummy targets for this data creation.
         """
-        super().__init__(
-            transform=transform,
-            reduction=reduction,
-            use_inversions=use_inversions,
-            input_mask=input_mask,
-            transposition_range=transposition_range,
-        )
+        super().__init__(transform=transform, input_mask=input_mask)
+
+        self.reduction = reduction
+        self.use_inversions = use_inversions
+        self.transposition_range = transposition_range
+        self.dummy_targets = dummy_targets
 
         self.inputs = []
         self.targets = []
+
+        self.target_pitch_type = []
 
         for piece in pieces:
             self.inputs.append([chord.to_vec(absolute=True) for chord in piece.get_chords()])
@@ -1160,9 +1166,39 @@ class KeyPostProcessorDataset(HarmonicDataset):
                     for chord in piece.get_chords()
                 ]
             )
+            self.target_pitch_type.append([chord.pitch_type for chord in piece.get_chords()])
 
     def reduce(self, data: Dict, transposition: int = None):
-        raise NotImplementedError()
+        if self.dummy_targets:
+            return
+
+        if transposition is None:
+            transposition = 0
+
+        try:
+            if transposition != 0:
+                tonic, mode = get_key_from_one_hot_index(
+                    data["targets"],
+                    PitchType(self.target_pitch_type[0]),
+                )
+
+                data["targets"] = get_key_one_hot_index(
+                    mode,
+                    tonic + transposition,
+                    PitchType(self.target_pitch_type[0]),
+                )
+
+                for chord_index, chord_vector in enumerate(data["inputs"][: data["input_lengths"]]):
+                    data["inputs"][chord_index] = transpose_chord_vector(
+                        chord_vector, transposition, pitch_type=PitchType(self.target_pitch_type[0])
+                    )
+
+        except ValueError:
+            # Something transposed out of the valid pitch range
+            data["targets"] = -1
+            data["input_lengths"] = -1
+            data["inputs"] *= 0
+            return
 
 
 def h5_to_dataset(

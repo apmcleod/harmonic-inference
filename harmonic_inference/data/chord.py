@@ -790,6 +790,19 @@ class Chord:
             raise e
 
 
+# The length of a chord vector excluding the root and bass pitches.
+CHORD_VECTOR_NO_PITCHES_LENGTH = (
+    len(ChordType)
+    # 4 inversion
+    # 4 onset level
+    # 4 offset level
+    # 2 durations (whole-note and beat-based)
+    # 1 is_key_major
+    # 1 is_diatonic
+    + 16
+)
+
+
 def get_chord_vector_length(
     pitch_type: PitchType,
     one_hot: bool = True,
@@ -847,12 +860,4 @@ def get_chord_vector_length(
             )
         return num_pitches * len(set(reduction.values()))
 
-    # 4 inversion
-    # 4 onset level
-    # 4 offset level
-    # 2 durations (whole-note and beat-based)
-    # 1 is_key_major
-    # 1 is_diatonic
-    extra = 16
-
-    return num_pitches + num_pitches + len(ChordType) + extra  # Root  # Bass  # chord type
+    return num_pitches + num_pitches + CHORD_VECTOR_NO_PITCHES_LENGTH  # Root  # Bass  # Other

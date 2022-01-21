@@ -4,7 +4,11 @@ from typing import Dict, List, Tuple, Union
 
 import numpy as np
 
-from harmonic_inference.data.chord import Chord, get_chord_vector_length
+from harmonic_inference.data.chord import (
+    CHORD_VECTOR_NO_PITCHES_LENGTH,
+    Chord,
+    get_chord_vector_length,
+)
 from harmonic_inference.data.data_types import ChordType, KeyMode, PitchType
 from harmonic_inference.data.key import Key, get_key_change_vector_length
 from harmonic_inference.data.note import Note, get_note_vector_length
@@ -526,6 +530,63 @@ def decode_chord_and_key_change_vector(
     return chord, key
 
 
+def transpose_chord_vector(
+    chord_vector: List[float],
+    interval: int,
+) -> List[float]:
+    """
+    Transpose the given chord vector by some amount. This will transpose both the root
+    pitch and the bass pitch.
+
+    Parameters
+    ----------
+    chord_vector : List[float]
+        The chord vector to transpose.
+    interval : int
+        The amount by which to transpose the vector's bass and root pitches.
+
+    Returns
+    -------
+    new_vector : List[float]
+        A copy of the input vector with its root and bass pitches transposed by the
+        given amount.
+    """
+    num_pitches = (len(chord_vector) - CHORD_VECTOR_NO_PITCHES_LENGTH) / 2
+
+    root_index = 0
+    bass_index = num_pitches + len(ChordType)
+
+    new_vector = copy(chord_vector)
+
+    new_vector[root_index : root_index + num_pitches] = 0
+    new_vector[bass_index : bass_index + num_pitches] = 0
+
+    old_root = np.arange(num_pitches)[
+        np.where(chord_vector[root_index : root_index + num_pitches] == 1)[0][0]
+    ]
+    old_bass = np.arange(num_pitches)[
+        np.where(chord_vector[bass_index : bass_index + num_pitches] == 1)[0][0]
+    ]
+
+    new_root = old_root + interval
+    new_bass = old_bass + interval
+
+    if num_pitches == NUM_PITCHES[PitchType.MIDI]:
+        new_root %= num_pitches
+        new_bass %= num_pitches
+
+    if (not (0 <= new_root < num_pitches)) or (not (0 <= new_bass < num_pitches)):
+        raise ValueError(
+            f"Transposed root or bass of chord {decode_chord_vector(chord_vector)} + {interval}"
+            f" outside of valid range (0 - {num_pitches}"
+        )
+
+    new_vector[root_index + new_root] = 1
+    new_vector[bass_index + new_bass] = 1
+
+    return new_vector
+
+
 def transpose_note_vector(
     note_vector: List[float],
     interval: int,
@@ -564,6 +625,8 @@ def transpose_note_vector(
 
     old_pitch = np.arange(NUM_PITCHES[pitch_type])[np.where(note_vector == 1)[0][0]]
     new_pitch = old_pitch + interval
+    if pitch_type == PitchType.MIDI:
+        new_pitch %= NUM_PITCHES[PitchType.MIDI]
 
     if not (0 <= old_pitch < NUM_PITCHES[pitch_type]):
         raise ValueError(
