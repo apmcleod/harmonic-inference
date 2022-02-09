@@ -222,9 +222,13 @@ class HarmonicDataset(Dataset):
             if self.target_lengths is not None:
                 if self.max_target_length is None:
                     self.max_target_length = np.max(self.target_lengths)
-                padded_target = np.zeros(
-                    ([self.max_target_length] + list(data["targets"][0].shape))
-                )
+                try:
+                    padded_target = np.zeros(
+                        ([self.max_target_length] + list(data["targets"][0].shape))
+                    )
+                except AttributeError:
+                    # data["targets"][0] is an int -- target is just list of ints
+                    padded_target = np.zeros(self.max_target_length)
                 padded_target[: len(data["targets"])] = data["targets"]
                 data["targets"] = padded_target
                 data["target_lengths"] = self.target_lengths[item]
@@ -1156,21 +1160,35 @@ class KeyPostProcessorDataset(HarmonicDataset):
         self.inputs = []
         self.input_lengths = []
         self.targets = []
+        self.target_lengths = []
 
         self.target_pitch_type = []
+        self.num_transpositions = self.transposition_range[1] - self.transposition_range[0] + 1
 
         for piece in pieces:
             self.inputs.append(
                 np.vstack([chord.to_vec(absolute=True) for chord in piece.get_chords()])
             )
             self.input_lengths.append(len(piece.get_chords()))
+            self.target_lengths.append(len(piece.get_chords()))
             self.targets.append(
                 [
                     get_key_one_hot_index(chord.key_mode, chord.key_tonic, chord.pitch_type)
                     for chord in piece.get_chords()
                 ]
             )
-            self.target_pitch_type.append([chord.pitch_type for chord in piece.get_chords()])
+
+        if len(pieces) > 0 and len(pieces[0].get_chords()) > 0:
+            self.target_pitch_type.append(pieces[0].get_chords()[0].pitch_type)
+
+    def __len__(self):
+        return super().__len__() * self.num_transpositions
+
+    def __getitem__(self, item, transposition: int = None) -> Dict:
+        orig_item = item // self.num_transpositions
+        transposition = self.transposition_range[0] + (item % self.num_transpositions)
+
+        return super().__getitem__(orig_item, transposition=transposition)
 
     def reduce(self, data: Dict, transposition: int = None):
         if self.dummy_targets:
@@ -1181,9 +1199,9 @@ class KeyPostProcessorDataset(HarmonicDataset):
 
         try:
             if transposition != 0:
-                for target_index, target in enumerate(data["targets"]):
+                for target_index, target in enumerate(data["targets"][: data["target_lengths"]]):
                     tonic, mode = get_key_from_one_hot_index(
-                        target,
+                        int(target),
                         PitchType(self.target_pitch_type[0]),
                     )
 
@@ -1200,8 +1218,9 @@ class KeyPostProcessorDataset(HarmonicDataset):
 
         except ValueError:
             # Something transposed out of the valid pitch range
-            data["targets"][:] = -1
+            data["targets"] = [-1] * len(data["targets"])
             data["input_lengths"] = -1
+            data["target_lengths"] = -1
             data["inputs"] *= 0
             return
 
