@@ -119,6 +119,7 @@ if __name__ == "__main__":
         torch.set_num_threads(ARGS.threads)
 
     model = load_models_from_argparse(ARGS, model_type=ARGS.model)[ARGS.model]
+    model.transposition_range = (0, 0)
     dataset_class = DATASETS[ARGS.model]
 
     # Create scheduling sampled train, valid, and test (we may not use all of them)
@@ -146,8 +147,7 @@ if __name__ == "__main__":
 
         # Generate outputs
         outputs = [
-            model.get_output(batch)
-            for batch in tqdm(enumerate(dl), total=len(dl), desc="Generating data from batches")
+            model.get_output(batch) for batch in tqdm(dl, desc="Generating data from batches")
         ]
 
         # Save outputs

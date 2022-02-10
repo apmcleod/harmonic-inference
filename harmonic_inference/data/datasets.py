@@ -558,8 +558,6 @@ class ChordClassificationDataset(HarmonicDataset):
             use_inversions=self.use_inversions,
         )[0]
 
-        data["intermediate_targets"] = self.generate_intermediate_targets(data["targets"])
-
         try:
             if transposition != 0:
                 root, chord_type, inversion = get_chord_from_one_hot_index(
