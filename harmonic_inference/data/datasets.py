@@ -558,6 +558,8 @@ class ChordClassificationDataset(HarmonicDataset):
             use_inversions=self.use_inversions,
         )[0]
 
+        data["intermediate_targets"] = self.generate_intermediate_targets(data["targets"])
+
         try:
             if transposition != 0:
                 root, chord_type, inversion = get_chord_from_one_hot_index(
@@ -1536,3 +1538,13 @@ def transform_input_mask_to_binary(input_mask: List[int], input_length: int) -> 
         binary_mask[np.array(input_mask)] = 0
 
     return binary_mask
+
+
+DATASETS = {
+    "ctm": ChordTransitionDataset,
+    "csm": ChordSequenceDataset,
+    "ccm": ChordClassificationDataset,
+    "ktm": KeyTransitionDataset,
+    "ksm": KeySequenceDataset,
+    "kppm": KeyPostProcessorDataset,
+}

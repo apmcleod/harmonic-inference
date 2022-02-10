@@ -12,15 +12,6 @@ import numpy as np
 import harmonic_inference.data.datasets as ds
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
 
-DATASET_CLASSES = [
-    ds.ChordTransitionDataset,
-    ds.ChordClassificationDataset,
-    ds.ChordSequenceDataset,
-    ds.KeyTransitionDataset,
-    ds.KeySequenceDataset,
-    ds.KeyPostProcessorDataset,
-]
-
 SPLITS = ["train", "valid", "test"]
 
 if __name__ == "__main__":
@@ -146,7 +137,7 @@ if __name__ == "__main__":
             ]
 
     dataset_splits, split_ids, split_pieces = ds.get_dataset_splits(
-        DATASET_CLASSES,
+        ds.DATASETS.items(),
         data_dfs=dfs,
         xml_and_csv_paths=xmls_and_csvs,
         splits=ARGS.splits,
@@ -161,7 +152,7 @@ if __name__ == "__main__":
             with open(pickle_path, "wb") as pickle_file:
                 pickle.dump([piece.to_dict() for piece in pieces], pickle_file)
 
-    for i1, data_type in enumerate(DATASET_CLASSES):
+    for i1, data_type in enumerate(ds.DATASETS.items()):
         for i2, split in enumerate(SPLITS):
             if dataset_splits[i1][i2] is not None:
                 h5_path = ARGS.output / f"{data_type.__name__}_{split}_seed_{ARGS.seed}.h5"
