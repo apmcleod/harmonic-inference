@@ -127,7 +127,7 @@ if __name__ == "__main__":
         logging.info(f"Creating {split} data.")
 
         # Load data
-        input_h5_path = Path(ARGS.input / f"{dataset_class.__name__}_train_seed_{ARGS.seed}.h5")
+        input_h5_path = Path(ARGS.input / f"{dataset_class.__name__}_{split}_seed_{ARGS.seed}.h5")
         with h5py.File(input_h5_path, "r") as h5_file:
             file_ids = list(h5_file["file_ids"])
 
@@ -151,12 +151,10 @@ if __name__ == "__main__":
         ]
 
         # Save outputs
-        output_h5_path = Path(
-            ARGS.output / f"{dataset_class.__name__}_train_sched_samp_seed_{ARGS.seed}.h5"
-        )
+        output_h5_path = Path(ARGS.output / f"{ARGS.model}_{split}_sched_samp_seed_{ARGS.seed}.h5")
         if not output_h5_path.parent.exists():
             output_h5_path.parent.mkdir(parents=True, exist_ok=True)
 
         with h5py.File(output_h5_path, "w") as h5_file:
-            h5_file.create_dataset("outputs", data=np.stack(outputs), compression="gzip")
+            h5_file.create_dataset("outputs", data=np.vstack(outputs), compression="gzip")
             h5_file.create_dataset("file_ids", data=np.array(file_ids), compression="gzip")
