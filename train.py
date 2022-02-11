@@ -17,6 +17,7 @@ import harmonic_inference.models.chord_classifier_models as ccm
 import harmonic_inference.models.chord_sequence_models as csm
 import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.initial_chord_models as icm
+import harmonic_inference.models.key_post_processor_models as kppm
 import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
 from harmonic_inference.data.data_types import PieceType, PitchType
@@ -42,6 +43,16 @@ if __name__ == "__main__":
         "--int-targets",
         action="store_true",
         help=("Train the CCM with intermediate targets rather than the simple CCM."),
+    )
+
+    parser.add_argument(
+        "--sched",
+        action="store_true",
+        help=(
+            "Use scheduled sampling during training. The schedudled sampling data will be "
+            "read in from the `-h5` directory, and should have been created by the "
+            "create_sched_sampling_data.py script."
+        ),
     )
 
     parser.add_argument(
@@ -173,8 +184,6 @@ if __name__ == "__main__":
                 **kwargs,
             )
 
-        dataset = ds.ChordClassificationDataset
-
     elif ARGS.model == "ctm":
         model = ctm.SimpleChordTransitionModel(
             PieceType.SCORE,
@@ -194,8 +203,6 @@ if __name__ == "__main__":
                 learning_rate=ARGS.lr,
                 **kwargs,
             )
-
-        dataset = ds.ChordTransitionDataset
 
     elif ARGS.model == "csm":
         model = csm.SimpleChordSequenceModel(
@@ -219,8 +226,6 @@ if __name__ == "__main__":
                 **kwargs,
             )
 
-        dataset = ds.ChordSequenceDataset
-
     elif ARGS.model == "ktm":
         model = ktm.SimpleKeyTransitionModel(
             PitchType.TPC,
@@ -240,8 +245,6 @@ if __name__ == "__main__":
                 learning_rate=ARGS.lr,
                 **kwargs,
             )
-
-        dataset = ds.KeyTransitionDataset
 
     elif ARGS.model == "ksm":
         model = ksm.SimpleKeySequenceModel(
@@ -265,7 +268,25 @@ if __name__ == "__main__":
                 **kwargs,
             )
 
-        dataset = ds.KeySequenceDataset
+    elif ARGS.model == "kppm":
+        model = kppm.SimpleKeyPostProcessorModel(
+            PitchType.TPC,
+            PitchType.TPC,
+            learning_rate=ARGS.lr,
+            **kwargs,
+        )
+
+        if "input_mask" in kwargs:
+            kwargs["input_mask"] = ds.transform_input_mask_to_binary(
+                kwargs["input_mask"],
+                model.input_dim,
+            )
+            model = kppm.SimpleKeyPostProcessorModel(
+                PitchType.TPC,
+                PitchType.TPC,
+                learning_rate=ARGS.lr,
+                **kwargs,
+            )
 
     elif ARGS.model == "icm":
         # Load training data for ctm, just to get file_ids
@@ -296,24 +317,31 @@ if __name__ == "__main__":
         logging.error("Invalid model: %s", ARGS.model)
         sys.exit(1)
 
+    dataset = ds.DATASETS[ARGS.model]
+
     if ARGS.threads is not None:
         torch.set_num_threads(ARGS.threads)
 
     h5_path_train = Path(ARGS.h5_dir / f"{dataset.__name__}_train_seed_{ARGS.seed}.h5")
     h5_path_valid = Path(ARGS.h5_dir / f"{dataset.__name__}_valid_seed_{ARGS.seed}.h5")
 
-    dataset_train = ds.h5_to_dataset(
-        h5_path_train,
-        dataset,
-        transform=torch.from_numpy,
-        dataset_kwargs=model.get_dataset_kwargs(),
-    )
-    dataset_valid = ds.h5_to_dataset(
-        h5_path_valid,
-        dataset,
-        transform=torch.from_numpy,
-        dataset_kwargs=model.get_dataset_kwargs(),
-    )
+    kwargs = {
+        "transform": torch.from_numpy,
+        "dataset_kwargs": model.get_dataset_kwargs(),
+    }
+
+    if ARGS.sched:
+        kwargs["scheduled_sampling_prob"] = 0.0
+        kwargs["scheduled_sampling_h5_path"] = dataset.get_scheduled_sampling_path(
+            ARGS.h5_dir, ARGS.seed, "train"
+        )
+    dataset_train = ds.h5_to_dataset(h5_path_train, dataset, **kwargs)
+
+    if ARGS.sched:
+        kwargs["scheduled_sampling_h5_path"] = dataset.get_scheduled_sampling_path(
+            ARGS.h5_dir, ARGS.seed, "valid"
+        )
+    dataset_valid = ds.h5_to_dataset(h5_path_valid, dataset, **kwargs)
 
     dl_train = DataLoader(
         dataset_train,

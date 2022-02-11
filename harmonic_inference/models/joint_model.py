@@ -19,6 +19,7 @@ import harmonic_inference.models.chord_classifier_models as ccm
 import harmonic_inference.models.chord_sequence_models as csm
 import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.initial_chord_models as icm
+import harmonic_inference.models.key_post_processor_models as kppm
 import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
 import harmonic_inference.utils.harmonic_constants as hc
@@ -34,6 +35,7 @@ MODEL_CLASSES = {
     "csm": [csm.SimpleChordSequenceModel],
     "ktm": [ktm.SimpleKeyTransitionModel],
     "ksm": [ksm.SimpleKeySequenceModel],
+    "kppm": [kppm.SimpleKeyPostProcessorModel],
     "icm": [icm.SimpleInitialChordModel],
 }
 

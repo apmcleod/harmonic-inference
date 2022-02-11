@@ -1119,6 +1119,8 @@ class KeyPostProcessorDataset(HarmonicDataset):
         transposition_range: Union[List[int], Tuple[int, int]] = (0, 0),
         input_mask: List[int] = None,
         dummy_targets: bool = False,
+        scheduled_sampling_h5_path: Union[str, Path] = None,
+        scheduled_sampling_prob: float = 0.0,
     ):
         """
         Create a chord sequence dataset from the given pieces.
@@ -1149,6 +1151,11 @@ class KeyPostProcessorDataset(HarmonicDataset):
             by this mask.
         dummy_targets : bool
             Use dummy targets for this data creation.
+        scheduled_sampling_h5_path : Union[str, Path]
+            An h5 dataset file to load scheduled sampling data from.
+        scheduled_sampling_prob : float
+            The probability of changing a ground truth input chord into one from scheduled
+            sampling.
         """
         super().__init__(transform=transform, input_mask=input_mask)
 
@@ -1156,6 +1163,9 @@ class KeyPostProcessorDataset(HarmonicDataset):
         self.use_inversions = use_inversions
         self.transposition_range = transposition_range
         self.dummy_targets = dummy_targets
+        self.scheduled_sampling_prob = scheduled_sampling_prob
+
+        # TODO: Load scheduled sampling data from h5 path
 
         self.inputs = []
         self.input_lengths = []
@@ -1223,6 +1233,27 @@ class KeyPostProcessorDataset(HarmonicDataset):
             data["target_lengths"] = -1
             data["inputs"] *= 0
             return
+
+    @staticmethod
+    def get_scheduled_sampling_path(h5_dir_path: Union[Path, str], seed: int, split: str) -> Path:
+        """
+        Get the path to a scheduled sampling h5 dataset within the given directory.
+
+        Parameters
+        ----------
+        h5_dir_path : Union[Path, str]
+            The directory containing the scheduled sampling datasets.
+        seed : int
+            The seed of the dataset we want.
+        split : str
+            The split of the dataset we want.
+
+        Returns
+        -------
+        h5_path : Path
+            The path to the desired h5 dataset.
+        """
+        return Path(Path(h5_dir_path) / f"ccm_{split}_sched_samp_seed_{seed}.h5")
 
 
 def h5_to_dataset(

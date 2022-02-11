@@ -119,3 +119,7 @@ class KeyPostProcessorModel(pl.LightningModule, ABC):
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5)
 
         return [optimizer], [{"scheduler": scheduler, "monitor": "val_loss"}]
+
+
+def SimpleKeyPostProcessorModel(KeyPostProcessorModel):
+    pass
