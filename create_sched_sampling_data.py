@@ -158,3 +158,4 @@ if __name__ == "__main__":
         with h5py.File(output_h5_path, "w") as h5_file:
             h5_file.create_dataset("outputs", data=np.vstack(outputs), compression="gzip")
             h5_file.create_dataset("file_ids", data=np.array(file_ids), compression="gzip")
+            model.add_settings_to_h5_file(h5_file)

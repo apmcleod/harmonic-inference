@@ -587,6 +587,68 @@ def transpose_chord_vector(
     return new_vector
 
 
+def update_chord_vector_info(
+    vector: List[float],
+    pitch_type: PitchType = None,
+    root_pitch: int = None,
+    bass_pitch: int = None,
+    chord_type: ChordType = None,
+    inversion: int = None,
+) -> List[float]:
+    """
+    Return an updated version of a chord vector with any of root_pitch, bass_pitch,
+    chord_type, and inversion changed to new values. The vector should be an absolute
+    vector without padding.
+
+    Parameters
+    ----------
+    vector : List[float]
+        A chord vector. This will not be changed, but an updated copy will be returned.
+        This vector should be absolute, with no padding.
+    pitch_type : PitchType
+        If known and given, this will speed up computation, but it can be inferred
+        from the vector's length otherwise.
+    root_pitch : int
+        If given, the updated vector's root pitch will be set to this value.
+    bass_pitch : int
+        If given, the updated vector's bass pitch will be set to this value.
+    chord_type : ChordType
+        If given, the updated vector's chord type will be set to this value.
+    inversion : int
+        If given, the updated vector's inversion will be set to this value.
+
+    Returns
+    -------
+    updated_vector : List[float]
+        A copy of the given vector, updated with the given values.
+    """
+    updated_vector = np.copy(vector)
+
+    if pitch_type is None:
+        pitch_type = infer_chord_vector_pitch_type(len(vector), False)
+
+    if root_pitch is not None:
+        updated_vector[: NUM_PITCHES[pitch_type]] = 0
+        updated_vector[root_pitch] = 0
+
+    if chord_type is not None:
+        idx = NUM_PITCHES[pitch_type]
+        updated_vector[idx : idx + len(ChordType)] = 0
+        updated_vector[idx + chord_type.value] = 1
+
+    if bass_pitch is not None:
+        idx = NUM_PITCHES[pitch_type] + len(ChordType)
+        updated_vector[idx : idx + NUM_PITCHES[pitch_type]] = 0
+        updated_vector[idx + bass_pitch] = 1
+
+    if inversion is not None:
+        idx = 2 * NUM_PITCHES[pitch_type] + len(ChordType)
+        updated_vector[idx : idx + 4] = 0
+        updated_vector[idx + inversion] = 0
+
+    return updated_vector
+
+
 def transpose_note_vector(
     note_vector: List[float],
     interval: int,
