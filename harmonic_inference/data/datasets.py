@@ -1164,7 +1164,9 @@ class KeyPostProcessorDataset(HarmonicDataset):
         self.use_inversions = use_inversions
         self.transposition_range = transposition_range
         self.dummy_targets = dummy_targets
+
         self.scheduled_sampling_prob = scheduled_sampling_prob
+        self.scheduled_sampling_h5_path = scheduled_sampling_h5_path
 
         self.inputs = []
         self.input_lengths = []
@@ -1190,26 +1192,17 @@ class KeyPostProcessorDataset(HarmonicDataset):
         if len(pieces) > 0 and len(pieces[0].get_chords()) > 0:
             self.target_pitch_type.append(pieces[0].get_chords()[0].pitch_type)
 
-        self.scheduled_sampling_data = self.load_scheduled_sampling_data(scheduled_sampling_h5_path)
-
-    def load_scheduled_sampling_data(self, h5_path: Union[Path, str]) -> Union[List, None]:
+    def load_scheduled_sampling_data(self) -> Union[List, None]:
         """
-        Load scheduled sampling data in from the given h5 file.
-
-        Parameters
-        ----------
-        h5_path : Union[Path, str]
-            The path of an h5 file containing the scheduled sampling data.
-
-        Returns
-        -------
-        sched_inputs : Union[List, None]
-            The loaded and aligned scheduled sampling data. None if no path was given.
+        Load scheduled sampling data in from the h5 file at the path in
+        self.scheduled_sampling_h5_data. This should be called only after all other
+        data is loaded. The data will be loaded into self.scheduled_sampling_data
         """
-        if h5_path is None:
-            return None
+        if self.scheduled_sampling_h5_path is None:
+            self.scheduled_sampling_data = None
+            return
 
-        with h5py.File(h5_path, "r") as h5_file:
+        with h5py.File(self.scheduled_sampling_h5_path, "r") as h5_file:
             sched_outputs = np.array(h5_file["outputs"], dtype=np.float16)
             pitch_type = PitchType(h5_file["pitch_type"][0])
             use_inversions = h5_file["use_inversions"][0]
@@ -1219,21 +1212,23 @@ class KeyPostProcessorDataset(HarmonicDataset):
                 else None
             )
 
-        sched_inputs = np.copy(self.inputs)
-        output_labels = get_chord_from_one_hot_index(
-            np.argmax(sched_outputs, axis=1),
-            pitch_type,
-            use_inversions=use_inversions,
-            reduction=reduction,
-        )
+        self.scheduled_sampling_data = np.copy(self.inputs)
+        output_labels = np.array(
+            get_chord_from_one_hot_index(
+                slice(None),
+                pitch_type,
+                use_inversions=use_inversions,
+                reduction=reduction,
+            )
+        )[np.argmax(sched_outputs, axis=1)]
 
         start_idx = 0
         for piece_idx, input_length in enumerate(self.input_lengths):
             for output_idx, (root, chord_type, inversion) in enumerate(
                 output_labels[start_idx : start_idx + input_length]
             ):
-                sched_inputs[piece_idx, output_idx] = update_chord_vector_info(
-                    sched_inputs[piece_idx, output_idx],
+                self.scheduled_sampling_data[piece_idx, output_idx] = update_chord_vector_info(
+                    self.scheduled_sampling_data[piece_idx, output_idx],
                     root_pitch=root,
                     bass_pitch=get_bass_note(chord_type, root, inversion, pitch_type),
                     chord_type=chord_type,
@@ -1241,8 +1236,6 @@ class KeyPostProcessorDataset(HarmonicDataset):
                 )
 
             start_idx += input_length
-
-        return sched_inputs
 
     def __len__(self):
         return super().__len__() * self.num_transpositions

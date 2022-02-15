@@ -331,17 +331,21 @@ if __name__ == "__main__":
     }
 
     if ARGS.sched:
-        kwargs["scheduled_sampling_prob"] = 0.0
-        kwargs["scheduled_sampling_h5_path"] = dataset.get_scheduled_sampling_path(
-            ARGS.h5_dir, ARGS.seed, "train"
-        )
+        kwargs["dataset_kwargs"]["scheduled_sampling_prob"] = 0.0
+        kwargs["dataset_kwargs"][
+            "scheduled_sampling_h5_path"
+        ] = dataset.get_scheduled_sampling_path(ARGS.h5_dir, ARGS.seed, "train")
     dataset_train = ds.h5_to_dataset(h5_path_train, dataset, **kwargs)
 
     if ARGS.sched:
-        kwargs["scheduled_sampling_h5_path"] = dataset.get_scheduled_sampling_path(
-            ARGS.h5_dir, ARGS.seed, "valid"
-        )
+        kwargs["dataset_kwargs"][
+            "scheduled_sampling_h5_path"
+        ] = dataset.get_scheduled_sampling_path(ARGS.h5_dir, ARGS.seed, "valid")
     dataset_valid = ds.h5_to_dataset(h5_path_valid, dataset, **kwargs)
+
+    if ARGS.sched:
+        dataset_train.load_scheduled_sampling_h5_data()
+        dataset_valid.load_scheduled_sampling_h5_data()
 
     dl_train = DataLoader(
         dataset_train,
