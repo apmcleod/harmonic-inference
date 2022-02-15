@@ -1183,14 +1183,16 @@ class KeyPostProcessorDataset(HarmonicDataset):
             self.input_lengths.append(len(piece.get_chords()))
             self.target_lengths.append(len(piece.get_chords()))
             self.targets.append(
-                [
-                    get_key_one_hot_index(chord.key_mode, chord.key_tonic, chord.pitch_type)
-                    for chord in piece.get_chords()
-                ]
+                np.array(
+                    [
+                        get_key_one_hot_index(chord.key_mode, chord.key_tonic, chord.pitch_type)
+                        for chord in piece.get_chords()
+                    ]
+                )
             )
 
         if len(pieces) > 0 and len(pieces[0].get_chords()) > 0:
-            self.target_pitch_type.append(pieces[0].get_chords()[0].pitch_type)
+            self.target_pitch_type.append(pieces[0].get_chords()[0].pitch_type.value)
 
     def load_scheduled_sampling_data(self) -> Union[List, None]:
         """
