@@ -137,7 +137,7 @@ if __name__ == "__main__":
             ]
 
     dataset_splits, split_ids, split_pieces = ds.get_dataset_splits(
-        ds.DATASETS.items(),
+        ds.DATASETS.values(),
         data_dfs=dfs,
         xml_and_csv_paths=xmls_and_csvs,
         splits=ARGS.splits,
