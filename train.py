@@ -344,8 +344,8 @@ if __name__ == "__main__":
     dataset_valid = ds.h5_to_dataset(h5_path_valid, dataset, **kwargs)
 
     if ARGS.sched:
-        dataset_train.load_scheduled_sampling_h5_data()
-        dataset_valid.load_scheduled_sampling_h5_data()
+        dataset_train.load_scheduled_sampling_data()
+        dataset_valid.load_scheduled_sampling_data()
 
     dl_train = DataLoader(
         dataset_train,

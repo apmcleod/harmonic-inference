@@ -208,7 +208,9 @@ def decode_chord_vector(
     )
 
 
-def infer_chord_vector_pitch_type(vector_length: int, pad: bool) -> PitchType:
+def infer_chord_vector_pitch_type(
+    vector_length: int, pad: bool, relative: bool = True
+) -> PitchType:
     """
     Infer the pitch type used in a chord vector of the given length with the given padding.
 
@@ -218,6 +220,8 @@ def infer_chord_vector_pitch_type(vector_length: int, pad: bool) -> PitchType:
         The length of a chord vector.
     pad : bool
         Whether padding is used in the chord vector.
+    relative : bool
+        True if the vector is a relative chord vector. False for absolute.
 
     Returns
     -------
@@ -230,7 +234,9 @@ def infer_chord_vector_pitch_type(vector_length: int, pad: bool) -> PitchType:
         If no known PitchType results in the given vector length.
     """
     for pitch_type in PitchType:
-        if vector_length == get_chord_vector_length(pitch_type, one_hot=False, pad=pad):
+        if vector_length == get_chord_vector_length(
+            pitch_type, one_hot=False, relative=relative, pad=pad
+        ):
             return pitch_type
 
     raise ValueError(f"Could not find valid pitch type for vector length {vector_length}.")
@@ -625,11 +631,11 @@ def update_chord_vector_info(
     updated_vector = np.copy(vector)
 
     if pitch_type is None:
-        pitch_type = infer_chord_vector_pitch_type(len(vector), False)
+        pitch_type = infer_chord_vector_pitch_type(len(vector), False, relative=False)
 
     if root_pitch is not None:
         updated_vector[: NUM_PITCHES[pitch_type]] = 0
-        updated_vector[root_pitch] = 0
+        updated_vector[root_pitch] = 1
 
     if chord_type is not None:
         idx = NUM_PITCHES[pitch_type]
@@ -644,7 +650,7 @@ def update_chord_vector_info(
     if inversion is not None:
         idx = 2 * NUM_PITCHES[pitch_type] + len(ChordType)
         updated_vector[idx : idx + 4] = 0
-        updated_vector[idx + inversion] = 0
+        updated_vector[idx + inversion] = 1
 
     return updated_vector
 

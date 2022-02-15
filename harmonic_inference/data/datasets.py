@@ -1214,7 +1214,7 @@ class KeyPostProcessorDataset(HarmonicDataset):
                 else None
             )
 
-        self.scheduled_sampling_data = np.copy(self.inputs)
+        self.scheduled_sampling_data = [np.copy(input) for input in self.inputs]
         output_labels = np.array(
             get_chord_from_one_hot_index(
                 slice(None),
@@ -1229,8 +1229,9 @@ class KeyPostProcessorDataset(HarmonicDataset):
             for output_idx, (root, chord_type, inversion) in enumerate(
                 output_labels[start_idx : start_idx + input_length]
             ):
-                self.scheduled_sampling_data[piece_idx, output_idx] = update_chord_vector_info(
-                    self.scheduled_sampling_data[piece_idx, output_idx],
+                self.scheduled_sampling_data[piece_idx][output_idx] = update_chord_vector_info(
+                    self.scheduled_sampling_data[piece_idx][output_idx],
+                    pitch_type=pitch_type,
                     root_pitch=root,
                     bass_pitch=get_bass_note(chord_type, root, inversion, pitch_type),
                     chord_type=chord_type,
