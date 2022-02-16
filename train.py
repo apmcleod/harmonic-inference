@@ -273,6 +273,7 @@ if __name__ == "__main__":
             PitchType.TPC,
             PitchType.TPC,
             learning_rate=ARGS.lr,
+            scheduled_sampling=ARGS.sched,
             **kwargs,
         )
 
@@ -285,6 +286,7 @@ if __name__ == "__main__":
                 PitchType.TPC,
                 PitchType.TPC,
                 learning_rate=ARGS.lr,
+                scheduled_sampling=ARGS.sched,
                 **kwargs,
             )
 
@@ -331,7 +333,6 @@ if __name__ == "__main__":
     }
 
     if ARGS.sched:
-        kwargs["dataset_kwargs"]["scheduled_sampling_prob"] = 0.0
         kwargs["dataset_kwargs"][
             "scheduled_sampling_h5_path"
         ] = dataset.get_scheduled_sampling_path(ARGS.h5_dir, ARGS.seed, "train")

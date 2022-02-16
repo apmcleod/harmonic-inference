@@ -1,11 +1,14 @@
 """Models that post-process chord classifications and assign each to a key."""
 from abc import ABC, abstractmethod
+from math import exp
 from typing import Any, Dict, List, Tuple, Union
 
 import pytorch_lightning as pl
 import torch
+import torch.nn.functional as F
 from torch import nn
 from torch.autograd import Variable
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from harmonic_inference.data.chord import get_chord_vector_length
 from harmonic_inference.data.data_types import ChordType, PitchType
@@ -26,6 +29,8 @@ class KeyPostProcessorModel(pl.LightningModule, ABC):
         reduction: Dict[ChordType, ChordType],
         use_inversions: bool,
         learning_rate: float,
+        scheduled_sampling: bool,
+        sigmoid_k: float,
         transposition_range: Union[List[int], Tuple[int, int]],
         input_mask: List[int],
     ):
@@ -44,6 +49,11 @@ class KeyPostProcessorModel(pl.LightningModule, ABC):
             Whether inversions are used in the chord inputs.
         learning_rate : float
             The learning rate.
+        scheduled_sampling : bool
+            Whether to use scheduled sampling or not.
+        sigmoid_k : float
+            The value to use for k, in calculation of the clean probability during
+            scheduled sampling.
         transposition_range : Union[List[int], Tuple[int, int]]
             Minimum and maximum bounds by which to transpose each chord and target key of the
             dataset. Each __getitem__ call will return every possible transposition in this
@@ -64,6 +74,8 @@ class KeyPostProcessorModel(pl.LightningModule, ABC):
         self.transposition_range = transposition_range
 
         self.lr = learning_rate
+        self.scheduled_sampling = scheduled_sampling
+        self.sigmoid_k = sigmoid_k
 
         self.input_mask = input_mask
 
@@ -85,17 +97,110 @@ class KeyPostProcessorModel(pl.LightningModule, ABC):
             "input_mask": self.input_mask,
         }
 
-    def get_output(self, batch):
+    def load_scheduled_sampling_inputs(self, batch: Dict[str, Any]) -> None:
+        """
+        Load scheduled sampling data *in place* in the given batch dictionary.
+        The resulting input will be placed in batch["input"], overwriting whatever
+        is already there. If the batch dictionary has no "scheduled_sampling_data"
+        key, the "input" is returned unchanged.
+
+        Parameters
+        ----------
+        batch : Dict[str, Any]
+            The batch data, mapping strings to tensrs.
+        """
+
+        def get_scheduled_sampling_prob(epoch_num: int, sigmoid_k: float = 10.0) -> float:
+            """
+            Get the probability of using the clean, ground truth input given an epoch number
+            and the saturation epoch number
+
+            Parameters
+            ----------
+            epoch_num : int
+                The current epoch number.
+            sigmoid_k : float
+                The value of k to use in the function clean_prob = k / (k + exp(epoch_num / k)).
+
+            Returns
+            -------
+            clean_prob : float
+                The probability of using the clean, ground truth input for each data point.
+            """
+            return sigmoid_k / (sigmoid_k + exp(epoch_num / sigmoid_k))
+
+        clean_prob = get_scheduled_sampling_prob(self.current_epoch, sigmoid_k=self.sigmoid_k)
+        random_sample = torch.bernoulli(
+            torch.full((torch.sum(batch["input_lengths"]).item(),), 1 - clean_prob)
+        ).type(torch.bool)
+
+        start = 0
+        for i, length in enumerate(batch["input_lengths"]):
+            sample = random_sample[start : start + length]
+            if torch.sum(sample).item() != 0:
+                batch["inputs"][i][:length][sample] = batch["scheduled_sampling_data"][i][:length][
+                    sample
+                ]
+
+            start += length
+
+    def get_data_from_batch(self, batch, sched):
+        if sched:
+            self.load_scheduled_sampling_inputs(batch)
+
+        inputs = batch["inputs"].float()
+        targets = batch["targets"].long()
+        input_lengths = batch["input_lengths"].long()
+
+        longest = max(input_lengths)
+        inputs = inputs[:, :longest]
+        targets = targets[:, :longest]
+
+        for i, length in enumerate(input_lengths):
+            targets[i, length:] = -100
+
+        return inputs, input_lengths, targets
+
+    def get_output(self, batch: Dict[str, Any]):
         raise NotImplementedError()
 
-    def training_step(self, batch, batch_idx):
-        raise NotImplementedError()
+    def training_step(self, batch: Dict[str, Any], batch_idx: int):
+        inputs, input_lengths, targets = self.get_data_from_batch(batch, self.scheduled_sampling)
 
-    def validation_step(self, batch, batch_idx):
-        raise NotImplementedError()
+        outputs = self(inputs, input_lengths)
+
+        loss = F.nll_loss(outputs.permute(0, 2, 1), targets, ignore_index=-100)
+
+        self.log("train_loss", loss)
+        return loss
+
+    def validation_step(self, batch: Dict[str, Any], batch_idx: int):
+        inputs, input_lengths, targets = self.get_data_from_batch(batch, self.scheduled_sampling)
+
+        outputs = self(inputs, input_lengths)
+
+        loss = F.nll_loss(outputs.permute(0, 2, 1), targets, ignore_index=-100)
+
+        targets = targets.reshape(-1)
+        mask = targets != -100
+        outputs = outputs.argmax(-1).reshape(-1)[mask]
+        targets = targets[mask]
+        acc = 100 * (outputs == targets).sum().float() / len(targets)
+
+        self.log("val_loss", loss)
+        self.log("val_acc", acc)
 
     def evaluate(self, dataset: KeyPostProcessorDataset):
         raise NotImplementedError()
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(
+            self.parameters(), lr=self.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.001
+        )
+
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5)
+
+        return [optimizer], [{"scheduler": scheduler, "monitor": "val_loss"}]
 
     @abstractmethod
     def init_hidden(self, batch_size: int) -> Tuple[Variable, ...]:
@@ -113,15 +218,6 @@ class KeyPostProcessorModel(pl.LightningModule, ABC):
             A tuple of initialized hidden layers.
         """
         raise NotImplementedError()
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(
-            self.parameters(), lr=self.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.001
-        )
-
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5)
-
-        return [optimizer], [{"scheduler": scheduler, "monitor": "val_loss"}]
 
 
 class SimpleKeyPostProcessorModel(KeyPostProcessorModel):
@@ -147,6 +243,8 @@ class SimpleKeyPostProcessorModel(KeyPostProcessorModel):
         hidden_dim: int = 256,
         dropout: float = 0.0,
         learning_rate: float = 0.001,
+        scheduled_sampling: bool = False,
+        sigmoid_k: float = 10,
         input_mask: List[int] = None,
     ):
         """
@@ -180,6 +278,11 @@ class SimpleKeyPostProcessorModel(KeyPostProcessorModel):
             The dropout proportion.
         learning_rate : float
             The learning rate.
+        scheduled_sampling : bool
+            Whether to use scheduled sampling or not.
+        sigmoid_k : float
+            The value to use for k in the caluclation of the clean probability during
+            scheduled sampling.
         input_mask : List[int]
             A binary input mask which is 1 in every location where each input vector
             should be left unchanged, and 0 elsewhere where the input vectors should
@@ -192,6 +295,8 @@ class SimpleKeyPostProcessorModel(KeyPostProcessorModel):
             reduction,
             use_inversions,
             learning_rate,
+            scheduled_sampling,
+            sigmoid_k,
             transposition_range,
             input_mask,
         )
@@ -226,7 +331,7 @@ class SimpleKeyPostProcessorModel(KeyPostProcessorModel):
         # Linear layers post-LSTM
         self.hidden_dim = hidden_dim
         self.dropout = dropout
-        self.fc1 = nn.Linear(self.lstm_hidden_dim, self.hidden_dim)
+        self.fc1 = nn.Linear(2 * self.lstm_hidden_dim, self.hidden_dim)
         self.fc2 = nn.Linear(self.hidden_dim, self.output_dim)
         self.dropout1 = nn.Dropout(self.dropout)
 
@@ -251,3 +356,23 @@ class SimpleKeyPostProcessorModel(KeyPostProcessorModel):
                 )
             ),
         )
+
+    def forward(self, inputs, lengths):
+        # pylint: disable=arguments-differ
+        batch_size = inputs.shape[0]
+        lengths = torch.clamp(lengths, min=1).cpu()
+        h_0, c_0 = self.init_hidden(batch_size)
+
+        embedded = F.relu(self.embed(inputs))
+
+        packed = pack_padded_sequence(embedded, lengths, enforce_sorted=False, batch_first=True)
+        lstm_out_packed, _ = self.lstm(packed, (h_0, c_0))
+        lstm_out, _ = pad_packed_sequence(lstm_out_packed, batch_first=True)
+
+        relu1 = F.relu(lstm_out)
+        drop1 = self.dropout1(relu1)
+        fc1 = self.fc1(drop1)
+        relu2 = F.relu(fc1)
+        output = self.fc2(relu2)
+
+        return F.log_softmax(output, dim=2)

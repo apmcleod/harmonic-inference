@@ -204,9 +204,19 @@ class HarmonicDataset(Dataset):
                     for key in ["inputs", "targets", "input_lengths", "target_lengths"]
                     if key in h5_file
                 }
+            if (
+                hasattr(self, "scheduled_sampling_data")
+                and self.scheduled_sampling_data is not None
+            ):
+                data["scheduled_sampling_data"] = self.scheduled_sampling_data[item]
 
         else:
             data = {"inputs": self.inputs[item]}
+            if (
+                hasattr(self, "scheduled_sampling_data")
+                and self.scheduled_sampling_data is not None
+            ):
+                data["scheduled_sampling_data"] = self.scheduled_sampling_data[item]
 
             # During inference, we have no targets
             if self.targets is not None:
@@ -219,6 +229,17 @@ class HarmonicDataset(Dataset):
                 padded_input[: len(data["inputs"])] = data["inputs"]
                 data["inputs"] = padded_input
                 data["input_lengths"] = self.input_lengths[item]
+                if (
+                    hasattr(self, "scheduled_sampling_data")
+                    and self.scheduled_sampling_data is not None
+                ):
+                    padded_sched = np.zeros(
+                        ([self.max_input_length] + list(data["inputs"][0].shape))
+                    )
+                    padded_sched[: len(data["scheduled_sampling_data"])] = data[
+                        "scheduled_sampling_data"
+                    ]
+                    data["scheduled_sampling_data"] = padded_sched
 
             if self.target_lengths is not None:
                 if self.max_target_length is None:
@@ -1121,7 +1142,6 @@ class KeyPostProcessorDataset(HarmonicDataset):
         input_mask: List[int] = None,
         dummy_targets: bool = False,
         scheduled_sampling_h5_path: Union[str, Path] = None,
-        scheduled_sampling_prob: float = 0.0,
     ):
         """
         Create a chord sequence dataset from the given pieces.
@@ -1154,9 +1174,6 @@ class KeyPostProcessorDataset(HarmonicDataset):
             Use dummy targets for this data creation.
         scheduled_sampling_h5_path : Union[str, Path]
             An h5 dataset file to load scheduled sampling data from.
-        scheduled_sampling_prob : float
-            The probability of changing a ground truth input chord into one from scheduled
-            sampling.
         """
         super().__init__(transform=transform, input_mask=input_mask)
 
@@ -1165,7 +1182,6 @@ class KeyPostProcessorDataset(HarmonicDataset):
         self.transposition_range = transposition_range
         self.dummy_targets = dummy_targets
 
-        self.scheduled_sampling_prob = scheduled_sampling_prob
         self.scheduled_sampling_h5_path = scheduled_sampling_h5_path
 
         self.inputs = []
