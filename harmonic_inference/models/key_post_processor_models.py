@@ -9,6 +9,8 @@ import torch.nn.functional as F
 from torch import nn
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from harmonic_inference.data.chord import get_chord_vector_length
 from harmonic_inference.data.data_types import ChordType, PitchType
@@ -149,20 +151,25 @@ class KeyPostProcessorModel(pl.LightningModule, ABC):
             self.load_scheduled_sampling_inputs(batch)
 
         inputs = batch["inputs"].float()
-        targets = batch["targets"].long()
         input_lengths = batch["input_lengths"].long()
 
         longest = max(input_lengths)
         inputs = inputs[:, :longest]
-        targets = targets[:, :longest]
 
-        for i, length in enumerate(input_lengths):
-            targets[i, length:] = -100
+        targets = None
+        if "targets" in batch:
+            targets = batch["targets"].long()
+            targets = targets[:, :longest]
+
+            for i, length in enumerate(input_lengths):
+                targets[i, length:] = -100
 
         return inputs, input_lengths, targets
 
     def get_output(self, batch: Dict[str, Any]):
-        raise NotImplementedError()
+        inputs, input_lengths, _ = self.get_data_from_batch(batch, False)
+
+        return self(inputs, input_lengths)
 
     def training_step(self, batch: Dict[str, Any], batch_idx: int):
         inputs, input_lengths, targets = self.get_data_from_batch(batch, self.scheduled_sampling)
@@ -191,7 +198,34 @@ class KeyPostProcessorModel(pl.LightningModule, ABC):
         self.log("val_acc", acc)
 
     def evaluate(self, dataset: KeyPostProcessorDataset):
-        raise NotImplementedError()
+        data_loader = DataLoader(dataset, batch_size=dataset.valid_batch_size)
+
+        total = 0
+        total_loss = 0
+        total_acc = 0
+
+        for batch in tqdm(data_loader, desc="Evaluating KPPM"):
+            inputs, input_lengths, targets = self.get_data_from_batch(batch, False)
+
+            outputs = self(inputs, input_lengths)
+
+            loss = F.nll_loss(outputs.permute(0, 2, 1), targets, ignore_index=-100)
+
+            targets = targets.reshape(-1)
+            mask = targets != -100
+            outputs = outputs.argmax(-1).reshape(-1)[mask]
+            targets = targets[mask]
+            batch_count = len(targets)
+            acc = 100 * (outputs == targets).sum().float() / len(targets)
+
+            total += batch_count
+            total_loss += loss * batch_count
+            total_acc += acc * batch_count
+
+        return {
+            "acc": (total_acc / total).item(),
+            "loss": (total_loss / total).item(),
+        }
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
