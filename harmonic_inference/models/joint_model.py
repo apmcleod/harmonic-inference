@@ -30,7 +30,7 @@ from harmonic_inference.data.piece import Piece, get_range_start
 from harmonic_inference.utils.beam_search_utils import Beam, HashedBeam, State
 
 MODEL_CLASSES = {
-    "ccm": [ccm.SimpleChordClassifier],
+    "ccm": [ccm.SimpleChordClassifier, ccm.MultiTargetChordClassifier],
     "ctm": [ctm.SimpleChordTransitionModel],
     "csm": [csm.SimpleChordSequenceModel],
     "ktm": [ktm.SimpleKeyTransitionModel],
@@ -214,6 +214,7 @@ class HarmonicInferenceModel:
                 'ktm': A KeyTransitionModel
                 'ksm': A KeySequenceModel
                 'icm': An InitialChordModel
+                'kppm': A KeyPostProcessorModel
         min_chord_change_prob : float
             The minimum probability (from the CTM) on which a chord change can occur.
         max_no_chord_change_prob : float
@@ -261,13 +262,14 @@ class HarmonicInferenceModel:
         self.chord_transition_model: ctm.ChordTransitionModel = models["ctm"]
         self.key_sequence_model: ksm.KeySequenceModel = models["ksm"]
         self.key_transition_model: ktm.KeyTransitionModel = models["ktm"]
+        self.key_post_processor_model: kppm.SimpleKeyPostProcessorModel = models["kppm"]
         self.initial_chord_model: icm.SimpleInitialChordModel = models["icm"]
         self.check_input_output_types()
 
         # Set joint model types
         self.INPUT_TYPE = self.chord_classifier.INPUT_TYPE
         self.CHORD_OUTPUT_TYPE = self.chord_sequence_model.OUTPUT_PITCH_TYPE
-        self.KEY_OUTPUT_TYPE = self.key_sequence_model.OUTPUT_PITCH_TYPE
+        self.KEY_OUTPUT_TYPE = self.key_post_processor_model.OUTPUT_PITCH
 
         # Load labels
         self.LABELS = {
@@ -338,6 +340,9 @@ class HarmonicInferenceModel:
         assert (
             self.chord_classifier.OUTPUT_PITCH == self.chord_sequence_model.INPUT_CHORD_PITCH_TYPE
         ), "CCM output pitch type does not match CSM chord pitch type"
+        assert (
+            self.chord_classifier.OUTPUT_PITCH == self.key_post_processor_model.INPUT_PITCH
+        ), "CCM output pitch type does not match KPPM input pitch type"
 
         # Output from CSM
         assert (
@@ -625,6 +630,9 @@ class HarmonicInferenceModel:
         state = self.beam_search(
             chord_ranges, range_log_probs, rejoin_log_probs, chord_classifications
         )
+
+        # KPPM Post-processing for key labels
+        state = self.post_process(state)
 
         self.current_piece = None
 
@@ -1377,6 +1385,23 @@ class HarmonicInferenceModel:
         for state, log_prior, hidden, cell in zip(states, priors, hidden_states, cell_states):
             state.csm_log_prior = log_prior.numpy()[0]
             state.csm_hidden_state = (hidden, cell)
+
+    def post_process(self, state: State) -> State:
+        """
+        Run the KPPM post-processing step, and return an updated state with the
+        new key labels.
+
+        Parameters
+        ----------
+        state : State
+            The most likely state as output by the beam search.
+
+        Returns
+        -------
+        State
+            The given state, altered such that the keys match the KPPM's outputs.
+        """
+        # TODO
 
 
 class DebugLogger:
