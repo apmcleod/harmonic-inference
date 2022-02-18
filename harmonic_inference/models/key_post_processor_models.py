@@ -133,11 +133,13 @@ class KeyPostProcessorModel(pl.LightningModule, ABC):
 
         clean_prob = get_scheduled_sampling_prob(self.current_epoch, sigmoid_k=self.sigmoid_k)
         random_sample = torch.bernoulli(
-            torch.full((torch.sum(batch["input_lengths"]).item(),), 1 - clean_prob)
+            torch.full((torch.sum(batch["input_lengths"].clip(0)).item(),), 1 - clean_prob)
         ).type(torch.bool)
 
         start = 0
         for i, length in enumerate(batch["input_lengths"]):
+            if length <= 0:
+                continue
             sample = random_sample[start : start + length]
             if torch.sum(sample).item() != 0:
                 batch["inputs"][i][:length][sample] = batch["scheduled_sampling_data"][i][:length][
