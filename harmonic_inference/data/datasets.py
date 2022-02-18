@@ -1293,7 +1293,7 @@ class KeyPostProcessorDataset(HarmonicDataset):
 
         except ValueError:
             # Something transposed out of the valid pitch range
-            data["targets"] = [-1] * len(data["targets"])
+            data["targets"][:] = -1
             data["input_lengths"] = -1
             data["target_lengths"] = -1
             data["inputs"] *= 0
