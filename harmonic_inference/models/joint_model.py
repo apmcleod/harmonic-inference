@@ -323,6 +323,7 @@ class HarmonicInferenceModel:
         self.duration_cache = None
         self.onset_cache = None
         self.onset_level_cache = None
+        self.beat_duration_cache = None
 
     def check_input_output_types(self):
         """
@@ -577,6 +578,7 @@ class HarmonicInferenceModel:
         self.onset_level_cache = [vec.onset_level for vec in piece.get_inputs()] + [
             piece.get_inputs()[-1].offset_level
         ]
+        self.beat_duration_cache = None  # TODO
 
         # Validate forced changes
         self.forced_chord_changes = set() if forced_chord_changes is None else forced_chord_changes
@@ -1100,6 +1102,7 @@ class HarmonicInferenceModel:
                     self.duration_cache,
                     self.onset_cache,
                     self.onset_level_cache,
+                    self.beat_duration_cache,
                     self.LABELS,
                     self.chord_sequence_model.use_output_inversions,
                     self.chord_sequence_model.output_reduction,
@@ -1147,6 +1150,7 @@ class HarmonicInferenceModel:
                 self.duration_cache,
                 self.onset_cache,
                 self.onset_level_cache,
+                self.beat_duration_cache,
                 self.LABELS,
             )
 
@@ -1220,6 +1224,7 @@ class HarmonicInferenceModel:
                 self.duration_cache,
                 self.onset_cache,
                 self.onset_level_cache,
+                self.beat_duration_cache,
                 self.LABELS,
             )
 
@@ -1354,6 +1359,7 @@ class HarmonicInferenceModel:
                 self.duration_cache,
                 self.onset_cache,
                 self.onset_level_cache,
+                self.beat_duration_cache,
                 self.LABELS,
             )
 
@@ -1401,7 +1407,24 @@ class HarmonicInferenceModel:
         State
             The given state, altered such that the keys match the KPPM's outputs.
         """
-        # TODO
+        piece = state.get_score_piece(
+            self.current_piece,
+            self.CHORD_OUTPUT_TYPE,
+            self.KEY_OUTPUT_TYPE,
+            self.duration_cache,
+            self.onset_cache,
+            self.onset_level_cache,
+            self.LABELS,
+        )
+
+        kwargs = self.key_post_processor_model.get_dataset_kwargs()
+        if "transposition_range" in kwargs:
+            del kwargs["transposition_range"]
+
+        dataset = ds.KeyPostProcessorDataset([piece], **kwargs)
+        _ = self.key_post_processor_model.get_output(dataset[0]).numpy()
+
+        # TODO: Process outputs
 
 
 class DebugLogger:

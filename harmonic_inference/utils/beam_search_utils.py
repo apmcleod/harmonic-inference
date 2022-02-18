@@ -11,6 +11,7 @@ import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.data.chord import Chord
 from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.key import Key, get_key_change_vector_length
+from harmonic_inference.data.piece import ScorePiece
 from harmonic_inference.data.vector_decoding import reduce_chord_one_hots
 
 
@@ -400,6 +401,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[Fraction],
+        beat_duration_cache: List[Fraction],
         labels: Dict,
         use_output_inversions: bool,
         output_reduction: Dict[ChordType, ChordType],
@@ -423,6 +425,8 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
+        beat_duration_cache : List[Fraction]
+            The beat duration of each input in the current piece.
         labels : Dict
             A Dictionary of key and chord labels for the current piece.
         use_output_inversions : bool
@@ -443,6 +447,7 @@ class State:
             duration_cache,
             onset_cache,
             onset_level_cache,
+            beat_duration_cache,
             labels,
         )
 
@@ -495,6 +500,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
+        beat_duration_cache: List[Fraction],
         labels: Dict,
     ) -> np.array:
         """
@@ -510,6 +516,8 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
+        beat_duration_cache : List[Fraction]
+            The beat duration of each input in the current piece.
         labels : Dict
             A Dictionary of key and chord labels for the current piece.
 
@@ -534,6 +542,7 @@ class State:
                         duration_cache,
                         onset_cache,
                         onset_level_cache,
+                        beat_duration_cache,
                         labels,
                     ).to_vec(pad=False),
                     key_change_vector,
@@ -549,6 +558,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
+        beat_duration_cache: List[Fraction],
         labels: Dict,
     ) -> np.array:
         """
@@ -564,6 +574,8 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
+        beat_duration_cache : List[Fraction]
+            The beat duration of each input in the current piece.
         labels : Dict
             A Dictionary of key and chord labels for the current piece.
 
@@ -587,6 +599,7 @@ class State:
                         duration_cache,
                         onset_cache,
                         onset_level_cache,
+                        beat_duration_cache,
                         labels,
                     ).to_vec(pad=True),
                     key_change_vector,
@@ -601,6 +614,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
+        beat_duration_cache: List[Fraction],
         labels: Dict,
         length: int = 0,
     ) -> np.array:
@@ -619,6 +633,8 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
+        beat_duration_cache : List[Fraction]
+            The beat duration of each input in the current piece.
         labels : Dict
             A Dictionary of key and chord labels for the current piece.
         length : int
@@ -664,6 +680,7 @@ class State:
                 duration_cache,
                 onset_cache,
                 onset_level_cache,
+                beat_duration_cache,
                 labels,
             )
         )
@@ -687,6 +704,7 @@ class State:
             duration_cache,
             onset_cache,
             onset_level_cache,
+            beat_duration_cache,
             labels,
             length=length + 1,
         )
@@ -699,6 +717,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
+        beat_duration_cache: List[Fraction],
         labels: Dict,
     ) -> Chord:
         """
@@ -714,6 +733,8 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
+        beat_duration_cache : List[Fraction]
+            The beat duration of each input in the current piece.
         labels : Dict
             A Dictionary of key and chord labels for the current piece.
 
@@ -741,6 +762,7 @@ class State:
                 onset_cache[index],
                 onset_level_cache[index],
                 np.sum(duration_cache[prev_index : self.change_index]),
+                beat_duration_cache[index],
                 pitch_type,
             )
 
@@ -781,6 +803,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
+        beat_duration_cache: List[Fraction],
         labels: Dict,
     ) -> int:
         """
@@ -796,6 +819,8 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
+        beat_duration_cache : List[Fraction]
+            The beat duration of each input in the current piece.
         labels : Dict
             A Dictionary of key and chord labels for the current piece.
 
@@ -809,6 +834,7 @@ class State:
             duration_cache,
             onset_cache,
             onset_level_cache,
+            beat_duration_cache,
             labels,
         ).get_one_hot_index(relative=True, use_inversion=True, pad=False)
 
@@ -858,6 +884,60 @@ class State:
             changes[-1] = self.change_index
 
         return keys, changes
+
+    def get_score_piece(
+        self,
+        piece: ScorePiece,
+        chord_pitch_type: PitchType,
+        key_pitch_type: PitchType,
+        duration_cache: np.array,
+        onset_cache: List[Tuple[int, Fraction]],
+        onset_level_cache: List[int],
+        labels: Dict,
+    ) -> ScorePiece:
+        """
+        Get a Piece which contains this state's history of chords and keys.
+
+        Parameters
+        ----------
+        piece : ScorePiece
+            The Piece that this one is based off of. Given to be able to get a measures_df,
+            notes, and other pieces of info for the resulting piece.
+        chord_pitch_type : PitchType
+            The pitch type used to store the chord root.
+        key_pitch_type : PitchType
+            The pitch type used to store the key tonic.
+        duration_cache : np.array
+            The duration of each input in the current piece.
+        onset_cache : List[Tuple[int, Fraction]]
+            The onset of each input in the current piece.
+        onset_level_cache : List[int]
+            The onset level of each input in the current piece.
+        labels : Dict
+            A Dictionary of key and chord labels for the current piece.
+
+        Returns
+        -------
+        piece : ScorePiece
+            A Piece containing this state's chords and keys, but no notes.
+        """
+        chord_ints, chord_changes = self.get_chords()
+        key_ints, key_changes = self.get_keys()
+
+        chords = None
+        keys = None
+        chord_ranges = None
+
+        return ScorePiece(
+            piece.measures_df,
+            piece.get_inputs(),
+            chords,
+            keys,
+            chord_changes,
+            chord_ranges,
+            key_changes,
+            piece.name,
+        )
 
     def get_hash(self) -> Union[Tuple[Tuple[int, int]], int]:
         """
