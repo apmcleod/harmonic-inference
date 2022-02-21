@@ -578,7 +578,9 @@ class HarmonicInferenceModel:
         self.onset_level_cache = [vec.onset_level for vec in piece.get_inputs()] + [
             piece.get_inputs()[-1].offset_level
         ]
-        self.beat_duration_cache = None  # TODO
+        self.beat_duration_cache = [vec.beat_duration for vec in piece.get_inputs()] + [
+            piece.get_inputs()[-1].beat_duration
+        ]
 
         # Validate forced changes
         self.forced_chord_changes = set() if forced_chord_changes is None else forced_chord_changes
@@ -1097,7 +1099,6 @@ class HarmonicInferenceModel:
             # Add CSM prior and add to beam (CSM is run at the start of each iteration)
             for state in to_csm_prior_states:
                 state.add_csm_prior(
-                    isinstance(self.chord_sequence_model, csm.PitchBasedChordSequenceModel),
                     self.CHORD_OUTPUT_TYPE,
                     self.duration_cache,
                     self.onset_cache,
@@ -1414,6 +1415,7 @@ class HarmonicInferenceModel:
             self.duration_cache,
             self.onset_cache,
             self.onset_level_cache,
+            self.beat_duration_cache,
             self.LABELS,
         )
 

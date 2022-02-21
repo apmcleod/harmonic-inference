@@ -396,7 +396,6 @@ class State:
 
     def add_csm_prior(
         self,
-        pitch_based: bool,
         pitch_type: PitchType,
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
@@ -414,9 +413,6 @@ class State:
 
         Parameters
         ----------
-        pitch_based : bool
-            True if the CSM prior is pitch-based, rather than a one-hot chord-based
-            representation.
         pitch_type : PitchType
             The pitch type used to store the chord root.
         duration_cache : np.array
@@ -462,36 +458,7 @@ class State:
             use_inversions=use_output_inversions,
         )[0]
 
-        if pitch_based and self.prev_state.change_index != 0:
-            num_pitches = (
-                hc.NUM_PITCHES[PitchType.MIDI]
-                if pitch_type == PitchType.MIDI
-                else hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
-            )
-
-            relative_root, chord_type, _ = hu.get_chord_from_one_hot_index(
-                reduced_index,
-                pitch_type,
-                use_inversions=use_output_inversions,
-                relative=True,
-                pad=False,
-                reduction=output_reduction,
-            )
-
-            chord_vector = hu.get_vector_from_chord_type(
-                chord_type,
-                pitch_type,
-                root=relative_root,
-            )[:num_pitches]
-
-            self.most_recent_csm = (
-                np.sum(np.log(self.csm_log_prior[chord_vector == 1]))
-                + np.sum(np.log(1 - self.csm_log_prior[chord_vector == 0]))
-            ) * range_length
-
-        else:
-            self.most_recent_csm = self.csm_log_prior[reduced_index] * range_length
-
+        self.most_recent_csm = self.csm_log_prior[reduced_index] * range_length
         self.log_prob += self.most_recent_csm
 
     def get_csm_input(
@@ -893,6 +860,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
+        beat_duration_cache: List[Fraction],
         labels: Dict,
     ) -> ScorePiece:
         """
@@ -913,6 +881,8 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
+        beat_duration_cache : List[Fraction]
+            The beat duration of each input in the current piece.
         labels : Dict
             A Dictionary of key and chord labels for the current piece.
 
@@ -921,19 +891,56 @@ class State:
         piece : ScorePiece
             A Piece containing this state's chords and keys, but no notes.
         """
-        chord_ints, chord_changes = self.get_chords()
-        key_ints, key_changes = self.get_keys()
+        chord_ids, chord_changes = self.get_chords()
+        key_ids, key_changes = self.get_keys()
 
-        chords = None
-        keys = None
-        chord_ranges = None
+        chords = [None] * len(chord_ids)
+        keys = [None] * len(key_ids)
+        chord_ranges = [None] * len(chord_ids)
+
+        # Create keys
+        for i, (key_id, prev_index, next_index) in enumerate(
+            zip(key_ids, key_changes[:-1], key_changes[1:])
+        ):
+            tonic, mode = labels["key"][key_id]
+            keys[i] = Key(tonic, tonic, tonic, mode, mode, mode, key_pitch_type)
+
+        # Translate key_changes into chord-based indexing
+        key_changes = np.array([chord_changes.index(key_index) for key_index in key_changes[:-1]])
+
+        # Create chords and chord_ranges
+        for i, (chord_id, prev_index, next_index) in enumerate(
+            zip(chord_ids, chord_changes[:-1], chord_changes[1:])
+        ):
+            root, chord_type, inversion = labels["chord"][chord_id]
+            bass = hu.get_bass_note(chord_type, root, inversion, chord_pitch_type)
+
+            chord_ranges[i] = (prev_index, next_index)
+
+            key = keys[np.where(key_changes <= i)[0][-1]]
+
+            chords[i] = Chord(
+                root,
+                bass,
+                key.relative_tonic,
+                key.relative_mode,
+                chord_type,
+                inversion,
+                onset_cache[prev_index],
+                onset_level_cache[prev_index],
+                onset_cache[next_index],
+                onset_level_cache[next_index],
+                np.sum(duration_cache[prev_index:next_index]),
+                beat_duration_cache[prev_index],
+                chord_pitch_type,
+            )
 
         return ScorePiece(
             piece.measures_df,
             piece.get_inputs(),
             chords,
             keys,
-            chord_changes,
+            chord_changes[:-1],
             chord_ranges,
             key_changes,
             piece.name,
