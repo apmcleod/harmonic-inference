@@ -1291,12 +1291,20 @@ class KeyPostProcessorDataset(HarmonicDataset):
                         chord_vector, transposition
                     )
 
+                for chord_index, chord_vector in enumerate(
+                    data["scheduled_sampling_data"][: data["input_lengths"]]
+                ):
+                    data["scheduled_sampling_data"][chord_index] = transpose_chord_vector(
+                        chord_vector, transposition
+                    )
+
         except ValueError:
             # Something transposed out of the valid pitch range
             data["targets"] = np.full_like(data["targets"], -100)
             data["input_lengths"] = -1
             data["target_lengths"] = -1
             data["inputs"] *= 0
+            data["scheduled_sampling_data"] *= 0
             return
 
     @staticmethod

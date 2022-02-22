@@ -203,8 +203,8 @@ class KeyPostProcessorModel(pl.LightningModule, ABC):
         if targets is not None:
             targets = targets[:, :longest]
 
-        for i, length in enumerate(input_lengths):
-            targets[i, length:] = -100
+            for i, length in enumerate(input_lengths):
+                targets[i, length:] = -100
 
         return inputs, input_lengths, targets
 
