@@ -11,6 +11,7 @@ import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.data.chord import Chord
 from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.key import Key, get_key_change_vector_length
+from harmonic_inference.data.piece import ScorePiece
 from harmonic_inference.data.vector_decoding import reduce_chord_one_hots
 
 
@@ -395,11 +396,11 @@ class State:
 
     def add_csm_prior(
         self,
-        pitch_based: bool,
         pitch_type: PitchType,
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[Fraction],
+        beat_duration_cache: List[Fraction],
         labels: Dict,
         use_output_inversions: bool,
         output_reduction: Dict[ChordType, ChordType],
@@ -412,9 +413,6 @@ class State:
 
         Parameters
         ----------
-        pitch_based : bool
-            True if the CSM prior is pitch-based, rather than a one-hot chord-based
-            representation.
         pitch_type : PitchType
             The pitch type used to store the chord root.
         duration_cache : np.array
@@ -423,6 +421,8 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
+        beat_duration_cache : List[Fraction]
+            The beat duration of each input in the current piece.
         labels : Dict
             A Dictionary of key and chord labels for the current piece.
         use_output_inversions : bool
@@ -443,6 +443,7 @@ class State:
             duration_cache,
             onset_cache,
             onset_level_cache,
+            beat_duration_cache,
             labels,
         )
 
@@ -457,36 +458,7 @@ class State:
             use_inversions=use_output_inversions,
         )[0]
 
-        if pitch_based and self.prev_state.change_index != 0:
-            num_pitches = (
-                hc.NUM_PITCHES[PitchType.MIDI]
-                if pitch_type == PitchType.MIDI
-                else hc.MAX_RELATIVE_TPC - hc.MIN_RELATIVE_TPC
-            )
-
-            relative_root, chord_type, _ = hu.get_chord_from_one_hot_index(
-                reduced_index,
-                pitch_type,
-                use_inversions=use_output_inversions,
-                relative=True,
-                pad=False,
-                reduction=output_reduction,
-            )
-
-            chord_vector = hu.get_vector_from_chord_type(
-                chord_type,
-                pitch_type,
-                root=relative_root,
-            )[:num_pitches]
-
-            self.most_recent_csm = (
-                np.sum(np.log(self.csm_log_prior[chord_vector == 1]))
-                + np.sum(np.log(1 - self.csm_log_prior[chord_vector == 0]))
-            ) * range_length
-
-        else:
-            self.most_recent_csm = self.csm_log_prior[reduced_index] * range_length
-
+        self.most_recent_csm = self.csm_log_prior[reduced_index] * range_length
         self.log_prob += self.most_recent_csm
 
     def get_csm_input(
@@ -495,6 +467,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
+        beat_duration_cache: List[Fraction],
         labels: Dict,
     ) -> np.array:
         """
@@ -510,6 +483,8 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
+        beat_duration_cache : List[Fraction]
+            The beat duration of each input in the current piece.
         labels : Dict
             A Dictionary of key and chord labels for the current piece.
 
@@ -534,6 +509,7 @@ class State:
                         duration_cache,
                         onset_cache,
                         onset_level_cache,
+                        beat_duration_cache,
                         labels,
                     ).to_vec(pad=False),
                     key_change_vector,
@@ -549,6 +525,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
+        beat_duration_cache: List[Fraction],
         labels: Dict,
     ) -> np.array:
         """
@@ -564,6 +541,8 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
+        beat_duration_cache : List[Fraction]
+            The beat duration of each input in the current piece.
         labels : Dict
             A Dictionary of key and chord labels for the current piece.
 
@@ -587,6 +566,7 @@ class State:
                         duration_cache,
                         onset_cache,
                         onset_level_cache,
+                        beat_duration_cache,
                         labels,
                     ).to_vec(pad=True),
                     key_change_vector,
@@ -601,6 +581,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
+        beat_duration_cache: List[Fraction],
         labels: Dict,
         length: int = 0,
     ) -> np.array:
@@ -619,6 +600,8 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
+        beat_duration_cache : List[Fraction]
+            The beat duration of each input in the current piece.
         labels : Dict
             A Dictionary of key and chord labels for the current piece.
         length : int
@@ -664,6 +647,7 @@ class State:
                 duration_cache,
                 onset_cache,
                 onset_level_cache,
+                beat_duration_cache,
                 labels,
             )
         )
@@ -687,6 +671,7 @@ class State:
             duration_cache,
             onset_cache,
             onset_level_cache,
+            beat_duration_cache,
             labels,
             length=length + 1,
         )
@@ -699,6 +684,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
+        beat_duration_cache: List[Fraction],
         labels: Dict,
     ) -> Chord:
         """
@@ -714,6 +700,8 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
+        beat_duration_cache : List[Fraction]
+            The beat duration of each input in the current piece.
         labels : Dict
             A Dictionary of key and chord labels for the current piece.
 
@@ -741,6 +729,7 @@ class State:
                 onset_cache[index],
                 onset_level_cache[index],
                 np.sum(duration_cache[prev_index : self.change_index]),
+                beat_duration_cache[index],
                 pitch_type,
             )
 
@@ -781,6 +770,7 @@ class State:
         duration_cache: np.array,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
+        beat_duration_cache: List[Fraction],
         labels: Dict,
     ) -> int:
         """
@@ -796,6 +786,8 @@ class State:
             The onset of each input in the current piece.
         onset_level_cache : List[int]
             The onset level of each input in the current piece.
+        beat_duration_cache : List[Fraction]
+            The beat duration of each input in the current piece.
         labels : Dict
             A Dictionary of key and chord labels for the current piece.
 
@@ -809,6 +801,7 @@ class State:
             duration_cache,
             onset_cache,
             onset_level_cache,
+            beat_duration_cache,
             labels,
         ).get_one_hot_index(relative=True, use_inversion=True, pad=False)
 
@@ -858,6 +851,100 @@ class State:
             changes[-1] = self.change_index
 
         return keys, changes
+
+    def get_score_piece(
+        self,
+        piece: ScorePiece,
+        chord_pitch_type: PitchType,
+        key_pitch_type: PitchType,
+        duration_cache: np.array,
+        onset_cache: List[Tuple[int, Fraction]],
+        onset_level_cache: List[int],
+        beat_duration_cache: List[Fraction],
+        labels: Dict,
+    ) -> ScorePiece:
+        """
+        Get a Piece which contains this state's history of chords and keys.
+
+        Parameters
+        ----------
+        piece : ScorePiece
+            The Piece that this one is based off of. Given to be able to get a measures_df,
+            notes, and other pieces of info for the resulting piece.
+        chord_pitch_type : PitchType
+            The pitch type used to store the chord root.
+        key_pitch_type : PitchType
+            The pitch type used to store the key tonic.
+        duration_cache : np.array
+            The duration of each input in the current piece.
+        onset_cache : List[Tuple[int, Fraction]]
+            The onset of each input in the current piece.
+        onset_level_cache : List[int]
+            The onset level of each input in the current piece.
+        beat_duration_cache : List[Fraction]
+            The beat duration of each input in the current piece.
+        labels : Dict
+            A Dictionary of key and chord labels for the current piece.
+
+        Returns
+        -------
+        piece : ScorePiece
+            A Piece containing this state's chords and keys, but no notes.
+        """
+        chord_ids, chord_changes = self.get_chords()
+        key_ids, key_changes = self.get_keys()
+
+        chords = [None] * len(chord_ids)
+        keys = [None] * len(key_ids)
+        chord_ranges = [None] * len(chord_ids)
+
+        # Create keys
+        for i, (key_id, prev_index, next_index) in enumerate(
+            zip(key_ids, key_changes[:-1], key_changes[1:])
+        ):
+            tonic, mode = labels["key"][key_id]
+            keys[i] = Key(tonic, tonic, tonic, mode, mode, mode, key_pitch_type)
+
+        # Translate key_changes into chord-based indexing
+        key_changes = np.array([chord_changes.index(key_index) for key_index in key_changes[:-1]])
+
+        # Create chords and chord_ranges
+        for i, (chord_id, prev_index, next_index) in enumerate(
+            zip(chord_ids, chord_changes[:-1], chord_changes[1:])
+        ):
+            root, chord_type, inversion = labels["chord"][chord_id]
+            bass = hu.get_bass_note(chord_type, root, inversion, chord_pitch_type)
+
+            chord_ranges[i] = (prev_index, next_index)
+
+            key = keys[np.where(key_changes <= i)[0][-1]]
+
+            chords[i] = Chord(
+                root,
+                bass,
+                key.relative_tonic,
+                key.relative_mode,
+                chord_type,
+                inversion,
+                onset_cache[prev_index],
+                onset_level_cache[prev_index],
+                onset_cache[next_index],
+                onset_level_cache[next_index],
+                np.sum(duration_cache[prev_index:next_index]),
+                beat_duration_cache[prev_index],
+                chord_pitch_type,
+            )
+
+        return ScorePiece(
+            piece.measures_df,
+            piece.get_inputs(),
+            chords,
+            keys,
+            chord_changes[:-1],
+            chord_ranges,
+            key_changes,
+            piece.name,
+        )
 
     def get_hash(self) -> Union[Tuple[Tuple[int, int]], int]:
         """

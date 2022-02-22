@@ -21,13 +21,17 @@ from harmonic_inference.data.vector_decoding import (
     reduce_chord_one_hots,
     reduce_chord_types,
     remove_chord_inversions,
+    transpose_chord_vector,
     transpose_note_vector,
+    update_chord_vector_info,
 )
 from harmonic_inference.utils.harmonic_constants import NUM_PITCHES
 from harmonic_inference.utils.harmonic_utils import (
     get_bass_note,
     get_chord_from_one_hot_index,
     get_chord_one_hot_index,
+    get_key_from_one_hot_index,
+    get_key_one_hot_index,
     get_vector_from_chord_type,
 )
 
@@ -200,9 +204,19 @@ class HarmonicDataset(Dataset):
                     for key in ["inputs", "targets", "input_lengths", "target_lengths"]
                     if key in h5_file
                 }
+            if (
+                hasattr(self, "scheduled_sampling_data")
+                and self.scheduled_sampling_data is not None
+            ):
+                data["scheduled_sampling_data"] = self.scheduled_sampling_data[item]
 
         else:
             data = {"inputs": self.inputs[item]}
+            if (
+                hasattr(self, "scheduled_sampling_data")
+                and self.scheduled_sampling_data is not None
+            ):
+                data["scheduled_sampling_data"] = self.scheduled_sampling_data[item]
 
             # During inference, we have no targets
             if self.targets is not None:
@@ -215,13 +229,28 @@ class HarmonicDataset(Dataset):
                 padded_input[: len(data["inputs"])] = data["inputs"]
                 data["inputs"] = padded_input
                 data["input_lengths"] = self.input_lengths[item]
+                if (
+                    hasattr(self, "scheduled_sampling_data")
+                    and self.scheduled_sampling_data is not None
+                ):
+                    padded_sched = np.zeros(
+                        ([self.max_input_length] + list(data["inputs"][0].shape))
+                    )
+                    padded_sched[: len(data["scheduled_sampling_data"])] = data[
+                        "scheduled_sampling_data"
+                    ]
+                    data["scheduled_sampling_data"] = padded_sched
 
             if self.target_lengths is not None:
                 if self.max_target_length is None:
                     self.max_target_length = np.max(self.target_lengths)
-                padded_target = np.zeros(
-                    ([self.max_target_length] + list(data["targets"][0].shape))
-                )
+                try:
+                    padded_target = np.zeros(
+                        ([self.max_target_length] + list(data["targets"][0].shape))
+                    )
+                except AttributeError:
+                    # data["targets"][0] is an int -- target is just list of ints
+                    padded_target = np.zeros(self.max_target_length)
                 padded_target[: len(data["targets"])] = data["targets"]
                 data["targets"] = padded_target
                 data["target_lengths"] = self.target_lengths[item]
@@ -1088,6 +1117,210 @@ class KeySequenceDataset(KeyHarmonicDataset):
             self.key_change_replacements = np.vstack(self.key_change_replacements)
 
 
+class KeyPostProcessorDataset(HarmonicDataset):
+    """
+    A dataset taking in a sequence of absolute chord symbols, and outputting an aligned
+    sequence of absolute keys.
+
+    The inputs are one list per piece.
+    Each input list is a list of absolute chord vectors.
+
+    The targets are the one-hot index of the absolute key for each chord in the input.
+    """
+
+    train_batch_size = 32
+    valid_batch_size = 64
+    chunk_size = 256
+
+    def __init__(
+        self,
+        pieces: List[Piece],
+        transform: Callable = None,
+        reduction: Dict[ChordType, ChordType] = None,
+        use_inversions: bool = True,
+        transposition_range: Union[List[int], Tuple[int, int]] = (0, 0),
+        input_mask: List[int] = None,
+        dummy_targets: bool = False,
+        scheduled_sampling_h5_path: Union[str, Path] = None,
+    ):
+        """
+        Create a chord sequence dataset from the given pieces.
+
+        Parameters
+        ----------
+        pieces : List[Piece]
+            The pieces to get the data from.
+        transform : Callable
+            A function to transform numpy arrays returned by __getitem__ by default.
+        reduction : Dict[ChordType, ChordType]
+            A chord type reduction to apply to the input chords when returning data with
+            __getitem__. This is not applied when the data is loaded, but only when it is
+            returned. So it is safe to change this after initialization.
+        use_inversions : bool
+            True to use input inversions when returning data with __getitem__. False to reduce
+            all input chords to root position. This is not applied when the data is loaded, but
+            only when it is returned. So it is safe to change this after initialization.
+        transposition_range : Union[List[int], Tuple[int, int]]
+            Minimum and maximum bounds by which to transpose each chord and target key of the
+            dataset. Each __getitem__ call will return every possible transposition in this
+            (min, max) range, inclusive on each side. The transpositions are measured in
+            whatever PitchType is used in the dataset.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask.
+        dummy_targets : bool
+            Use dummy targets for this data creation.
+        scheduled_sampling_h5_path : Union[str, Path]
+            An h5 dataset file to load scheduled sampling data from.
+        """
+        super().__init__(transform=transform, input_mask=input_mask)
+
+        self.reduction = reduction
+        self.use_inversions = use_inversions
+        self.transposition_range = transposition_range
+        self.dummy_targets = dummy_targets
+
+        self.scheduled_sampling_h5_path = scheduled_sampling_h5_path
+
+        self.inputs = []
+        self.input_lengths = []
+        self.targets = []
+        self.target_lengths = []
+
+        self.target_pitch_type = []
+        self.num_transpositions = self.transposition_range[1] - self.transposition_range[0] + 1
+
+        for piece in pieces:
+            self.inputs.append(
+                np.vstack([chord.to_vec(absolute=True) for chord in piece.get_chords()])
+            )
+            self.input_lengths.append(len(piece.get_chords()))
+            self.target_lengths.append(len(piece.get_chords()))
+            self.targets.append(
+                np.array(
+                    [
+                        get_key_one_hot_index(chord.key_mode, chord.key_tonic, chord.pitch_type)
+                        for chord in piece.get_chords()
+                    ]
+                )
+            )
+
+        if len(pieces) > 0 and len(pieces[0].get_chords()) > 0:
+            self.target_pitch_type.append(pieces[0].get_chords()[0].pitch_type.value)
+
+    def load_scheduled_sampling_data(self) -> Union[List, None]:
+        """
+        Load scheduled sampling data in from the h5 file at the path in
+        self.scheduled_sampling_h5_data. This should be called only after all other
+        data is loaded. The data will be loaded into self.scheduled_sampling_data
+        """
+        if self.scheduled_sampling_h5_path is None:
+            self.scheduled_sampling_data = None
+            return
+
+        with h5py.File(self.scheduled_sampling_h5_path, "r") as h5_file:
+            sched_outputs = np.array(h5_file["outputs"], dtype=np.float16)
+            pitch_type = PitchType(h5_file["pitch_type"][0])
+            use_inversions = h5_file["use_inversions"][0]
+            reduction = (
+                {ChordType(red[0]): ChordType(red[1]) for red in h5_file["reduction"]}
+                if "reduction" in h5_file
+                else None
+            )
+
+        self.scheduled_sampling_data = [np.copy(input) for input in self.inputs]
+        output_labels = np.array(
+            get_chord_from_one_hot_index(
+                slice(None),
+                pitch_type,
+                use_inversions=use_inversions,
+                reduction=reduction,
+            )
+        )[np.argmax(sched_outputs, axis=1)]
+
+        start_idx = 0
+        for piece_idx, input_length in enumerate(self.input_lengths):
+            for output_idx, (root, chord_type, inversion) in enumerate(
+                output_labels[start_idx : start_idx + input_length]
+            ):
+                self.scheduled_sampling_data[piece_idx][output_idx] = update_chord_vector_info(
+                    self.scheduled_sampling_data[piece_idx][output_idx],
+                    pitch_type=pitch_type,
+                    root_pitch=root,
+                    bass_pitch=get_bass_note(chord_type, root, inversion, pitch_type),
+                    chord_type=chord_type,
+                    inversion=inversion,
+                )
+
+            start_idx += input_length
+
+    def __len__(self):
+        return super().__len__() * self.num_transpositions
+
+    def __getitem__(self, item, transposition: int = None) -> Dict:
+        orig_item = item // self.num_transpositions
+        transposition = self.transposition_range[0] + (item % self.num_transpositions)
+
+        return super().__getitem__(orig_item, transposition=transposition)
+
+    def reduce(self, data: Dict, transposition: int = None):
+        if self.dummy_targets:
+            return
+
+        if transposition is None:
+            transposition = 0
+
+        try:
+            if transposition != 0:
+                for target_index, target in enumerate(data["targets"][: data["target_lengths"]]):
+                    tonic, mode = get_key_from_one_hot_index(
+                        int(target),
+                        PitchType(self.target_pitch_type[0]),
+                    )
+
+                    data["targets"][target_index] = get_key_one_hot_index(
+                        mode,
+                        tonic + transposition,
+                        PitchType(self.target_pitch_type[0]),
+                    )
+
+                for chord_index, chord_vector in enumerate(data["inputs"][: data["input_lengths"]]):
+                    data["inputs"][chord_index] = transpose_chord_vector(
+                        chord_vector, transposition
+                    )
+
+        except ValueError:
+            # Something transposed out of the valid pitch range
+            data["targets"] = np.full_like(data["targets"], -100)
+            data["input_lengths"] = -1
+            data["target_lengths"] = -1
+            data["inputs"] *= 0
+            return
+
+    @staticmethod
+    def get_scheduled_sampling_path(h5_dir_path: Union[Path, str], seed: int, split: str) -> Path:
+        """
+        Get the path to a scheduled sampling h5 dataset within the given directory.
+
+        Parameters
+        ----------
+        h5_dir_path : Union[Path, str]
+            The directory containing the scheduled sampling datasets.
+        seed : int
+            The seed of the dataset we want.
+        split : str
+            The split of the dataset we want.
+
+        Returns
+        -------
+        h5_path : Path
+            The path to the desired h5 dataset.
+        """
+        return Path(Path(h5_dir_path) / f"ccm_{split}_sched_samp_seed_{seed}.h5")
+
+
 def h5_to_dataset(
     h5_path: Union[str, Path],
     dataset_class: HarmonicDataset,
@@ -1399,3 +1632,13 @@ def transform_input_mask_to_binary(input_mask: List[int], input_length: int) -> 
         binary_mask[np.array(input_mask)] = 0
 
     return binary_mask
+
+
+DATASETS = {
+    "ctm": ChordTransitionDataset,
+    "csm": ChordSequenceDataset,
+    "ccm": ChordClassificationDataset,
+    "ktm": KeyTransitionDataset,
+    "ksm": KeySequenceDataset,
+    "kppm": KeyPostProcessorDataset,
+}

@@ -197,7 +197,7 @@ def load_pieces(
     return pieces
 
 
-def load_models_from_argparse(ARGS: Namespace) -> Dict:
+def load_models_from_argparse(ARGS: Namespace, model_type: str = None) -> Dict:
     """
     Get a Dictionary of loaded models from command line arguments.
 
@@ -205,6 +205,9 @@ def load_models_from_argparse(ARGS: Namespace) -> Dict:
     ----------
     ARGS : Namespace
         The parsed argparse Namespace from command line arguments including model information.
+
+    model_type : str
+        The model name to load (e.g., "ccm"), if only one should be loaded.
 
     Returns
     -------
@@ -214,18 +217,33 @@ def load_models_from_argparse(ARGS: Namespace) -> Dict:
     """
     models = {}
     for model_name, model_classes in MODEL_CLASSES.items():
+        if model_type is not None and model_name != model_type:
+            continue
+
         if model_name == "icm":
             continue
 
         DEFAULT_PATH = os.path.join(
             "`--checkpoint`", model_name, "lightning_logs", "version_*", "checkpoints", "*.ckpt"
         )
-        checkpoint_arg = getattr(ARGS, model_name)
-        version_arg = getattr(ARGS, f"{model_name}_version")
+        try:
+            checkpoint_arg = getattr(ARGS, model_name)
+        except AttributeError:
+            # From create_sched_sampling_data.py
+            checkpoint_arg = getattr(ARGS, "model_path")
+            DEFAULT_PATH = os.path.join(
+                "`--checkpoint`", "model", "lightning_logs", "version_*", "checkpoints", "*.ckpt"
+            )
+        try:
+            version_arg = getattr(ARGS, f"{model_name}_version")
+        except AttributeError:
+            # From create_sched_sampling_data.py
+            version_arg = getattr(ARGS, "model_version")
 
         if checkpoint_arg == DEFAULT_PATH or version_arg is not None:
             checkpoint_arg = DEFAULT_PATH
             checkpoint_arg = checkpoint_arg.replace("`--checkpoint`", ARGS.checkpoint)
+            checkpoint_arg = checkpoint_arg.replace("model", model_name)
 
             if version_arg is not None:
                 checkpoint_arg = checkpoint_arg.replace("_*", f"_{version_arg}")
@@ -254,9 +272,10 @@ def load_models_from_argparse(ARGS: Namespace) -> Dict:
 
         assert model_name in models, f"Couldn't load {model_name} from checkpoint {checkpoint}."
 
-    # Load icm json differently
-    icm_path = ARGS.icm_json.replace("`--checkpoint`", ARGS.checkpoint)
-    logging.info("Loading checkpoint %s for icm.", icm_path)
-    models["icm"] = icm.SimpleInitialChordModel(load_kwargs_from_json(icm_path))
+    if model_type is None or model_type == "icm":
+        # Load icm json differently
+        icm_path = ARGS.icm_json.replace("`--checkpoint`", ARGS.checkpoint)
+        logging.info("Loading checkpoint %s for icm.", icm_path)
+        models["icm"] = icm.SimpleInitialChordModel(load_kwargs_from_json(icm_path))
 
     return models

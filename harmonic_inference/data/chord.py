@@ -277,6 +277,7 @@ class Chord:
     def to_vec(
         self,
         relative_to: "Key" = None,
+        absolute: bool = False,
         pad: bool = False,
         reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
     ) -> np.ndarray:
@@ -287,6 +288,8 @@ class Chord:
         ----------
         relative_to : Key
             The key to make this chord vector relative to, if not its key.
+        absolute : bool
+            True to create an absolute chord vector, rather than relative.
         pad : bool
             If True, pitch_type is TPC, and relative is True, pad the possible pitches with
             extra spaces.
@@ -304,20 +307,27 @@ class Chord:
         if self.pitch_type == PitchType.MIDI:
             num_pitches = NUM_PITCHES[self.pitch_type]
         else:
-            num_pitches = MAX_RELATIVE_TPC - MIN_RELATIVE_TPC
-            if pad:
-                num_pitches += 2 * RELATIVE_TPC_EXTRA
+            if absolute:
+                num_pitches = NUM_PITCHES[self.pitch_type]
+            else:
+                num_pitches = MAX_RELATIVE_TPC - MIN_RELATIVE_TPC
+                if pad:
+                    num_pitches += 2 * RELATIVE_TPC_EXTRA
 
         vectors = []
 
-        # Relative root as one-hot
+        # Root as one-hot
         pitch = np.zeros(num_pitches, dtype=np.float16)
-        index = absolute_to_relative(
-            self.root,
-            key_tonic,
-            self.pitch_type,
-            False,
-            pad=pad,
+        index = (
+            self.root
+            if absolute
+            else absolute_to_relative(
+                self.root,
+                key_tonic,
+                self.pitch_type,
+                False,
+                pad=pad,
+            )
         )
         pitch[index] = 1
         vectors.append(pitch)
@@ -329,12 +339,16 @@ class Chord:
 
         # Relative bass as one-hot
         bass_note = np.zeros(num_pitches, dtype=np.float16)
-        index = absolute_to_relative(
-            self.bass,
-            key_tonic,
-            self.pitch_type,
-            False,
-            pad=pad,
+        index = (
+            self.bass
+            if absolute
+            else absolute_to_relative(
+                self.bass,
+                key_tonic,
+                self.pitch_type,
+                False,
+                pad=pad,
+            )
         )
         bass_note[index] = 1
         vectors.append(bass_note)
@@ -358,10 +372,12 @@ class Chord:
         vectors.append([float(self.duration), float(self.duration / self.beat_duration)])
 
         # Binary -- is the current key major
-        vectors.append([1 if key_mode == KeyMode.MAJOR else 0])
+        # Zero out for absolute chord vectors
+        vectors.append([1 if not absolute and key_mode == KeyMode.MAJOR else 0])
 
         # Binary -- is this chord diatonic to the current key
-        vectors.append([1 if self.is_diatonic(relative_to=relative_to) else 0])
+        # Zero out for absolute chord vectors
+        vectors.append([1 if not absolute and self.is_diatonic(relative_to=relative_to) else 0])
 
         return np.concatenate(vectors).astype(dtype=np.float16)
 
@@ -774,6 +790,19 @@ class Chord:
             raise e
 
 
+# The length of a chord vector excluding the root and bass pitches.
+CHORD_VECTOR_NO_PITCHES_LENGTH = (
+    len(ChordType)
+    # 4 inversion
+    # 4 onset level
+    # 4 offset level
+    # 2 durations (whole-note and beat-based)
+    # 1 is_key_major
+    # 1 is_diatonic
+    + 16
+)
+
+
 def get_chord_vector_length(
     pitch_type: PitchType,
     one_hot: bool = True,
@@ -831,12 +860,4 @@ def get_chord_vector_length(
             )
         return num_pitches * len(set(reduction.values()))
 
-    # 4 inversion
-    # 4 onset level
-    # 4 offset level
-    # 2 durations (whole-note and beat-based)
-    # 1 is_key_major
-    # 1 is_diatonic
-    extra = 16
-
-    return num_pitches + num_pitches + len(ChordType) + extra  # Root  # Bass  # chord type
+    return num_pitches + num_pitches + CHORD_VECTOR_NO_PITCHES_LENGTH  # Root  # Bass  # Other

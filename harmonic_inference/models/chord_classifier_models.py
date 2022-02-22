@@ -2,10 +2,12 @@
 from abc import ABC, abstractmethod
 from typing import Any, Collection, Dict, List, Tuple, Union
 
+import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from h5py import File
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.utils.data import DataLoader
@@ -93,6 +95,29 @@ class ChordClassifierModel(pl.LightningModule, ABC):
             "transposition_range": self.transposition_range,
             "input_mask": self.input_mask,
         }
+
+    def add_settings_to_h5_file(self, h5_file: File) -> None:
+        """
+        Add this model's hyperparameter settings to the given h5 file.
+
+        Parameters
+        ----------
+        h5_file : File
+            An h5 file, which should already be open for writing.
+        """
+        if self.reduction is not None:
+            h5_file.create_dataset(
+                "reduction",
+                data=np.array([x.value, y.value] for x, y in self.reduction.items()),
+                compression="gzip",
+            )
+
+        h5_file.create_dataset(
+            "use_inversions", data=np.array([self.use_inversions]), compression="gzip"
+        )
+        h5_file.create_dataset(
+            "pitch_type", data=np.array([self.OUTPUT_PITCH.value]), compression="gzip"
+        )
 
     def get_output(self, batch):
         notes = batch["inputs"].float()

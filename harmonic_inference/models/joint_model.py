@@ -19,6 +19,7 @@ import harmonic_inference.models.chord_classifier_models as ccm
 import harmonic_inference.models.chord_sequence_models as csm
 import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.initial_chord_models as icm
+import harmonic_inference.models.key_post_processor_models as kppm
 import harmonic_inference.models.key_sequence_models as ksm
 import harmonic_inference.models.key_transition_models as ktm
 import harmonic_inference.utils.harmonic_constants as hc
@@ -29,11 +30,12 @@ from harmonic_inference.data.piece import Piece, get_range_start
 from harmonic_inference.utils.beam_search_utils import Beam, HashedBeam, State
 
 MODEL_CLASSES = {
-    "ccm": [ccm.SimpleChordClassifier],
+    "ccm": [ccm.SimpleChordClassifier, ccm.MultiTargetChordClassifier],
     "ctm": [ctm.SimpleChordTransitionModel],
     "csm": [csm.SimpleChordSequenceModel],
     "ktm": [ktm.SimpleKeyTransitionModel],
     "ksm": [ksm.SimpleKeySequenceModel],
+    "kppm": [kppm.SimpleKeyPostProcessorModel],
     "icm": [icm.SimpleInitialChordModel],
 }
 
@@ -212,6 +214,7 @@ class HarmonicInferenceModel:
                 'ktm': A KeyTransitionModel
                 'ksm': A KeySequenceModel
                 'icm': An InitialChordModel
+                'kppm': A KeyPostProcessorModel
         min_chord_change_prob : float
             The minimum probability (from the CTM) on which a chord change can occur.
         max_no_chord_change_prob : float
@@ -259,13 +262,14 @@ class HarmonicInferenceModel:
         self.chord_transition_model: ctm.ChordTransitionModel = models["ctm"]
         self.key_sequence_model: ksm.KeySequenceModel = models["ksm"]
         self.key_transition_model: ktm.KeyTransitionModel = models["ktm"]
+        self.key_post_processor_model: kppm.SimpleKeyPostProcessorModel = models["kppm"]
         self.initial_chord_model: icm.SimpleInitialChordModel = models["icm"]
         self.check_input_output_types()
 
         # Set joint model types
         self.INPUT_TYPE = self.chord_classifier.INPUT_TYPE
         self.CHORD_OUTPUT_TYPE = self.chord_sequence_model.OUTPUT_PITCH_TYPE
-        self.KEY_OUTPUT_TYPE = self.key_sequence_model.OUTPUT_PITCH_TYPE
+        self.KEY_OUTPUT_TYPE = self.key_post_processor_model.OUTPUT_PITCH
 
         # Load labels
         self.LABELS = {
@@ -319,6 +323,7 @@ class HarmonicInferenceModel:
         self.duration_cache = None
         self.onset_cache = None
         self.onset_level_cache = None
+        self.beat_duration_cache = None
 
     def check_input_output_types(self):
         """
@@ -336,6 +341,9 @@ class HarmonicInferenceModel:
         assert (
             self.chord_classifier.OUTPUT_PITCH == self.chord_sequence_model.INPUT_CHORD_PITCH_TYPE
         ), "CCM output pitch type does not match CSM chord pitch type"
+        assert (
+            self.chord_classifier.OUTPUT_PITCH == self.key_post_processor_model.INPUT_PITCH
+        ), "CCM output pitch type does not match KPPM input pitch type"
 
         # Output from CSM
         assert (
@@ -570,6 +578,9 @@ class HarmonicInferenceModel:
         self.onset_level_cache = [vec.onset_level for vec in piece.get_inputs()] + [
             piece.get_inputs()[-1].offset_level
         ]
+        self.beat_duration_cache = [vec.beat_duration for vec in piece.get_inputs()] + [
+            piece.get_inputs()[-1].beat_duration
+        ]
 
         # Validate forced changes
         self.forced_chord_changes = set() if forced_chord_changes is None else forced_chord_changes
@@ -623,6 +634,9 @@ class HarmonicInferenceModel:
         state = self.beam_search(
             chord_ranges, range_log_probs, rejoin_log_probs, chord_classifications
         )
+
+        # KPPM Post-processing for key labels
+        self.post_process(state)
 
         self.current_piece = None
 
@@ -1085,11 +1099,11 @@ class HarmonicInferenceModel:
             # Add CSM prior and add to beam (CSM is run at the start of each iteration)
             for state in to_csm_prior_states:
                 state.add_csm_prior(
-                    isinstance(self.chord_sequence_model, csm.PitchBasedChordSequenceModel),
                     self.CHORD_OUTPUT_TYPE,
                     self.duration_cache,
                     self.onset_cache,
                     self.onset_level_cache,
+                    self.beat_duration_cache,
                     self.LABELS,
                     self.chord_sequence_model.use_output_inversions,
                     self.chord_sequence_model.output_reduction,
@@ -1137,6 +1151,7 @@ class HarmonicInferenceModel:
                 self.duration_cache,
                 self.onset_cache,
                 self.onset_level_cache,
+                self.beat_duration_cache,
                 self.LABELS,
             )
 
@@ -1210,6 +1225,7 @@ class HarmonicInferenceModel:
                 self.duration_cache,
                 self.onset_cache,
                 self.onset_level_cache,
+                self.beat_duration_cache,
                 self.LABELS,
             )
 
@@ -1344,6 +1360,7 @@ class HarmonicInferenceModel:
                 self.duration_cache,
                 self.onset_cache,
                 self.onset_level_cache,
+                self.beat_duration_cache,
                 self.LABELS,
             )
 
@@ -1375,6 +1392,40 @@ class HarmonicInferenceModel:
         for state, log_prior, hidden, cell in zip(states, priors, hidden_states, cell_states):
             state.csm_log_prior = log_prior.numpy()[0]
             state.csm_hidden_state = (hidden, cell)
+
+    def post_process(self, state: State) -> None:
+        """
+        Run the KPPM post-processing step, and update the state in place with its outputs.
+
+        Parameters
+        ----------
+        state : State
+            The most likely state as output by the beam search.
+        """
+        piece = state.get_score_piece(
+            self.current_piece,
+            self.CHORD_OUTPUT_TYPE,
+            self.KEY_OUTPUT_TYPE,
+            self.duration_cache,
+            self.onset_cache,
+            self.onset_level_cache,
+            self.beat_duration_cache,
+            self.LABELS,
+        )
+
+        kwargs = self.key_post_processor_model.get_dataset_kwargs()
+        if "transposition_range" in kwargs:
+            del kwargs["transposition_range"]
+
+        dataset = ds.KeyPostProcessorDataset([piece], transform=torch.tensor, **kwargs)
+        outputs = self.key_post_processor_model.get_output(dataset[0])[0].numpy()
+
+        keys = outputs.argmax(axis=1)
+
+        current_state = state
+        for key in reversed(keys):
+            current_state.key = key
+            current_state = current_state.prev_state
 
 
 class DebugLogger:

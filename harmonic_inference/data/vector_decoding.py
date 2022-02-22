@@ -4,7 +4,11 @@ from typing import Dict, List, Tuple, Union
 
 import numpy as np
 
-from harmonic_inference.data.chord import Chord, get_chord_vector_length
+from harmonic_inference.data.chord import (
+    CHORD_VECTOR_NO_PITCHES_LENGTH,
+    Chord,
+    get_chord_vector_length,
+)
 from harmonic_inference.data.data_types import ChordType, KeyMode, PitchType
 from harmonic_inference.data.key import Key, get_key_change_vector_length
 from harmonic_inference.data.note import Note, get_note_vector_length
@@ -204,7 +208,9 @@ def decode_chord_vector(
     )
 
 
-def infer_chord_vector_pitch_type(vector_length: int, pad: bool) -> PitchType:
+def infer_chord_vector_pitch_type(
+    vector_length: int, pad: bool, relative: bool = True
+) -> PitchType:
     """
     Infer the pitch type used in a chord vector of the given length with the given padding.
 
@@ -214,6 +220,8 @@ def infer_chord_vector_pitch_type(vector_length: int, pad: bool) -> PitchType:
         The length of a chord vector.
     pad : bool
         Whether padding is used in the chord vector.
+    relative : bool
+        True if the vector is a relative chord vector. False for absolute.
 
     Returns
     -------
@@ -226,7 +234,9 @@ def infer_chord_vector_pitch_type(vector_length: int, pad: bool) -> PitchType:
         If no known PitchType results in the given vector length.
     """
     for pitch_type in PitchType:
-        if vector_length == get_chord_vector_length(pitch_type, one_hot=False, pad=pad):
+        if vector_length == get_chord_vector_length(
+            pitch_type, one_hot=False, relative=relative, pad=pad
+        ):
             return pitch_type
 
     raise ValueError(f"Could not find valid pitch type for vector length {vector_length}.")
@@ -526,6 +536,125 @@ def decode_chord_and_key_change_vector(
     return chord, key
 
 
+def transpose_chord_vector(
+    chord_vector: List[float],
+    interval: int,
+) -> List[float]:
+    """
+    Transpose the given chord vector by some amount. This will transpose both the root
+    pitch and the bass pitch.
+
+    Parameters
+    ----------
+    chord_vector : List[float]
+        The chord vector to transpose.
+    interval : int
+        The amount by which to transpose the vector's bass and root pitches.
+
+    Returns
+    -------
+    new_vector : List[float]
+        A copy of the input vector with its root and bass pitches transposed by the
+        given amount.
+    """
+    num_pitches = (len(chord_vector) - CHORD_VECTOR_NO_PITCHES_LENGTH) // 2
+
+    root_index = 0
+    bass_index = num_pitches + len(ChordType)
+
+    new_vector = copy(chord_vector)
+
+    new_vector[root_index : root_index + num_pitches] = 0
+    new_vector[bass_index : bass_index + num_pitches] = 0
+
+    old_root = np.arange(num_pitches)[
+        np.where(chord_vector[root_index : root_index + num_pitches] == 1)[0][0]
+    ]
+    old_bass = np.arange(num_pitches)[
+        np.where(chord_vector[bass_index : bass_index + num_pitches] == 1)[0][0]
+    ]
+
+    new_root = old_root + interval
+    new_bass = old_bass + interval
+
+    if num_pitches == NUM_PITCHES[PitchType.MIDI]:
+        new_root %= num_pitches
+        new_bass %= num_pitches
+
+    if (not (0 <= new_root < num_pitches)) or (not (0 <= new_bass < num_pitches)):
+        raise ValueError(
+            f"Transposed root or bass of chord {decode_chord_vector(chord_vector)} + {interval}"
+            f" outside of valid range (0 - {num_pitches}"
+        )
+
+    new_vector[root_index + new_root] = 1
+    new_vector[bass_index + new_bass] = 1
+
+    return new_vector
+
+
+def update_chord_vector_info(
+    vector: List[float],
+    pitch_type: PitchType = None,
+    root_pitch: int = None,
+    bass_pitch: int = None,
+    chord_type: ChordType = None,
+    inversion: int = None,
+) -> List[float]:
+    """
+    Return an updated version of a chord vector with any of root_pitch, bass_pitch,
+    chord_type, and inversion changed to new values. The vector should be an absolute
+    vector without padding.
+
+    Parameters
+    ----------
+    vector : List[float]
+        A chord vector. This will not be changed, but an updated copy will be returned.
+        This vector should be absolute, with no padding.
+    pitch_type : PitchType
+        If known and given, this will speed up computation, but it can be inferred
+        from the vector's length otherwise.
+    root_pitch : int
+        If given, the updated vector's root pitch will be set to this value.
+    bass_pitch : int
+        If given, the updated vector's bass pitch will be set to this value.
+    chord_type : ChordType
+        If given, the updated vector's chord type will be set to this value.
+    inversion : int
+        If given, the updated vector's inversion will be set to this value.
+
+    Returns
+    -------
+    updated_vector : List[float]
+        A copy of the given vector, updated with the given values.
+    """
+    updated_vector = np.copy(vector)
+
+    if pitch_type is None:
+        pitch_type = infer_chord_vector_pitch_type(len(vector), False, relative=False)
+
+    if root_pitch is not None:
+        updated_vector[: NUM_PITCHES[pitch_type]] = 0
+        updated_vector[root_pitch] = 1
+
+    if chord_type is not None:
+        idx = NUM_PITCHES[pitch_type]
+        updated_vector[idx : idx + len(ChordType)] = 0
+        updated_vector[idx + chord_type.value] = 1
+
+    if bass_pitch is not None:
+        idx = NUM_PITCHES[pitch_type] + len(ChordType)
+        updated_vector[idx : idx + NUM_PITCHES[pitch_type]] = 0
+        updated_vector[idx + bass_pitch] = 1
+
+    if inversion is not None:
+        idx = 2 * NUM_PITCHES[pitch_type] + len(ChordType)
+        updated_vector[idx : idx + 4] = 0
+        updated_vector[idx + inversion] = 1
+
+    return updated_vector
+
+
 def transpose_note_vector(
     note_vector: List[float],
     interval: int,
@@ -564,6 +693,8 @@ def transpose_note_vector(
 
     old_pitch = np.arange(NUM_PITCHES[pitch_type])[np.where(note_vector == 1)[0][0]]
     new_pitch = old_pitch + interval
+    if pitch_type == PitchType.MIDI:
+        new_pitch %= NUM_PITCHES[PitchType.MIDI]
 
     if not (0 <= old_pitch < NUM_PITCHES[pitch_type]):
         raise ValueError(
