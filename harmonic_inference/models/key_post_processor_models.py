@@ -153,18 +153,26 @@ class KeyPostProcessorModel(pl.LightningModule, ABC):
             self.load_scheduled_sampling_inputs(batch)
 
         inputs = batch["inputs"].float()
-        input_lengths = batch["input_lengths"].long()
+        input_lengths = (
+            batch["input_lengths"].long()
+            if isinstance(batch["input_lengths"], torch.Tensor)
+            else torch.tensor([batch["input_lengths"]], dtype=torch.long)
+        )
+        targets = batch["targets"].long() if "targets" in batch else None
+
+        if len(inputs.shape) == 2:
+            inputs = torch.unsqueeze(inputs, dim=0)
+
+            if targets is not None:
+                targets = torch.unsqueeze(targets, dim=0)
 
         longest = max(input_lengths)
         inputs = inputs[:, :longest]
-
-        targets = None
-        if "targets" in batch:
-            targets = batch["targets"].long()
+        if targets is not None:
             targets = targets[:, :longest]
 
-            for i, length in enumerate(input_lengths):
-                targets[i, length:] = -100
+        for i, length in enumerate(input_lengths):
+            targets[i, length:] = -100
 
         return inputs, input_lengths, targets
 

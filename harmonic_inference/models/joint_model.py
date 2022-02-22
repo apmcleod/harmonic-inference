@@ -636,7 +636,7 @@ class HarmonicInferenceModel:
         )
 
         # KPPM Post-processing for key labels
-        state = self.post_process(state)
+        self.post_process(state)
 
         self.current_piece = None
 
@@ -1393,20 +1393,14 @@ class HarmonicInferenceModel:
             state.csm_log_prior = log_prior.numpy()[0]
             state.csm_hidden_state = (hidden, cell)
 
-    def post_process(self, state: State) -> State:
+    def post_process(self, state: State) -> None:
         """
-        Run the KPPM post-processing step, and return an updated state with the
-        new key labels.
+        Run the KPPM post-processing step, and update the state in place with its outputs.
 
         Parameters
         ----------
         state : State
             The most likely state as output by the beam search.
-
-        Returns
-        -------
-        State
-            The given state, altered such that the keys match the KPPM's outputs.
         """
         piece = state.get_score_piece(
             self.current_piece,
@@ -1423,10 +1417,15 @@ class HarmonicInferenceModel:
         if "transposition_range" in kwargs:
             del kwargs["transposition_range"]
 
-        dataset = ds.KeyPostProcessorDataset([piece], **kwargs)
-        _ = self.key_post_processor_model.get_output(dataset[0]).numpy()
+        dataset = ds.KeyPostProcessorDataset([piece], transform=torch.tensor, **kwargs)
+        outputs = self.key_post_processor_model.get_output(dataset[0])[0].numpy()
 
-        # TODO: Process outputs
+        keys = outputs.argmax(axis=1)
+
+        current_state = state
+        for key in reversed(keys):
+            current_state.key = key
+            current_state = current_state.prev_state
 
 
 class DebugLogger:
