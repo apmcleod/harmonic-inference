@@ -14,12 +14,7 @@ from tqdm import tqdm
 
 import harmonic_inference.utils.eval_utils as eu
 from annotate import set_default_args
-from harmonic_inference.data.data_types import (
-    ALL_ONE_TYPE_REDUCTION,
-    NO_REDUCTION,
-    TRIAD_REDUCTION,
-    PitchType,
-)
+from harmonic_inference.data.data_types import PitchType
 from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import (
     MODEL_CLASSES,
@@ -230,79 +225,14 @@ def evaluate(
             logging.info("Returned None")
             continue
 
-        if piece.get_chords() is None:
-            logging.info("Cannot compute accuracy. Ground truth unknown.")
-        else:
-            chord_acc_full = eu.evaluate_chords(
-                piece,
-                state,
-                model.CHORD_OUTPUT_TYPE,
-                use_inversion=True,
-                reduction=NO_REDUCTION,
-            )
-            chord_acc_no_inv = eu.evaluate_chords(
-                piece,
-                state,
-                model.CHORD_OUTPUT_TYPE,
-                use_inversion=False,
-                reduction=NO_REDUCTION,
-            )
-            chord_acc_triad = eu.evaluate_chords(
-                piece,
-                state,
-                model.CHORD_OUTPUT_TYPE,
-                use_inversion=True,
-                reduction=TRIAD_REDUCTION,
-            )
-            chord_acc_triad_no_inv = eu.evaluate_chords(
-                piece,
-                state,
-                model.CHORD_OUTPUT_TYPE,
-                use_inversion=False,
-                reduction=TRIAD_REDUCTION,
-            )
-            chord_acc_root_only = eu.evaluate_chords(
-                piece,
-                state,
-                model.CHORD_OUTPUT_TYPE,
-                use_inversion=False,
-                reduction=ALL_ONE_TYPE_REDUCTION,
-            )
-
-            logging.info("Chord accuracy = %s", chord_acc_full)
-            logging.info("Chord accuracy, no inversions = %s", chord_acc_no_inv)
-            logging.info("Chord accuracy, triads = %s", chord_acc_triad)
-            logging.info("Chord accuracy, triad, no inversions = %s", chord_acc_triad_no_inv)
-            logging.info("Chord accuracy, root only = %s", chord_acc_root_only)
-
-            key_acc_full = eu.evaluate_keys(piece, state, model.KEY_OUTPUT_TYPE, tonic_only=False)
-            key_acc_tonic = eu.evaluate_keys(piece, state, model.KEY_OUTPUT_TYPE, tonic_only=True)
-
-            logging.info("Key accuracy = %s", key_acc_full)
-            logging.info("Key accuracy, tonic only = %s", key_acc_tonic)
-
-            full_acc = eu.evaluate_chords_and_keys_jointly(
-                piece,
-                state,
-                root_type=model.CHORD_OUTPUT_TYPE,
-                tonic_type=model.KEY_OUTPUT_TYPE,
-                use_inversion=True,
-                chord_reduction=NO_REDUCTION,
-                tonic_only=False,
-            )
-            logging.info("Full accuracy = %s", full_acc)
-
-        if logging.getLogger().isEnabledFor(logging.DEBUG):
-            eu.log_state(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)
-
-        labels_df = eu.get_label_df(
+        # Create results dfs
+        results_annotation_df = eu.get_results_annotation_df(
             state,
             piece,
             model.CHORD_OUTPUT_TYPE,
             model.KEY_OUTPUT_TYPE,
         )
 
-        # Write outputs tsv
         results_df = eu.get_results_df(
             piece,
             state,
@@ -312,7 +242,6 @@ def evaluate(
             PitchType.TPC,
         )
 
-        # Write MIDI outputs for SPS chord-eval testing
         results_midi_df = eu.get_results_df(
             piece,
             state,
@@ -321,6 +250,34 @@ def evaluate(
             PitchType.MIDI,
             PitchType.MIDI,
         )
+
+        # Perform evaluations
+        if piece.get_chords() is None:
+            logging.info("Cannot compute accuracy. Ground truth unknown.")
+        else:
+            chord_acc_full = eu.evaluate_features(results_df, ["chord"])
+            chord_acc_no_inv = eu.evaluate_features(results_df, ["chord_type", "root"])
+            chord_acc_triad = eu.evaluate_features(results_df, ["triad", "root", "inversion"])
+            chord_acc_triad_no_inv = eu.evaluate_features(results_df, ["triad", "root"])
+            chord_acc_root_only = eu.evaluate_features(results_df, ["root"])
+
+            logging.info("Chord accuracy = %s", chord_acc_full)
+            logging.info("Chord accuracy, no inversions = %s", chord_acc_no_inv)
+            logging.info("Chord accuracy, triads = %s", chord_acc_triad)
+            logging.info("Chord accuracy, triad, no inversions = %s", chord_acc_triad_no_inv)
+            logging.info("Chord accuracy, root only = %s", chord_acc_root_only)
+
+            key_acc_full = eu.evaluate_features(results_df, ["key"])
+            key_acc_tonic = eu.evaluate_features(results_df, ["tonic"])
+
+            logging.info("Key accuracy = %s", key_acc_full)
+            logging.info("Key accuracy, tonic only = %s", key_acc_tonic)
+
+            full_acc = eu.evaluate_features(results_df, ["chord", "key"])
+            logging.info("Full accuracy = %s", full_acc)
+
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            eu.log_state(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)
 
         if piece.name is not None and output_tsv_dir is not None:
             piece_name = Path(piece.name.split(" ")[-1])
@@ -350,14 +307,14 @@ def evaluate(
 
             try:
                 output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
-                labels_df.to_csv(output_tsv_path, sep="\t")
-                logging.info("Labels TSV written out to %s", output_tsv_path)
+                results_annotation_df.to_csv(output_tsv_path, sep="\t")
+                logging.info("Results annotation TSV written out to %s", output_tsv_path)
             except Exception:
                 logging.exception("Error writing to csv %s", output_tsv_path)
-                logging.debug(labels_df)
+                logging.debug(results_annotation_df)
 
         else:
-            logging.debug(labels_df)
+            logging.debug(results_annotation_df)
 
 
 if __name__ == "__main__":

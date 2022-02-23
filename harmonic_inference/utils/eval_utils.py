@@ -3,7 +3,7 @@ import logging
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -12,15 +12,42 @@ from ms3 import Parse
 import harmonic_inference.utils.harmonic_constants as hc
 import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.data.chord import Chord
-from harmonic_inference.data.data_types import (
-    NO_REDUCTION,
-    TRIAD_REDUCTION,
-    ChordType,
-    KeyMode,
-    PitchType,
-)
+from harmonic_inference.data.data_types import TRIAD_REDUCTION, PitchType
 from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import State
+
+
+def evaluate_features(results_df: pd.DataFrame, features: List[str]) -> float:
+    """
+    Evaluate a given list of features from a results_df.
+
+    Parameters
+    ----------
+    results_df : pd.DataFrame
+        A df containing the results of a harmonic inference procedure, returned by
+        get_results_df.
+    features : List[str]
+        A list of the features to check. This will check if est_`feature` == gt_`feature`
+        for all features in this list. Legal features are:
+            - key
+            - tonic
+            - mode
+            - chord
+            - root
+            - chord_type
+            - triad
+            - inversion
+
+    Returns
+    -------
+    accuracy : float
+        A weighted average of the given features in the results_df, weighted by duration.
+    """
+    correct_mask = np.full(len(results_df), True)
+    for feature in features:
+        correct_mask &= results_df[f"gt_{feature}"] == results_df[f"est_{feature}"]
+
+    return float(np.average(correct_mask, weights=results_df["duration"]))
 
 
 def get_results_df(
@@ -52,22 +79,40 @@ def get_results_df(
     """
     labels_list = []
 
+    # GT chords
     gt_chords = piece.get_chords()
     gt_changes = piece.get_chord_change_indices()
     gt_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    gt_chord_roots = np.zeros(len(piece.get_inputs()), dtype=int)
+    gt_chord_types = np.zeros(len(piece.get_inputs()), dtype=object)
+    gt_chord_triads = np.zeros(len(piece.get_inputs()), dtype=object)
+    gt_chord_inversions = np.zeros(len(piece.get_inputs()), dtype=int)
     for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
         chord = chord.to_pitch_type(chord_root_type)
         gt_chord_labels[start:end] = chord.get_one_hot_index(
             relative=False, use_inversion=True, pad=False
         )
-    gt_chord_labels[gt_changes[-1] :] = (
-        gt_chords[-1]
-        .to_pitch_type(chord_root_type)
-        .get_one_hot_index(relative=False, use_inversion=True, pad=False)
-    )
+        gt_chord_roots[start:end] = chord.root
+        gt_chord_types[start:end] = chord.chord_type
+        gt_chord_triads[start:end] = TRIAD_REDUCTION[chord.chord_type]
+        gt_chord_inversions[start:end] = chord.inversion
 
+    last_chord = gt_chords[-1].to_pitch_type(chord_root_type)
+    gt_chord_labels[gt_changes[-1] :] = last_chord.get_one_hot_index(
+        relative=False, use_inversion=True, pad=False
+    )
+    gt_chord_roots[gt_changes[-1] :] = last_chord.root
+    gt_chord_types[gt_changes[-1] :] = last_chord.chord_type
+    gt_chord_triads[gt_changes[-1] :] = TRIAD_REDUCTION[last_chord.chord_type]
+    gt_chord_inversions[gt_changes[-1] :] = last_chord.inversion
+
+    # Est chords
     chords, changes = state.get_chords()
     estimated_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    estimated_chord_roots = np.zeros(len(piece.get_inputs()), dtype=int)
+    estimated_chord_types = np.zeros(len(piece.get_inputs()), dtype=object)
+    estimated_chord_triads = np.zeros(len(piece.get_inputs()), dtype=object)
+    estimated_chord_inversions = np.zeros(len(piece.get_inputs()), dtype=int)
     for chord, start, end in zip(chords, changes[:-1], changes[1:]):
         root, chord_type, inv = hu.get_chord_from_one_hot_index(chord, output_root_type)
         root = hu.get_pitch_from_string(
@@ -75,17 +120,32 @@ def get_results_df(
         )
         chord = hu.get_chord_one_hot_index(chord_type, root, chord_root_type, inversion=inv)
         estimated_chord_labels[start:end] = chord
+        estimated_chord_roots[start:end] = root
+        estimated_chord_types[start:end] = chord_type
+        estimated_chord_triads[start:end] = TRIAD_REDUCTION[chord_type]
+        estimated_chord_inversions[start:end] = inv
 
+    # GT keys
     gt_keys = piece.get_keys()
     gt_changes = piece.get_key_change_input_indices()
     gt_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    gt_key_tonics = np.zeros(len(piece.get_inputs()), dtype=int)
+    gt_key_modes = np.zeros(len(piece.get_inputs()), dtype=object)
     for key, start, end in zip(gt_keys, gt_changes, gt_changes[1:]):
         key = key.to_pitch_type(key_tonic_type)
         gt_key_labels[start:end] = key.get_one_hot_index()
-    gt_key_labels[gt_changes[-1] :] = gt_keys[-1].to_pitch_type(key_tonic_type).get_one_hot_index()
+        gt_key_tonics[start:end] = key.relative_tonic
+        gt_key_modes[start:end] = key.relative_mode
+    last_key = gt_keys[-1].to_pitch_type(key_tonic_type)
+    gt_key_labels[gt_changes[-1] :] = last_key.get_one_hot_index()
+    gt_key_tonics[gt_changes[-1] :] = last_key.relative_tonic
+    gt_key_modes[gt_changes[-1] :] = last_key.relative_mode
 
+    # Est keys
     keys, changes = state.get_keys()
     estimated_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    estimated_key_tonics = np.zeros(len(piece.get_inputs()), dtype=int)
+    estimated_key_modes = np.zeros(len(piece.get_inputs()), dtype=object)
     for key, start, end in zip(keys, changes[:-1], changes[1:]):
         tonic, mode = hu.get_key_from_one_hot_index(key, output_tonic_type)
         tonic = hu.get_pitch_from_string(
@@ -93,16 +153,48 @@ def get_results_df(
         )
         key = hu.get_key_one_hot_index(mode, tonic, key_tonic_type)
         estimated_key_labels[start:end] = key
+        estimated_key_tonics[start:end] = tonic
+        estimated_key_modes[start:end] = mode
 
     chord_label_list = hu.get_chord_label_list(chord_root_type, use_inversions=True)
     key_label_list = hu.get_key_label_list(key_tonic_type)
 
-    for duration, est_chord_label, gt_chord_label, est_key_label, gt_key_label in zip(
+    for (
+        duration,
+        est_chord_label,
+        gt_chord_label,
+        est_key_label,
+        gt_key_label,
+        gt_tonic,
+        gt_mode,
+        gt_root,
+        gt_chord_type,
+        gt_triad,
+        gt_inversion,
+        est_tonic,
+        est_mode,
+        est_root,
+        est_chord_type,
+        est_triad,
+        est_inversion,
+    ) in zip(
         piece.get_duration_cache(),
         estimated_chord_labels,
         gt_chord_labels,
         estimated_key_labels,
         gt_key_labels,
+        gt_key_tonics,
+        gt_key_modes,
+        gt_chord_roots,
+        gt_chord_types,
+        gt_chord_triads,
+        gt_chord_inversions,
+        estimated_key_tonics,
+        estimated_key_modes,
+        estimated_chord_roots,
+        estimated_chord_types,
+        estimated_chord_triads,
+        estimated_chord_inversions,
     ):
         if duration == 0:
             continue
@@ -110,9 +202,21 @@ def get_results_df(
         labels_list.append(
             {
                 "gt_key": key_label_list[gt_key_label],
+                "gt_tonic": gt_tonic,
+                "gt_mode": gt_mode,
                 "gt_chord": chord_label_list[gt_chord_label],
+                "gt_root": gt_root,
+                "gt_chord_type": gt_chord_type,
+                "gt_triad": gt_triad,
+                "gt_inversion": gt_inversion,
                 "est_key": key_label_list[est_key_label],
+                "est_tonic": est_tonic,
+                "est_mode": est_mode,
                 "est_chord": chord_label_list[est_chord_label],
+                "est_root": est_root,
+                "est_chord_type": est_chord_type,
+                "est_triad": est_triad,
+                "est_inversion": est_inversion,
                 "duration": duration,
             }
         )
@@ -295,339 +399,6 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
     return pd.DataFrame(labels_list)
 
 
-def evaluate_chords(
-    piece: Piece,
-    state: State,
-    pitch_type: PitchType,
-    use_inversion: bool = True,
-    reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
-) -> float:
-    """
-    Evaluate the piece's estimated chords.
-
-    Parameters
-    ----------
-    piece : Piece
-        The piece, containing the ground truth harmonic structure.
-    state : State
-        The state, containing the estimated harmonic structure.
-    pitch_type : PitchType
-        The pitch type used for chord roots.
-    use_inversion : bool
-        True to use inversion when checking the chord type. False to ignore inversion.
-    reduction : Dict[ChordType, ChordType]
-        A reduction to reduce chord types to another type.
-
-    Returns
-    -------
-    accuracy : float
-        The average accuracy of the state's chord estimates for the full duration of
-        the piece.
-    """
-    gt_chords = piece.get_chords()
-    gt_changes = piece.get_chord_change_indices()
-    gt_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
-        gt_labels[start:end] = chord.get_one_hot_index(
-            relative=False, use_inversion=True, pad=False
-        )
-    gt_labels[gt_changes[-1] :] = gt_chords[-1].get_one_hot_index(
-        relative=False, use_inversion=True, pad=False
-    )
-
-    chords, changes = state.get_chords()
-    estimated_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    for chord, start, end in zip(chords, changes[:-1], changes[1:]):
-        estimated_labels[start:end] = chord
-
-    accuracy = 0.0
-    for duration, est_label, gt_label in zip(
-        piece.get_duration_cache(),
-        estimated_labels,
-        gt_labels,
-    ):
-        if duration == 0:
-            continue
-
-        gt_root, gt_chord_type, gt_inversion = hu.get_chord_from_one_hot_index(
-            gt_label, pitch_type, use_inversions=True
-        )
-
-        est_root, est_chord_type, est_inversion = hu.get_chord_from_one_hot_index(
-            est_label, pitch_type, use_inversions=True
-        )
-
-        distance = get_chord_distance(
-            gt_root,
-            gt_chord_type,
-            gt_inversion,
-            est_root,
-            est_chord_type,
-            est_inversion,
-            use_inversion=use_inversion,
-            reduction=reduction,
-        )
-        accuracy += (1.0 - distance) * duration
-
-    return accuracy / np.sum(piece.get_duration_cache())
-
-
-def get_chord_distance(
-    gt_root: int,
-    gt_chord_type: ChordType,
-    gt_inversion: int,
-    est_root: int,
-    est_chord_type: ChordType,
-    est_inversion: int,
-    use_inversion: bool = True,
-    reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
-) -> float:
-    """
-    Get the distance from a ground truth chord to an estimated chord.
-
-    Parameters
-    ----------
-    gt_root : int
-        The root pitch of the ground truth chord.
-    gt_chord_type : ChordType
-        The chord type of the ground truth chord.
-    gt_inversion : int
-        The inversion of the ground truth chord.
-    est_root : int
-        The root pitch of the estimated chord.
-    est_chord_type : ChordType
-        The chord type of the estimated chord.
-    est_inversion : int
-        The inversion of the estimated chord.
-    use_inversion : bool
-        True to use inversion when checking the chord type. False to ignore inversion.
-    reduction : Dict[ChordType, ChordType]
-        A reduction to reduce chord types to another type.
-
-    Returns
-    -------
-    distance : float
-        A distance between 0 (completely correct), and 1 (completely incorrect).
-    """
-    gt_chord_type = reduction[gt_chord_type]
-    est_chord_type = reduction[est_chord_type]
-
-    if not use_inversion:
-        gt_inversion = 0
-        est_inversion = 0
-
-    if gt_root == est_root and gt_chord_type == est_chord_type and gt_inversion == est_inversion:
-        return 0.0
-
-    return 1.0
-
-
-def evaluate_keys(
-    piece: Piece,
-    state: State,
-    pitch_type: PitchType,
-    tonic_only: bool = False,
-) -> float:
-    """
-    Evaluate the piece's estimated keys.
-
-    Parameters
-    ----------
-    piece : Piece
-        The piece, containing the ground truth harmonic structure.
-    state : State
-        The state, containing the estimated harmonic structure.
-    pitch_type : PitchType
-        The pitch type used for key tonics.
-    tonic_only : bool
-        True to only evaluate the tonic pitch. False to also take mode into account.
-
-    Returns
-    -------
-    accuracy : float
-        The average accuracy of the state's key estimates for the full duration of
-        the piece.
-    """
-    gt_keys = piece.get_keys()
-    gt_changes = piece.get_key_change_input_indices()
-    gt_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    for key, start, end in zip(gt_keys, gt_changes, gt_changes[1:]):
-        gt_labels[start:end] = key.get_one_hot_index()
-    gt_labels[gt_changes[-1] :] = gt_keys[-1].get_one_hot_index()
-
-    keys, changes = state.get_keys()
-    estimated_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    for key, start, end in zip(keys, changes[:-1], changes[1:]):
-        estimated_labels[start:end] = key
-
-    accuracy = 0.0
-    for duration, est_label, gt_label in zip(
-        piece.get_duration_cache(),
-        estimated_labels,
-        gt_labels,
-    ):
-        if duration == 0:
-            continue
-
-        gt_tonic, gt_mode = hu.get_key_from_one_hot_index(int(gt_label), pitch_type)
-        est_tonic, est_mode = hu.get_key_from_one_hot_index(int(est_label), pitch_type)
-
-        distance = get_key_distance(
-            gt_tonic,
-            gt_mode,
-            est_tonic,
-            est_mode,
-            tonic_only=tonic_only,
-        )
-        accuracy += (1.0 - distance) * duration
-
-    return accuracy / np.sum(piece.get_duration_cache())
-
-
-def get_key_distance(
-    gt_tonic: int,
-    gt_mode: KeyMode,
-    est_tonic: int,
-    est_mode: KeyMode,
-    tonic_only: bool = False,
-) -> float:
-    """
-    Get the distance from one key to another.
-
-    Parameters
-    ----------
-    gt_tonic : int
-        The tonic pitch of the ground truth key.
-    gt_mode : KeyMode
-        The mode of the ground truth key.
-    est_tonic : int
-        The tonic pitch of the estimated key.
-    est_mode : KeyMode
-        The mode of the estimated key.
-    tonic_only : bool
-        True to only evaluate the tonic pitch. False to also take mode into account.
-
-    Returns
-    -------
-    distance : float
-        The distance between the estimated and ground truth keys.
-    """
-    if tonic_only:
-        return 0.0 if gt_tonic == est_tonic else 1.0
-
-    return 0.0 if gt_tonic == est_tonic and gt_mode == est_mode else 1.0
-
-
-def evaluate_chords_and_keys_jointly(
-    piece: Piece,
-    state: State,
-    root_type: PitchType,
-    tonic_type: PitchType,
-    use_inversion: bool = True,
-    chord_reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
-    tonic_only: bool = False,
-) -> float:
-    """
-    Evaluate the state's combined chords and keys.
-
-    Parameters
-    ----------
-    piece : Piece
-        The piece, containing the ground truth harmonic structure.
-    state : State
-        The state, containing the estimated harmonic structure.
-    root_type : PitchType
-        The pitch type used for chord roots.
-    tonic_type : PitchType
-        The pitch type used for key tonics.
-    use_inversion : bool
-        True to use inversion when checking the chord type. False to ignore inversion.
-    chord_reduction : Dict[ChordType, ChordType]
-        A reduction to reduce chord types to another type.
-    tonic_only : bool
-        True to only evaluate the key's tonic pitch. False to also take mode into account.
-
-    Returns
-    -------
-    accuracy : float
-        The average accuracy of the state's joint chord and key estimates for the full
-        duration of the piece.
-    """
-    gt_chords = piece.get_chords()
-    gt_changes = piece.get_chord_change_indices()
-    gt_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
-        gt_chord_labels[start:end] = chord.get_one_hot_index(
-            relative=False, use_inversion=True, pad=False
-        )
-    gt_chord_labels[gt_changes[-1] :] = gt_chords[-1].get_one_hot_index(
-        relative=False, use_inversion=True, pad=False
-    )
-
-    chords, changes = state.get_chords()
-    estimated_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    for chord, start, end in zip(chords, changes[:-1], changes[1:]):
-        estimated_chord_labels[start:end] = chord
-
-    gt_keys = piece.get_keys()
-    gt_changes = piece.get_key_change_input_indices()
-    gt_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    for key, start, end in zip(gt_keys, gt_changes, gt_changes[1:]):
-        gt_key_labels[start:end] = key.get_one_hot_index()
-    gt_key_labels[gt_changes[-1] :] = gt_keys[-1].get_one_hot_index()
-
-    keys, changes = state.get_keys()
-    estimated_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    for key, start, end in zip(keys, changes[:-1], changes[1:]):
-        estimated_key_labels[start:end] = key
-
-    accuracy = 0.0
-    for duration, est_chord_label, gt_chord_label, est_key_label, gt_key_label in zip(
-        piece.get_duration_cache(),
-        estimated_chord_labels,
-        gt_chord_labels,
-        estimated_key_labels,
-        gt_key_labels,
-    ):
-        if duration == 0:
-            continue
-
-        gt_root, gt_chord_type, gt_inversion = hu.get_chord_from_one_hot_index(
-            gt_chord_label, root_type, use_inversions=True
-        )
-
-        est_root, est_chord_type, est_inversion = hu.get_chord_from_one_hot_index(
-            est_chord_label, root_type, use_inversions=True
-        )
-
-        chord_distance = get_chord_distance(
-            gt_root,
-            gt_chord_type,
-            gt_inversion,
-            est_root,
-            est_chord_type,
-            est_inversion,
-            use_inversion=use_inversion,
-            reduction=chord_reduction,
-        )
-
-        gt_tonic, gt_mode = hu.get_key_from_one_hot_index(int(gt_key_label), tonic_type)
-        est_tonic, est_mode = hu.get_key_from_one_hot_index(int(est_key_label), tonic_type)
-
-        key_distance = get_key_distance(
-            gt_tonic,
-            gt_mode,
-            est_tonic,
-            est_mode,
-            tonic_only=tonic_only,
-        )
-
-        similarity = (1.0 - chord_distance) * (1.0 - key_distance)
-        accuracy += similarity * duration
-
-    return accuracy / np.sum(piece.get_duration_cache())
-
-
 def get_annotation_df(
     state: State,
     piece: Piece,
@@ -713,15 +484,16 @@ def get_annotation_df(
     return pd.DataFrame(labels_list)
 
 
-def get_label_df(
+def get_results_annotation_df(
     state: State,
     piece: Piece,
     root_type: PitchType,
     tonic_type: PitchType,
 ) -> pd.DataFrame:
     """
-    Get a df containing the labels of the given state, color-coded in terms of their accuracy
-    according to the ground truth harmony in the given piece.
+    Get a df containing the full labels of the given state, color-coded in terms of their
+    accuracy according to the ground truth harmony in the given piece. This can be used
+    to attach color-coded labels to a musescore3 score using ms3.
 
     Parameters
     ----------
@@ -810,27 +582,12 @@ def get_label_df(
             gt_tonic, gt_mode = hu.get_key_from_one_hot_index(int(gt_key_label), tonic_type)
             est_tonic, est_mode = hu.get_key_from_one_hot_index(int(est_key_label), tonic_type)
 
-            full_key_distance = get_key_distance(
-                gt_tonic,
-                gt_mode,
-                est_tonic,
-                est_mode,
-                tonic_only=False,
-            )
-
-            if full_key_distance == 0:
+            if gt_tonic == est_tonic and gt_mode == est_mode:
                 color = "green"
-
+            elif gt_tonic == est_tonic:
+                color = "yellow"
             else:
-                partial_key_distance = get_key_distance(
-                    gt_tonic,
-                    gt_mode,
-                    est_tonic,
-                    est_mode,
-                    tonic_only=True,
-                )
-
-                color = "yellow" if partial_key_distance != 1 else "red"
+                color = "red"
 
             labels_list.append(
                 {
@@ -851,33 +608,19 @@ def get_label_df(
                 est_chord_label, root_type, use_inversions=True
             )
 
-            full_chord_distance = get_chord_distance(
-                gt_root,
-                gt_chord_type,
-                gt_inversion,
-                est_root,
-                est_chord_type,
-                est_inversion,
-                use_inversion=True,
-                reduction=NO_REDUCTION,
-            )
-
-            if full_chord_distance == 0:
+            if (
+                gt_root == est_root
+                and gt_chord_type == est_chord_type
+                and gt_inversion == est_inversion
+            ):
                 color = "green"
-
+            elif (
+                gt_root == est_root
+                and TRIAD_REDUCTION[gt_chord_type] == TRIAD_REDUCTION[est_chord_type]
+            ):
+                color = "yellow"
             else:
-                partial_chord_distance = get_chord_distance(
-                    gt_root,
-                    gt_chord_type,
-                    gt_inversion,
-                    est_root,
-                    est_chord_type,
-                    est_inversion,
-                    use_inversion=False,
-                    reduction=TRIAD_REDUCTION,
-                )
-
-                color = "yellow" if partial_chord_distance != 1 else "red"
+                color = "red"
 
             labels_list.append(
                 {
