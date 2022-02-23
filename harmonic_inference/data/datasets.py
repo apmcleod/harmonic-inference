@@ -1305,8 +1305,8 @@ class KeyPostProcessorDataset(HarmonicDataset):
             data["input_lengths"] = -1
             data["target_lengths"] = -1
             data["inputs"] *= 0
-            data["scheduled_sampling_data"] *= 0
-            return
+            if "scheduled_sampling_data" in data:
+                data["scheduled_sampling_data"] *= 0
 
     @staticmethod
     def get_scheduled_sampling_path(h5_dir_path: Union[Path, str], seed: int, split: str) -> Path:
