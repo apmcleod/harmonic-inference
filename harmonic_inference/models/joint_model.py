@@ -179,6 +179,12 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
         ),
     )
 
+    parser.add_argument(
+        "--no-post",
+        action="store_true",
+        help="Do not perform KPPM post-processing.",
+    )
+
 
 class HarmonicInferenceModel:
     """
@@ -200,6 +206,7 @@ class HarmonicInferenceModel:
         target_key_branch_prob: float = TARGET_KEY_BRANCH_PROB_DEFAULT,
         hash_length: int = HASH_LENGTH_DEFAULT,
         ksm_exponent: float = KSM_EXPONENT_DEFAULT,
+        no_post: bool = False,
     ):
         """
         Create a new HarmonicInferenceModel from a set of pre-loaded models.
@@ -246,6 +253,8 @@ class HarmonicInferenceModel:
         ksm_exponent : float
             An exponent to apply to the KSM's output probabilities. Used to weight the KSM
             and CSM equally, even given their different vocabulary sizes.
+        no_post : bool
+            Do not perform KPPM post-processing.
         """
         for model, model_classes in MODEL_CLASSES.items():
             assert model in models.keys(), f"`{model}` not in models dict."
@@ -312,6 +321,9 @@ class HarmonicInferenceModel:
         self.max_key_branching_factor = max_key_branching_factor
         self.target_key_branch_prob = target_key_branch_prob
         self.ksm_exponent = ksm_exponent
+
+        # Post-processing params (KPPM)
+        self.no_post = no_post
 
         # Beam search params
         self.beam_size = beam_size
@@ -636,7 +648,9 @@ class HarmonicInferenceModel:
         )
 
         # KPPM Post-processing for key labels
-        self.post_process(state)
+        if not self.no_post:
+            logging.info("Performing KPPM post-processing")
+            self.post_process(state)
 
         self.current_piece = None
 
@@ -2159,4 +2173,5 @@ def from_args(models: Dict, ARGS: Namespace) -> HarmonicInferenceModel:
         target_key_branch_prob=ARGS.target_key_branch_prob,
         hash_length=ARGS.hash_length,
         ksm_exponent=ARGS.ksm_exponent,
+        no_post=ARGS.no_post,
     )
