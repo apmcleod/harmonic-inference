@@ -900,7 +900,12 @@ def get_scale_degree_from_interval(interval: int, mode: KeyMode, pitch_type: Pit
     )
 
 
-def transpose_pitch(pitch: int, interval: int, pitch_type: PitchType) -> int:
+def transpose_pitch(
+    pitch: int,
+    interval: int,
+    pitch_type: PitchType,
+    ignore_range: bool = False,
+) -> int:
     """
     Transpose the given pitch by the given interval.
 
@@ -916,6 +921,9 @@ def transpose_pitch(pitch: int, interval: int, pitch_type: PitchType) -> int:
         returned pitch must be on the range [0, 35), and the given interval is interpreted as
         fifths. This is not modded. Rather, an exception is raised if the returned pitch would be
         outside of the TPC range.
+    ignore_range : bool
+        True to ignore any errors resulting from a TPC pitch being transposed out of the legal
+        TPC range. Useful if the value represents something like a TPC interval.
 
     Returns
     -------
@@ -926,7 +934,7 @@ def transpose_pitch(pitch: int, interval: int, pitch_type: PitchType) -> int:
         return (pitch + interval) % hc.NUM_PITCHES[PitchType.MIDI]
     pitch = pitch + interval
 
-    if pitch < 0 or pitch >= hc.NUM_PITCHES[PitchType.TPC]:
+    if not ignore_range and (pitch < 0 or pitch >= hc.NUM_PITCHES[PitchType.TPC]):
         raise ValueError(
             f"pitch_type is TPC but transposed pitch {pitch} lies outside of TPC " "range."
         )

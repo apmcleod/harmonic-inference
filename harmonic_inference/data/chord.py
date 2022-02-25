@@ -13,10 +13,12 @@ from harmonic_inference.data.key import Key
 from harmonic_inference.utils.harmonic_constants import (
     CHORD_PITCHES,
     DIATONIC_CHORDS,
+    MAX_CHORD_PITCH_INTERVAL_TPC,
     MAX_RELATIVE_TPC,
     MIN_RELATIVE_TPC,
     NUM_PITCHES,
     RELATIVE_TPC_EXTRA,
+    TPC_C,
 )
 from harmonic_inference.utils.harmonic_utils import (
     absolute_to_relative,
@@ -29,6 +31,7 @@ from harmonic_inference.utils.harmonic_utils import (
     get_interval_from_scale_degree,
     get_pitch_from_string,
     get_pitch_string,
+    get_vector_from_chord_type,
     tpc_interval_to_midi_interval,
     transpose_pitch,
 )
@@ -56,6 +59,7 @@ class Chord:
         beat_duration: Union[float, Fraction],
         pitch_type: PitchType,
         suspension: str = None,
+        chord_pitches: Tuple[int] = None,
     ):
         """
         Create a new musical chord object.
@@ -100,6 +104,9 @@ class Chord:
             values can be later converted into MIDI, but not vice versa.
         suspension : str
             The suspension associated with this chord, if any.
+        chord_pitches : Tuple[int]
+            The absolute pitches of all of the notes in this chord, including suspensions,
+            removed, and added tones.
         """
         self.root = root
         self.bass = bass
@@ -115,6 +122,7 @@ class Chord:
         self.beat_duration = beat_duration
         self.pitch_type = pitch_type
         self.suspension = suspension
+        self.chord_pitches = chord_pitches
 
         self.params = inspect.getfullargspec(Chord.__init__).args[1:]
 
@@ -145,6 +153,12 @@ class Chord:
         for key in ["key_tonic", "root", "bass"]:
             new_params[key] = get_pitch_from_string(
                 get_pitch_string(new_params[key], self.pitch_type), pitch_type
+            )
+
+        if self.chord_pitches is not None:
+            new_params["chord_pitches"] = (
+                get_pitch_from_string(get_pitch_string(pitch, self.pitch_type), pitch_type)
+                for pitch in self.chord_pitches
             )
 
         return Chord(**new_params)
@@ -381,12 +395,73 @@ class Chord:
 
         return np.concatenate(vectors).astype(dtype=np.float16)
 
+    def get_chord_pitches_vector(self) -> np.ndarray:
+        """
+        Get a chord pitches vector for this chord, encoding the pitches present in the chord,
+        relative to this chord's root.
+
+        Returns
+        -------
+        vector : np.ndarray
+            A binary vector with a 1 if a pitch is present in the chord, and a 0 otherwise.
+            For MIDI pitch_type, this vector is of length 12 and the root pitch is at 0.
+            For TPC pitch_type, the vector is of length 27 and the center element is the root.
+            This allows for up to 2 cycles around the circle of fifths in each direction.
+        """
+        if self.chord_pitches is None:
+            logging.warning("chord_pitches is None for this Chord. Using the chord_type default.")
+
+            vector = get_vector_from_chord_type(
+                self.chord_type,
+                self.pitch_type,
+                0 if self.pitch_type == PitchType.MIDI else TPC_C,
+            )
+
+            if self.pitch_type == PitchType.TPC:
+                # Returned chord vector will be too long. Leave only the middle 27.
+                to_remove = len(vector) - (2 * MAX_CHORD_PITCH_INTERVAL_TPC + 1)
+                vector = vector[to_remove // 2 : -to_remove // 2]
+
+        if self.pitch_type == PitchType.MIDI:
+            vector = np.zeros(NUM_PITCHES[PitchType.MIDI], dtype=int)
+
+            for pitch in self.chord_pitches:
+                vector[transpose_pitch(pitch, -self.root, PitchType.MIDI)] = 1
+
+        else:
+            vector = np.zeros(2 * MAX_CHORD_PITCH_INTERVAL_TPC + 1, dtype=int)
+
+            for pitch in self.chord_pitches:
+                relative_pitch = transpose_pitch(
+                    pitch, -self.root, PitchType.TPC, ignore_range=True
+                )
+
+                if abs(relative_pitch) > 13:
+                    logging.warning(
+                        (
+                            "Pitch %s transposed outside of valid range [-13, 13] "
+                            "with root %s. Skipping this pitch in Chord %s."
+                        ),
+                        pitch,
+                        self.root,
+                        self,
+                    )
+                    continue
+
+                vector[relative_pitch + 13] = 1
+
+        return vector
+
     def is_repeated(
-        self, other: "Chord", use_inversion: bool = True, use_suspension: bool = False
+        self,
+        other: "Chord",
+        use_inversion: bool = True,
+        use_suspension: bool = False,
+        use_chord_pitches: bool = False,
     ) -> bool:
         """
         Detect if a given chord can be regarded as a repeat of this one in terms of root and
-        chord_type, plus optionally inversion.
+        chord_type, plus optionally inversion, suspensions, and chord pitches.
 
         Parameters
         ----------
@@ -396,6 +471,8 @@ class Chord:
             True to take inversions into account. False otherwise.
         use_suspension : bool
             True to take suspensions into account. False otherwise.
+        use_chord_pitches : bool
+            True to take chord pitches into account. False otherwise.
 
         Returns
         -------
@@ -410,6 +487,8 @@ class Chord:
             attr_names.append("inversion")
         if use_suspension:
             attr_names.append("suspension")
+        if use_chord_pitches:
+            attr_names.append("chord_pitches")
 
         for attr_name in attr_names:
             if getattr(self, attr_name) != getattr(other, attr_name):
@@ -515,6 +594,10 @@ class Chord:
                 'onset_next' (Fraction): The chord's offset beat, in whole notes.
                 'duration' (Fraction): The chord's duration, in whole notes.
                 'changes' (str): Any suspensions or altered tones in this chord.
+                'chord_tones' (int tuple): The interval of the notes in this chord above the
+                                           local tonic, in TPC.
+                'added_tones' (int tuple): The interval of any added notes in this chord above the
+                                           local tonic, in TPC.
         measures_df : pd.DataFrame
             A pd.DataFrame of the measures in the piece of the chord. It is used to get metrical
             levels of the chord's onset and offset. Must have at least the columns:
@@ -607,6 +690,17 @@ class Chord:
 
             suspension = chord_row["changes"] if not pd.isna(chord_row["changes"]) else None
 
+            chord_pitch_intervals = list(chord_row["chord_tones"]) + list(chord_row["added_tones"])
+            if pitch_type == PitchType.MIDI:
+                chord_pitch_intervals = [
+                    tpc_interval_to_midi_interval(interval) for interval in chord_pitch_intervals
+                ]
+
+            chord_pitches = tuple(
+                transpose_pitch(key.local_tonic, interval, pitch_type=pitch_type)
+                for interval in chord_pitch_intervals
+            )
+
             return Chord(
                 root,
                 bass,
@@ -622,6 +716,7 @@ class Chord:
                 beat_duration,
                 pitch_type,
                 suspension=suspension,
+                chord_pitches=chord_pitches,
             )
 
         except Exception as exception:

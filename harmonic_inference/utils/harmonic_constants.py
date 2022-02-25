@@ -217,6 +217,9 @@ RELATIVE_TPC_EXTRA = 5
 MIN_KEY_CHANGE_INTERVAL_TPC = -14  # Inclusive
 MAX_KEY_CHANGE_INTERVAL_TPC = 15  # Exclusive
 
+# Chord pitch vector
+MAX_CHORD_PITCH_INTERVAL_TPC = 13
+
 # Diatonic chords
 DIATONIC_CHORDS = {
     PitchType.TPC: {
