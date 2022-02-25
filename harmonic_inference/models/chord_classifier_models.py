@@ -359,7 +359,7 @@ class SimpleChordClassifier(ChordClassifierModel):
         lstm_out_lengths_tensor = (
             lstm_out_lengths.unsqueeze(1).unsqueeze(2).expand((-1, 1, lstm_out_forward.shape[2]))
         ).to(self.device)
-        last_forward = torch.gather(lstm_out_forward, 1, lstm_out_lengths_tensor - 1).squeeze()
+        last_forward = torch.gather(lstm_out_forward, 1, lstm_out_lengths_tensor - 1).squeeze(dim=1)
         last_backward = lstm_out_backward[:, 0, :]
         lstm_out = torch.cat((last_forward, last_backward), 1)
 
