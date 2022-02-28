@@ -11,7 +11,11 @@ import pandas as pd
 from harmonic_inference.data.corpus_constants import MEASURE_OFFSET, NOTE_ONSET_BEAT
 from harmonic_inference.data.data_types import PitchType
 from harmonic_inference.utils.harmonic_constants import NUM_PITCHES, TPC_C
-from harmonic_inference.utils.harmonic_utils import get_pitch_from_string, get_pitch_string
+from harmonic_inference.utils.harmonic_utils import (
+    get_pitch_from_string,
+    get_pitch_string,
+    transpose_pitch,
+)
 from harmonic_inference.utils.rhythmic_utils import (
     get_metrical_level,
     get_metrical_level_lengths,
@@ -149,6 +153,7 @@ class Note:
         note_onset: Fraction = None,
         dur_from_prev: Union[float, Fraction] = None,
         dur_to_next: Union[float, Fraction] = None,
+        relative_to_pitch: int = None,
     ) -> np.array:
         """
         Get the vectorized representation of this note given a chord.
@@ -203,6 +208,9 @@ class Note:
         dur_to_next : Union[float, Fraction]
             The duration from this note's onset to the next note's onset.
 
+        relative_to_pitch : int
+            Express the note's pitch class relative to this pitch class, instead of absolute.
+
         Returns
         -------
         vector : np.array
@@ -212,7 +220,12 @@ class Note:
 
         # Pitch as one-hot
         pitch = np.zeros(NUM_PITCHES[self.pitch_type], dtype=np.float16)
-        pitch[self.pitch_class] = 1
+        pitch_class = (
+            self.pitch_class
+            if relative_to_pitch is None
+            else transpose_pitch(self.pitch_class, -relative_to_pitch, self.pitch_type)
+        )
+        pitch[pitch_class] = 1
         vectors.append(pitch)
 
         # Octave as one-hot

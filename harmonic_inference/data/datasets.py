@@ -1330,6 +1330,83 @@ class KeyPostProcessorDataset(HarmonicDataset):
         return Path(Path(h5_dir_path) / f"ccm_{split}_sched_samp_seed_{seed}.h5")
 
 
+class ChordPitchesDataset(HarmonicDataset):
+    """
+    A dataset representing the pitches present for each chord.
+
+    The inputs are one list per chord.
+    Each input list is a list of a note vectors, each appended with information about the chord.
+    Specifically, the note vectors are represented relative to the chord root, the chord root
+    is ignored, and the bass note is represented relative to the root.
+
+    The targets are a multi-hot vector representing the chord's pitches, relative to the root.
+    This is usually the same for chords of the same type, but also included suspensions and
+    other altered or added tones.
+    """
+
+    train_batch_size = 256
+    valid_batch_size = 512
+    chunk_size = 1024
+
+    def __init__(
+        self,
+        pieces: List[Piece],
+        transform: Callable = None,
+        reduction: Dict[ChordType, ChordType] = None,
+        use_inversions: bool = True,
+        input_mask: List[int] = None,
+    ):
+        """
+        Create a chord pitches dataset from the given pieces.
+
+        Parameters
+        ----------
+        pieces : List[Piece]
+            The pieces to get the data from.
+        transform : Callable
+            A function to transform numpy arrays returned by __getitem__ by default.
+        reduction : Dict[ChordType, ChordType]
+            A chord type reduction to apply to the input chords when returning data with
+            __getitem__. This is not applied when the data is loaded, but only when it is
+            returned. So it is safe to change this after initialization.
+        use_inversions : bool
+            True to use input inversions when returning data with __getitem__. False to reduce
+            all input chords to root position. This is not applied when the data is loaded, but
+            only when it is returned. So it is safe to change this after initialization.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask.
+        """
+        super().__init__(transform=transform, input_mask=input_mask)
+        self.inputs = []
+        self.targets = []
+        self.target_pitch_type = []
+
+        if len(pieces) > 0 and len(pieces[0].get_chords()) > 0:
+            self.target_pitch_type.append(pieces[0].get_chords()[0].pitch_type.value)
+
+        for piece in pieces:
+            self.inputs.append(
+                np.vstack(piece.get_chord_note_inputs(window=2, for_chord_pitches=True))
+            )
+            self.targets.append(
+                np.array([chord.get_chord_pitches_vector() for chord in piece.get_chords()])
+            )
+
+        self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
+
+        self.reduction = reduction
+        self.use_inversions = use_inversions
+
+    def reduce(self, data: Dict, transposition: int = None):
+        # TODO: Check
+        reduce_chord_types(data["inputs"], self.reduction, pad=False)
+        if not self.use_inversions:
+            remove_chord_inversions(data["inputs"], pad=False)
+
+
 def h5_to_dataset(
     h5_path: Union[str, Path],
     dataset_class: HarmonicDataset,
