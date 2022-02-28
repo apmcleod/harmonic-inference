@@ -399,7 +399,12 @@ def reduce_chord_one_hots(
     return new_one_hots if original_dtype is None else np.array(new_one_hots, dtype=original_dtype)
 
 
-def remove_chord_inversions(tensor: np.array, pad: bool, pitch_type: PitchType = None):
+def remove_chord_inversions(
+    tensor: np.array,
+    pad: bool,
+    pitch_type: PitchType = None,
+    for_chord_pitches: bool = False,
+):
     """
     Reduce the chord inversions of all chord vectors in the given tensor to be in
     root position.
@@ -412,7 +417,10 @@ def remove_chord_inversions(tensor: np.array, pad: bool, pitch_type: PitchType =
         Whether the tensor's pitches are padded or not.
     pitch_type: PitchType
         The pitch type used in the tensor. If known, this will speed up computation.
+    for_chord_pitches : bool
+        True if this vector is being used in a ChordPitchesDataset. False otherwise.
     """
+    # TODO
     if pitch_type is None:
         pitch_type = infer_chord_vector_pitch_type(len(tensor[0]), pad)
 
@@ -431,6 +439,7 @@ def reduce_chord_types(
     reduction: Dict[ChordType, ChordType],
     pad: bool,
     pitch_type: PitchType = None,
+    for_chord_pitches: bool = False,
 ):
     """
     Reduce the chord type of a tensor of chord vectors in place.
@@ -443,9 +452,12 @@ def reduce_chord_types(
         The reduction to appply.
     pad : bool
         Whether the tensor's pitches are padded or not.
-    pitch_type: PitchType
+    pitch_type : PitchType
         The pitch type used in the tensor. If known, this will speed up computation.
+    for_chord_pitches : bool
+        True if this vector is being used in a ChordPitchesDataset. False otherwise.
     """
+    # TODO
     if reduction is None:
         return tensor
 

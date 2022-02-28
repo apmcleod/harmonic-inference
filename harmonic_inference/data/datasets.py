@@ -1402,9 +1402,9 @@ class ChordPitchesDataset(HarmonicDataset):
 
     def reduce(self, data: Dict, transposition: int = None):
         # TODO: Check
-        reduce_chord_types(data["inputs"], self.reduction, pad=False)
+        reduce_chord_types(data["inputs"], self.reduction, pad=False, for_chord_pitches=True)
         if not self.use_inversions:
-            remove_chord_inversions(data["inputs"], pad=False)
+            remove_chord_inversions(data["inputs"], pad=False, for_chord_pitches=True)
 
 
 def h5_to_dataset(
