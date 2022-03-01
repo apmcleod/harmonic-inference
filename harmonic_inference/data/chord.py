@@ -907,7 +907,6 @@ def get_chord_vector_length(
     use_inversions: bool = True,
     pad: bool = False,
     reduction: Dict[ChordType, ChordType] = None,
-    for_chord_pitches: bool = False,
 ) -> int:
     """
     Get the length of a chord vector.
@@ -929,8 +928,6 @@ def get_chord_vector_length(
     reduction : Dict[ChordType, ChordType]
         A reduction mapping each chord type to a different chord type. This will affect
         only the one-hot chord vector lengths.
-    for_chord_pitches : bool
-        True if the length should be of a chord pitches dataset vector. False otherwise.
 
     Returns
     -------
@@ -955,9 +952,30 @@ def get_chord_vector_length(
             )
         return num_pitches * len(set(reduction.values()))
 
-    if for_chord_pitches:
-        return CHORD_VECTOR_NO_PITCHES_LENGTH + get_note_vector_length(
-            pitch_type, for_chord_pitches=True
-        )
-
     return 2 * num_pitches + CHORD_VECTOR_NO_PITCHES_LENGTH  # Root and Bass  # Other
+
+
+def get_chord_pitches_vector_length(pitch_type: PitchType) -> int:
+    """
+    Get the length of a complete chord_pitches input vector.
+
+    Parameters
+    ----------
+    pitch_type : PitchType
+        The PitchType used in this vector.
+
+    Returns
+    -------
+    length : int
+        The length of the chord pitches vector.
+    """
+    num_pitches = NUM_PITCHES[pitch_type][False]
+
+    return (
+        CHORD_VECTOR_NO_PITCHES_LENGTH
+        + num_pitches  # Previous chord
+        + CHORD_VECTOR_NO_PITCHES_LENGTH  # Chord
+        + CHORD_VECTOR_NO_PITCHES_LENGTH
+        + num_pitches  # Next chord
+        + get_note_vector_length(pitch_type, for_chord_pitches=True)  # Note
+    )
