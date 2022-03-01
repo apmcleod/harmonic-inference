@@ -15,11 +15,8 @@ from harmonic_inference.utils.harmonic_constants import (
     CHORD_PITCHES,
     DIATONIC_CHORDS,
     MAX_CHORD_PITCH_INTERVAL_TPC,
-    MAX_RELATIVE_TPC,
-    MIN_RELATIVE_TPC,
     NUM_PITCHES,
     NUM_RELATIVE_PITCHES,
-    RELATIVE_TPC_EXTRA,
     TPC_C,
 )
 from harmonic_inference.utils.harmonic_utils import (
@@ -296,6 +293,8 @@ class Chord:
         absolute: bool = False,
         pad: bool = False,
         reduction: Dict[ChordType, ChordType] = NO_REDUCTION,
+        no_root: bool = False,
+        no_bass: bool = False,
     ) -> np.ndarray:
         """
         Get the vectorized representation of this chord.
@@ -311,6 +310,10 @@ class Chord:
             extra spaces.
         reduction : Dict[ChordType, ChordType]
             A reduction mapping for this chord's chord_type.
+        no_root : bool
+            True to exclude the root pitch from the vector. False to include it.
+        no_bass : bool
+            True to exclude the bass note from the vector. False to include it.
 
         Returns
         -------
@@ -320,33 +323,26 @@ class Chord:
         key_tonic = self.key_tonic if relative_to is None else relative_to.relative_tonic
         key_mode = self.key_mode if relative_to is None else relative_to.relative_mode
 
-        if self.pitch_type == PitchType.MIDI:
-            num_pitches = NUM_PITCHES[self.pitch_type]
-        else:
-            if absolute:
-                num_pitches = NUM_PITCHES[self.pitch_type]
-            else:
-                num_pitches = MAX_RELATIVE_TPC - MIN_RELATIVE_TPC
-                if pad:
-                    num_pitches += 2 * RELATIVE_TPC_EXTRA
+        num_pitches = NUM_RELATIVE_PITCHES[self.pitch_type][pad]
 
         vectors = []
 
         # Root as one-hot
-        pitch = np.zeros(num_pitches, dtype=np.float16)
-        index = (
-            self.root
-            if absolute
-            else absolute_to_relative(
-                self.root,
-                key_tonic,
-                self.pitch_type,
-                False,
-                pad=pad,
+        if not no_root:
+            pitch = np.zeros(num_pitches, dtype=np.float16)
+            index = (
+                self.root
+                if absolute
+                else absolute_to_relative(
+                    self.root,
+                    key_tonic,
+                    self.pitch_type,
+                    False,
+                    pad=pad,
+                )
             )
-        )
-        pitch[index] = 1
-        vectors.append(pitch)
+            pitch[index] = 1
+            vectors.append(pitch)
 
         # Chord type
         chord_type = np.zeros(len(ChordType), dtype=np.float16)
@@ -354,20 +350,21 @@ class Chord:
         vectors.append(chord_type)
 
         # Relative bass as one-hot
-        bass_note = np.zeros(num_pitches, dtype=np.float16)
-        index = (
-            self.bass
-            if absolute
-            else absolute_to_relative(
-                self.bass,
-                key_tonic,
-                self.pitch_type,
-                False,
-                pad=pad,
+        if not no_bass:
+            bass_note = np.zeros(num_pitches, dtype=np.float16)
+            index = (
+                self.bass
+                if absolute
+                else absolute_to_relative(
+                    self.bass,
+                    key_tonic,
+                    self.pitch_type,
+                    False,
+                    pad=pad,
+                )
             )
-        )
-        bass_note[index] = 1
-        vectors.append(bass_note)
+            bass_note[index] = 1
+            vectors.append(bass_note)
 
         # Inversion as one-hot
         inversion = np.zeros(4, dtype=np.float16)
@@ -397,10 +394,45 @@ class Chord:
 
         return np.concatenate(vectors).astype(dtype=np.float16)
 
-    def get_chord_pitches_vector(self) -> np.ndarray:
+    def get_chord_pitches_input_vector(
+        self, is_center: bool, relative_to: int = None
+    ) -> np.ndarray:
         """
-        Get a chord pitches vector for this chord, encoding the pitches present in the chord,
-        relative to this chord's root.
+        Get a chord pitches input vector for this chord, encoding the chord for input to a
+        ChordPitchesModel. If this chord is the central chord, no pitch information is included.
+        Otherwise, this chord's bass note is ignored and its root is encoded relative to
+        the given pitch.
+
+        Parameters
+        ----------
+        is_center : bool
+            True if this chord is the central chord, in which case both the bass note and the
+            root are not included. If False, relative_to is required, and the root note is
+            expressed relative to that pitch. The bass note is still not included.
+        relative_to : int
+            A pitch to express this Chord's root relative to, if is_center is False.
+
+        Returns
+        -------
+        vector : np.ndarray
+            The chord pitches input vector for this chord.
+        """
+        relative_key = Key(
+            relative_to,
+            relative_to,
+            relative_to,
+            KeyMode.MAJOR,
+            KeyMode.MAJOR,
+            KeyMode.MAJOR,
+            self.pitch_type,
+        )
+
+        return self.to_vec(relative_to=relative_key, no_root=is_center, no_bass=True)
+
+    def get_chord_pitches_target_vector(self) -> np.ndarray:
+        """
+        Get a chord pitches target vector for this chord, encoding the pitches present in the
+        chord, relative to this chord's root.
 
         Returns
         -------
@@ -955,7 +987,7 @@ def get_chord_vector_length(
     return 2 * num_pitches + CHORD_VECTOR_NO_PITCHES_LENGTH  # Root and Bass  # Other
 
 
-def get_chord_pitches_vector_length(pitch_type: PitchType) -> int:
+def get_chord_pitches_vector_length(pitch_type: PitchType, part: str = None) -> int:
     """
     Get the length of a complete chord_pitches input vector.
 
@@ -963,19 +995,31 @@ def get_chord_pitches_vector_length(pitch_type: PitchType) -> int:
     ----------
     pitch_type : PitchType
         The PitchType used in this vector.
+    part : str
+        What part of the vector to measure the length of. Either:
+            - None: The entire vector.
+            - "chord": The chord part.
+            - "center": The center chord.
+            - "side": A side chord.
 
     Returns
     -------
     length : int
-        The length of the chord pitches vector.
+        The length of the chord pitches vector, or the desired part.
     """
     num_pitches = NUM_PITCHES[pitch_type][False]
 
+    center = CHORD_VECTOR_NO_PITCHES_LENGTH
+    side = CHORD_VECTOR_NO_PITCHES_LENGTH + num_pitches
+    chord = side * 2 + center
+    full = get_note_vector_length(pitch_type, for_chord_pitches=True)
+
     return (
-        CHORD_VECTOR_NO_PITCHES_LENGTH
-        + num_pitches  # Previous chord
-        + CHORD_VECTOR_NO_PITCHES_LENGTH  # Chord
-        + CHORD_VECTOR_NO_PITCHES_LENGTH
-        + num_pitches  # Next chord
-        + get_note_vector_length(pitch_type, for_chord_pitches=True)  # Note
+        full
+        if part is None
+        else {
+            "chord": chord,
+            "center": center,
+            "side": side,
+        }[part]
     )

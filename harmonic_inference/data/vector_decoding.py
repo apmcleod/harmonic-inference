@@ -7,6 +7,7 @@ import numpy as np
 from harmonic_inference.data.chord import (
     CHORD_VECTOR_NO_PITCHES_LENGTH,
     Chord,
+    get_chord_pitches_vector_length,
     get_chord_vector_length,
 )
 from harmonic_inference.data.data_types import ChordType, KeyMode, PitchType
@@ -240,13 +241,18 @@ def infer_chord_vector_pitch_type(
         If no known PitchType results in the given vector length.
     """
     for pitch_type in PitchType:
-        if vector_length == get_chord_vector_length(
-            pitch_type,
-            one_hot=False,
-            relative=relative,
-            pad=pad,
-            for_chord_pitches=for_chord_pitches,
-        ):
+        length = (
+            get_chord_pitches_vector_length(pitch_type)
+            if for_chord_pitches
+            else get_chord_vector_length(
+                pitch_type,
+                one_hot=False,
+                relative=relative,
+                pad=pad,
+            )
+        )
+
+        if length == vector_length:
             return pitch_type
 
     raise ValueError(f"Could not find valid pitch type for vector length {vector_length}.")
@@ -257,10 +263,11 @@ def get_chord_vector_inversion_index(
     pad: bool,
     pitch_type: PitchType = None,
     for_chord_pitches: bool = False,
-) -> int:
+) -> Union[List[int], int]:
     """
     Get the starting index of where the chord_types are stored in a chord vector of the
     given length. A ChordType of value i will be represented by a 1 in this index + i.
+    Or (if for_chord_pitches is True), a list of those indexes.
 
     Parameters
     ----------
@@ -275,18 +282,26 @@ def get_chord_vector_inversion_index(
 
     Returns
     -------
-    index : int
-        The index at which the chord types are stored in the chord vector.
+    index : Union[List[int], int]
+        The index at which the chord types are stored in the chord vector, or
+        (if for_chord_pitches is True), a list of those indexes.
     """
-    if for_chord_pitches:
-        return len(ChordType)
-
     if pitch_type is None:
         pitch_type = infer_chord_vector_pitch_type(
             vector_length, pad, relative=True, for_chord_pitches=for_chord_pitches
         )
 
-    return 2 * NUM_RELATIVE_PITCHES[pitch_type][pad] + len(ChordType)
+    if not for_chord_pitches:
+        return 2 * NUM_RELATIVE_PITCHES[pitch_type][pad] + len(ChordType)
+
+    side = get_chord_pitches_vector_length(pitch_type, part="side")
+    center = get_chord_pitches_vector_length(pitch_type, part="center")
+
+    return [
+        len(ChordType),
+        side + len(ChordType),
+        side + center + len(ChordType),
+    ]
 
 
 def get_chord_vector_chord_type_index(
@@ -294,10 +309,11 @@ def get_chord_vector_chord_type_index(
     pad: bool,
     pitch_type: PitchType = None,
     for_chord_pitches: bool = False,
-) -> int:
+) -> Union[List[int], int]:
     """
     Get the starting index of where inversions are stored in a chord vector of the
     given length. An ith inversion will be represented by a 1 in this index + i.
+    Or (if for_chord_pitches is True), a list of those indexes.
 
     Parameters
     ----------
@@ -313,16 +329,20 @@ def get_chord_vector_chord_type_index(
 
     Returns
     -------
-    index : int
-        The index at which inversions are stored in the chord vector.
+    index : Union[List[int], int]
+        The index at which inversions are stored in the chord vector. Or,
+        (if for_chord_pitches is True), a list of those indexes.
     """
-    if for_chord_pitches:
-        return 0
-
     if pitch_type is None:
         pitch_type = infer_chord_vector_pitch_type(vector_length, pad)
 
-    return NUM_RELATIVE_PITCHES[pitch_type][pad]
+    if not for_chord_pitches:
+        return NUM_RELATIVE_PITCHES[pitch_type][pad]
+
+    side = get_chord_pitches_vector_length(pitch_type, part="side")
+    center = get_chord_pitches_vector_length(pitch_type, part="center")
+
+    return [0, side, side + center]
 
 
 def reduce_chord_one_hots(
@@ -432,16 +452,19 @@ def remove_chord_inversions(
             len(tensor[0]), pad, for_chord_pitches=for_chord_pitches
         )
 
-    inversion_index = get_chord_vector_inversion_index(
+    inversion_indices = get_chord_vector_inversion_index(
         len(tensor[0]), pad, pitch_type=pitch_type, for_chord_pitches=for_chord_pitches
     )
+    if not for_chord_pitches:
+        inversion_indices = [inversion_indices]
 
-    inversion_vectors = tensor[:, inversion_index : inversion_index + 4]
-    new_inversion_vectors = np.zeros_like(inversion_vectors)
+    for inversion_index in inversion_indices:
+        inversion_vectors = tensor[:, inversion_index : inversion_index + 4]
+        new_inversion_vectors = np.zeros_like(inversion_vectors)
 
-    new_inversion_vectors[:, 0] = np.sum(inversion_vectors, axis=1)
+        new_inversion_vectors[:, 0] = np.sum(inversion_vectors, axis=1)
 
-    tensor[:, inversion_index : inversion_index + 4] = new_inversion_vectors
+        tensor[:, inversion_index : inversion_index + 4] = new_inversion_vectors
 
 
 def reduce_chord_types(
@@ -475,24 +498,27 @@ def reduce_chord_types(
             len(tensor[0]), pad, for_chord_pitches=for_chord_pitches
         )
 
-    chord_type_index = get_chord_vector_chord_type_index(
+    chord_type_indices = get_chord_vector_chord_type_index(
         len(tensor[0]), pad, pitch_type=pitch_type, for_chord_pitches=for_chord_pitches
     )
+    if not for_chord_pitches:
+        chord_type_indices = [chord_type_indices]
 
-    chord_type_vectors = tensor[:, chord_type_index : chord_type_index + len(ChordType)]
-    new_chord_type_vectors = np.zeros_like(chord_type_vectors)
+    for chord_type_index in chord_type_indices:
+        chord_type_vectors = tensor[:, chord_type_index : chord_type_index + len(ChordType)]
+        new_chord_type_vectors = np.zeros_like(chord_type_vectors)
 
-    for from_type, to_type in reduction.items():
-        if from_type == to_type:
-            continue
+        for from_type, to_type in reduction.items():
+            if from_type == to_type:
+                continue
 
-        from_index = from_type.value
-        to_index = to_type.value
+            from_index = from_type.value
+            to_index = to_type.value
 
-        to_change_indexes = np.where(chord_type_vectors[:, from_index] == 1)[0]
-        new_chord_type_vectors[to_change_indexes, to_index] = 1
+            to_change_indexes = np.where(chord_type_vectors[:, from_index] == 1)[0]
+            new_chord_type_vectors[to_change_indexes, to_index] = 1
 
-    tensor[:, chord_type_index : chord_type_index + len(ChordType)] = new_chord_type_vectors
+        tensor[:, chord_type_index : chord_type_index + len(ChordType)] = new_chord_type_vectors
 
 
 def decode_chord_and_key_change_vector(
