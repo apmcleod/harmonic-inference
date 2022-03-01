@@ -429,7 +429,6 @@ class Key:
                 pitch_type=tonic_type,
             )
 
-            # TODO: Figure out relative mode
             if relative_mode == KeyMode.MAJOR:
                 try:
                     relative_mode = {

@@ -17,6 +17,7 @@ from harmonic_inference.utils.harmonic_constants import (
     MIN_KEY_CHANGE_INTERVAL_TPC,
     MIN_RELATIVE_TPC,
     NUM_PITCHES,
+    NUM_RELATIVE_PITCHES,
     RELATIVE_TPC_EXTRA,
 )
 from harmonic_inference.utils.harmonic_utils import (
@@ -209,7 +210,10 @@ def decode_chord_vector(
 
 
 def infer_chord_vector_pitch_type(
-    vector_length: int, pad: bool, relative: bool = True
+    vector_length: int,
+    pad: bool,
+    relative: bool = True,
+    for_chord_pitches: bool = False,
 ) -> PitchType:
     """
     Infer the pitch type used in a chord vector of the given length with the given padding.
@@ -222,6 +226,8 @@ def infer_chord_vector_pitch_type(
         Whether padding is used in the chord vector.
     relative : bool
         True if the vector is a relative chord vector. False for absolute.
+    for_chord_pitches : bool
+        True if the vector is one used for a ChordPitchesDataset. False otherwise.
 
     Returns
     -------
@@ -235,7 +241,11 @@ def infer_chord_vector_pitch_type(
     """
     for pitch_type in PitchType:
         if vector_length == get_chord_vector_length(
-            pitch_type, one_hot=False, relative=relative, pad=pad
+            pitch_type,
+            one_hot=False,
+            relative=relative,
+            pad=pad,
+            for_chord_pitches=for_chord_pitches,
         ):
             return pitch_type
 
@@ -246,6 +256,7 @@ def get_chord_vector_inversion_index(
     vector_length: int,
     pad: bool,
     pitch_type: PitchType = None,
+    for_chord_pitches: bool = False,
 ) -> int:
     """
     Get the starting index of where the chord_types are stored in a chord vector of the
@@ -259,31 +270,30 @@ def get_chord_vector_inversion_index(
         Whether padding is used in the chord vector.
     pitch_type : PitchType
         The pitch type used in the chord vector. If given, this will speed up computation.
+    for_chord_pitches : bool
+        True if this vector is for a ChordPitchesDataset. False otherwise.
 
     Returns
     -------
     index : int
         The index at which the chord types are stored in the chord vector.
     """
+    if for_chord_pitches:
+        return len(ChordType)
+
     if pitch_type is None:
-        pitch_type = infer_chord_vector_pitch_type(vector_length, pad)
+        pitch_type = infer_chord_vector_pitch_type(
+            vector_length, pad, relative=True, for_chord_pitches=for_chord_pitches
+        )
 
-    if pitch_type == PitchType.MIDI:
-        num_pitches = NUM_PITCHES[PitchType.MIDI]
-    elif pitch_type == PitchType.TPC:
-        num_pitches = MAX_RELATIVE_TPC - MIN_RELATIVE_TPC
-        if pad:
-            num_pitches += 2 * RELATIVE_TPC_EXTRA
-    else:
-        raise ValueError("No valid pitch_type found.")
-
-    return 2 * num_pitches + len(ChordType)
+    return 2 * NUM_RELATIVE_PITCHES[pitch_type][pad] + len(ChordType)
 
 
 def get_chord_vector_chord_type_index(
     vector_length: int,
     pad: bool,
     pitch_type: PitchType = None,
+    for_chord_pitches: bool = False,
 ) -> int:
     """
     Get the starting index of where inversions are stored in a chord vector of the
@@ -297,25 +307,22 @@ def get_chord_vector_chord_type_index(
         Whether padding is used in the chord vector.
     pitch_type : PitchType
         The pitch type used in the chord vector. If given, this will speed up computation.
+    for_chord_pitches : bool
+        If True, the returned index will be for a chord pitches input vector. False
+        for a standard chord vector.
 
     Returns
     -------
     index : int
         The index at which inversions are stored in the chord vector.
     """
+    if for_chord_pitches:
+        return 0
+
     if pitch_type is None:
         pitch_type = infer_chord_vector_pitch_type(vector_length, pad)
 
-    if pitch_type == PitchType.MIDI:
-        num_pitches = NUM_PITCHES[PitchType.MIDI]
-    elif pitch_type == PitchType.TPC:
-        num_pitches = MAX_RELATIVE_TPC - MIN_RELATIVE_TPC
-        if pad:
-            num_pitches += 2 * RELATIVE_TPC_EXTRA
-    else:
-        raise ValueError("No valid pitch_type found.")
-
-    return num_pitches
+    return NUM_RELATIVE_PITCHES[pitch_type][pad]
 
 
 def reduce_chord_one_hots(
@@ -420,11 +427,14 @@ def remove_chord_inversions(
     for_chord_pitches : bool
         True if this vector is being used in a ChordPitchesDataset. False otherwise.
     """
-    # TODO
     if pitch_type is None:
-        pitch_type = infer_chord_vector_pitch_type(len(tensor[0]), pad)
+        pitch_type = infer_chord_vector_pitch_type(
+            len(tensor[0]), pad, for_chord_pitches=for_chord_pitches
+        )
 
-    inversion_index = get_chord_vector_inversion_index(len(tensor[0]), pad, pitch_type=pitch_type)
+    inversion_index = get_chord_vector_inversion_index(
+        len(tensor[0]), pad, pitch_type=pitch_type, for_chord_pitches=for_chord_pitches
+    )
 
     inversion_vectors = tensor[:, inversion_index : inversion_index + 4]
     new_inversion_vectors = np.zeros_like(inversion_vectors)
@@ -457,14 +467,17 @@ def reduce_chord_types(
     for_chord_pitches : bool
         True if this vector is being used in a ChordPitchesDataset. False otherwise.
     """
-    # TODO
     if reduction is None:
         return tensor
 
     if pitch_type is None:
-        pitch_type = infer_chord_vector_pitch_type(len(tensor[0]), pad)
+        pitch_type = infer_chord_vector_pitch_type(
+            len(tensor[0]), pad, for_chord_pitches=for_chord_pitches
+        )
 
-    chord_type_index = get_chord_vector_chord_type_index(len(tensor[0]), pad, pitch_type=pitch_type)
+    chord_type_index = get_chord_vector_chord_type_index(
+        len(tensor[0]), pad, pitch_type=pitch_type, for_chord_pitches=for_chord_pitches
+    )
 
     chord_type_vectors = tensor[:, chord_type_index : chord_type_index + len(ChordType)]
     new_chord_type_vectors = np.zeros_like(chord_type_vectors)

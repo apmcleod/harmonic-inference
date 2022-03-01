@@ -10,6 +10,7 @@ import pandas as pd
 from harmonic_inference.data.corpus_constants import CHORD_ONSET_BEAT, MEASURE_OFFSET
 from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, KeyMode, PitchType
 from harmonic_inference.data.key import Key
+from harmonic_inference.data.note import get_note_vector_length
 from harmonic_inference.utils.harmonic_constants import (
     CHORD_PITCHES,
     DIATONIC_CHORDS,
@@ -17,6 +18,7 @@ from harmonic_inference.utils.harmonic_constants import (
     MAX_RELATIVE_TPC,
     MIN_RELATIVE_TPC,
     NUM_PITCHES,
+    NUM_RELATIVE_PITCHES,
     RELATIVE_TPC_EXTRA,
     TPC_C,
 )
@@ -905,6 +907,7 @@ def get_chord_vector_length(
     use_inversions: bool = True,
     pad: bool = False,
     reduction: Dict[ChordType, ChordType] = None,
+    for_chord_pitches: bool = False,
 ) -> int:
     """
     Get the length of a chord vector.
@@ -926,6 +929,8 @@ def get_chord_vector_length(
     reduction : Dict[ChordType, ChordType]
         A reduction mapping each chord type to a different chord type. This will affect
         only the one-hot chord vector lengths.
+    for_chord_pitches : bool
+        True if the length should be of a chord pitches dataset vector. False otherwise.
 
     Returns
     -------
@@ -935,12 +940,7 @@ def get_chord_vector_length(
     if reduction is None:
         reduction = NO_REDUCTION
 
-    if relative and pitch_type == PitchType.TPC:
-        num_pitches = MAX_RELATIVE_TPC - MIN_RELATIVE_TPC
-        if pad:
-            num_pitches += RELATIVE_TPC_EXTRA * 2
-    else:
-        num_pitches = NUM_PITCHES[pitch_type]
+    num_pitches = NUM_RELATIVE_PITCHES[pitch_type][pad] if relative else NUM_PITCHES[pitch_type]
 
     if one_hot:
         if use_inversions:
@@ -955,4 +955,9 @@ def get_chord_vector_length(
             )
         return num_pitches * len(set(reduction.values()))
 
-    return num_pitches + num_pitches + CHORD_VECTOR_NO_PITCHES_LENGTH  # Root  # Bass  # Other
+    if for_chord_pitches:
+        return CHORD_VECTOR_NO_PITCHES_LENGTH + get_note_vector_length(
+            pitch_type, for_chord_pitches=True
+        )
+
+    return 2 * num_pitches + CHORD_VECTOR_NO_PITCHES_LENGTH  # Root and Bass  # Other

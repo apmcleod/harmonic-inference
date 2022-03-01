@@ -10,7 +10,7 @@ import pandas as pd
 
 from harmonic_inference.data.corpus_constants import MEASURE_OFFSET, NOTE_ONSET_BEAT
 from harmonic_inference.data.data_types import PitchType
-from harmonic_inference.utils.harmonic_constants import NUM_PITCHES, TPC_C
+from harmonic_inference.utils.harmonic_constants import NUM_PITCHES, NUM_RELATIVE_PITCHES, TPC_C
 from harmonic_inference.utils.harmonic_utils import (
     get_pitch_from_string,
     get_pitch_string,
@@ -550,7 +550,7 @@ class Note:
         )
 
 
-def get_note_vector_length(pitch_type: PitchType) -> int:
+def get_note_vector_length(pitch_type: PitchType, for_chord_pitches: bool = False) -> int:
     """
     Get the length of a note vector.
 
@@ -558,6 +558,9 @@ def get_note_vector_length(pitch_type: PitchType) -> int:
     ----------
     pitch_type : PitchType
         The pitch type of the note.
+    for_chord_pitches : bool
+        True to return the length of the note segment of a chord pitches vector. False
+        to return the length of a standard note vector.
 
     Returns
     -------
@@ -574,8 +577,12 @@ def get_note_vector_length(pitch_type: PitchType) -> int:
     # 1 normalized pitch height relative to window
     extra = 20
 
+    num_pitches = (
+        NUM_RELATIVE_PITCHES[pitch_type][False] if for_chord_pitches else NUM_PITCHES[pitch_type]
+    )
+
     return (
-        NUM_PITCHES[pitch_type]  # Pitch class
+        num_pitches  # Pitch class
         + num_octaves  # Absolute octave
         + num_octaves  # Relative octave (above lowest note in chord window)
         + extra
