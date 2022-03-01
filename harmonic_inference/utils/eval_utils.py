@@ -585,7 +585,7 @@ def get_results_annotation_df(
             if gt_tonic == est_tonic and gt_mode == est_mode:
                 color = "green"
             elif gt_tonic == est_tonic:
-                color = "yellow"
+                color = "orange"
             else:
                 color = "red"
 
@@ -618,7 +618,7 @@ def get_results_annotation_df(
                 gt_root == est_root
                 and TRIAD_REDUCTION[gt_chord_type] == TRIAD_REDUCTION[est_chord_type]
             ):
-                color = "yellow"
+                color = "orange"
             else:
                 color = "red"
 
