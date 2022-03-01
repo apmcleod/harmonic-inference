@@ -12,7 +12,7 @@ from music21.converter import parse
 from tqdm import tqdm
 
 import harmonic_inference.utils.rhythmic_utils as ru
-from harmonic_inference.data.chord import Chord
+from harmonic_inference.data.chord import Chord, get_chord_pitches_vector_length
 from harmonic_inference.data.corpus_constants import MEASURE_OFFSET
 from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, PieceType, PitchType
 from harmonic_inference.data.key import Key
@@ -143,7 +143,6 @@ def get_chord_note_input(
                 note_onset = Fraction(0)
             note_onsets.append(note_onset)
 
-    # TODO: Adapt for for_chord_pitches
     note_vectors = np.vstack(
         [
             note.to_vec(
@@ -172,6 +171,34 @@ def get_chord_note_input(
     start = 0 + (first_note_index - window_onset_index)
     end = len(chord_input) - (window_offset_index - last_note_index)
     chord_input[start:end] = note_vectors
+
+    # Prepend chord pitch input vectors
+    if for_chord_pitches:
+        prev_chord_vector = (
+            np.zeros(get_chord_pitches_vector_length(chord.pitch_type, part="side"))
+            if prev_chord is None
+            else prev_chord.get_chord_pitches_input_vector(False, relative_to=chord.root)
+        )
+        chord_vector = chord.get_chord_pitches_input_vector(True)
+        next_chord_vector = (
+            np.zeros(get_chord_pitches_vector_length(chord.pitch_type, part="side"))
+            if next_chord is None
+            else next_chord.get_chord_pitches_input_vector(False, relative_to=chord.root)
+        )
+
+        chord_pitches_input = np.zeros(
+            (
+                window_offset_index - window_onset_index,
+                get_chord_pitches_vector_length(chord.pitch_type),
+            )
+        )
+
+        all_chords_vectors = np.concatenate(prev_chord_vector, chord_vector, next_chord_vector)
+        chord_pitches_input[:, len(all_chords_vectors) :] = chord_input
+        chord_pitches_input[:, : len(all_chords_vectors)] = all_chords_vectors
+
+        chord_input = chord_pitches_input
+
     return chord_input
 
 
