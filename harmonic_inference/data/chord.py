@@ -1007,12 +1007,10 @@ def get_chord_pitches_vector_length(pitch_type: PitchType, part: str = None) -> 
     length : int
         The length of the chord pitches vector, or the desired part.
     """
-    num_pitches = NUM_PITCHES[pitch_type][False]
-
     center = CHORD_VECTOR_NO_PITCHES_LENGTH
-    side = CHORD_VECTOR_NO_PITCHES_LENGTH + num_pitches
+    side = CHORD_VECTOR_NO_PITCHES_LENGTH + NUM_RELATIVE_PITCHES[pitch_type][False]
     chord = side * 2 + center
-    full = get_note_vector_length(pitch_type, for_chord_pitches=True)
+    full = chord + get_note_vector_length(pitch_type, for_chord_pitches=True)
 
     return (
         full

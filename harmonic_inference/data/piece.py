@@ -193,7 +193,7 @@ def get_chord_note_input(
             )
         )
 
-        all_chords_vectors = np.concatenate(prev_chord_vector, chord_vector, next_chord_vector)
+        all_chords_vectors = np.concatenate([prev_chord_vector, chord_vector, next_chord_vector])
         chord_pitches_input[:, len(all_chords_vectors) :] = chord_input
         chord_pitches_input[:, : len(all_chords_vectors)] = all_chords_vectors
 
@@ -530,7 +530,13 @@ class ScorePiece(Piece):
 
         chord_note_inputs = []
         for (onset_index, offset_index), change_index, chord, prev_chord, next_chord in tqdm(
-            zip(ranges, change_indices, chords, [None] + chords[:-1], chords[1:] + [None]),
+            zip(
+                ranges,
+                change_indices,
+                chords,
+                [None] + list(chords[:-1]),
+                list(chords[1:]) + [None],
+            ),
             desc="Generating chord classification inputs",
             total=len(ranges),
         ):

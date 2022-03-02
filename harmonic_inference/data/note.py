@@ -10,7 +10,12 @@ import pandas as pd
 
 from harmonic_inference.data.corpus_constants import MEASURE_OFFSET, NOTE_ONSET_BEAT
 from harmonic_inference.data.data_types import PitchType
-from harmonic_inference.utils.harmonic_constants import NUM_PITCHES, NUM_RELATIVE_PITCHES, TPC_C
+from harmonic_inference.utils.harmonic_constants import (
+    MIN_RELATIVE_TPC,
+    NUM_PITCHES,
+    NUM_RELATIVE_PITCHES,
+    TPC_C,
+)
 from harmonic_inference.utils.harmonic_utils import (
     get_pitch_from_string,
     get_pitch_string,
@@ -219,11 +224,19 @@ class Note:
         vectors = []
 
         # Pitch as one-hot
-        pitch = np.zeros(NUM_PITCHES[self.pitch_type], dtype=np.float16)
+        num_pitches = (
+            NUM_PITCHES[self.pitch_type]
+            if relative_to_pitch is None
+            else NUM_RELATIVE_PITCHES[self.pitch_type][False]
+        )
+        pitch = np.zeros(num_pitches, dtype=np.float16)
         pitch_class = (
             self.pitch_class
             if relative_to_pitch is None
-            else transpose_pitch(self.pitch_class, -relative_to_pitch, self.pitch_type)
+            else transpose_pitch(
+                self.pitch_class, -relative_to_pitch, self.pitch_type, ignore_range=True
+            )
+            - MIN_RELATIVE_TPC
         )
         pitch[pitch_class] = 1
         vectors.append(pitch)
@@ -303,7 +316,7 @@ class Note:
         vectors.append(relative_octave)
 
         # Normalized pitch height
-        norm_pitch_height = [midi_note_number / 127]
+        norm_pitch_height = [midi_note_number / 127]  # TODO: Transpose this
         vectors.append(norm_pitch_height)
 
         # Relative to surrounding notes

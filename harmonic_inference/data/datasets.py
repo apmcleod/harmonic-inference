@@ -1392,7 +1392,7 @@ class ChordPitchesDataset(HarmonicDataset):
                 np.vstack(piece.get_chord_note_inputs(window=2, for_chord_pitches=True))
             )
             self.targets.append(
-                np.array([chord.get_chord_pitches_vector() for chord in piece.get_chords()])
+                np.array([chord.get_chord_pitches_target_vector() for chord in piece.get_chords()])
             )
 
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
@@ -1727,4 +1727,5 @@ DATASETS = {
     "ktm": KeyTransitionDataset,
     "ksm": KeySequenceDataset,
     "kppm": KeyPostProcessorDataset,
+    "cpm": ChordPitchesDataset,
 }
