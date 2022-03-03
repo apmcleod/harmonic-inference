@@ -297,10 +297,12 @@ def get_chord_vector_inversion_index(
     side = get_chord_pitches_vector_length(pitch_type, part="side")
     center = get_chord_pitches_vector_length(pitch_type, part="center")
 
+    num_pitches = NUM_RELATIVE_PITCHES[pitch_type][False]
+
     return [
-        len(ChordType),
+        len(ChordType) + num_pitches,
         side + len(ChordType),
-        side + center + len(ChordType),
+        side + center + num_pitches + len(ChordType),
     ]
 
 
@@ -334,15 +336,18 @@ def get_chord_vector_chord_type_index(
         (if for_chord_pitches is True), a list of those indexes.
     """
     if pitch_type is None:
-        pitch_type = infer_chord_vector_pitch_type(vector_length, pad)
+        pitch_type = infer_chord_vector_pitch_type(
+            vector_length, pad, for_chord_pitches=for_chord_pitches
+        )
 
     if not for_chord_pitches:
         return NUM_RELATIVE_PITCHES[pitch_type][pad]
 
+    num_pitches = NUM_RELATIVE_PITCHES[pitch_type][False]
     side = get_chord_pitches_vector_length(pitch_type, part="side")
     center = get_chord_pitches_vector_length(pitch_type, part="center")
 
-    return [0, side, side + center]
+    return [num_pitches, side, side + center + num_pitches]
 
 
 def reduce_chord_one_hots(
@@ -509,9 +514,6 @@ def reduce_chord_types(
         new_chord_type_vectors = np.zeros_like(chord_type_vectors)
 
         for from_type, to_type in reduction.items():
-            if from_type == to_type:
-                continue
-
             from_index = from_type.value
             to_index = to_type.value
 

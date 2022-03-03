@@ -1388,10 +1388,8 @@ class ChordPitchesDataset(HarmonicDataset):
             self.target_pitch_type.append(pieces[0].get_chords()[0].pitch_type.value)
 
         for piece in pieces:
-            self.inputs.append(
-                np.vstack(piece.get_chord_note_inputs(window=2, for_chord_pitches=True))
-            )
-            self.targets.append(
+            self.inputs.extend(piece.get_chord_note_inputs(window=2, for_chord_pitches=True))
+            self.targets.extend(
                 np.array([chord.get_chord_pitches_target_vector() for chord in piece.get_chords()])
             )
 
@@ -1401,7 +1399,6 @@ class ChordPitchesDataset(HarmonicDataset):
         self.use_inversions = use_inversions
 
     def reduce(self, data: Dict, transposition: int = None):
-        # TODO: Check
         reduce_chord_types(data["inputs"], self.reduction, pad=False, for_chord_pitches=True)
         if not self.use_inversions:
             remove_chord_inversions(data["inputs"], pad=False, for_chord_pitches=True)

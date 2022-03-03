@@ -316,8 +316,15 @@ class Note:
         vectors.append(relative_octave)
 
         # Normalized pitch height
-        norm_pitch_height = [midi_note_number / 127]  # TODO: Transpose this
-        vectors.append(norm_pitch_height)
+        norm_pitch_height = midi_note_number / 127
+        if relative_to_pitch is not None:
+            norm_pitch_height -= (
+                get_pitch_from_string(
+                    get_pitch_string(relative_to_pitch, self.pitch_type), PitchType.MIDI
+                )
+                / 127
+            )
+        vectors.append([norm_pitch_height])
 
         # Relative to surrounding notes
         if min_pitch is not None and max_pitch is not None:
