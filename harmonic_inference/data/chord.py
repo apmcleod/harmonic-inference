@@ -1021,3 +1021,23 @@ def get_chord_pitches_vector_length(pitch_type: PitchType, part: str = None) -> 
             "side": side,
         }[part]
     )
+
+
+def get_chord_pitches_target_vector_length(pitch_type: PitchType) -> int:
+    """
+    Get the length of the chord pitches target vector.
+
+    Parameters
+    ----------
+    pitch_type : PitchType
+        The pitch type of the target vector.
+
+    Returns
+    -------
+    length : int
+        The length of a chord pitches target vector.
+    """
+    if pitch_type == PitchType.MIDI:
+        return NUM_PITCHES[PitchType.MIDI]
+
+    return 1 + 2 * MAX_CHORD_PITCH_INTERVAL_TPC

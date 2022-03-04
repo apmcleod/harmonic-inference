@@ -16,6 +16,7 @@ from tqdm import tqdm
 
 import harmonic_inference.data.datasets as ds
 import harmonic_inference.models.chord_classifier_models as ccm
+import harmonic_inference.models.chord_pitches_models as cpm
 import harmonic_inference.models.chord_sequence_models as csm
 import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.initial_chord_models as icm
@@ -31,6 +32,7 @@ from harmonic_inference.utils.beam_search_utils import Beam, HashedBeam, State
 
 MODEL_CLASSES = {
     "ccm": [ccm.SimpleChordClassifier, ccm.MultiTargetChordClassifier],
+    "cpm": [cpm.SimpleChordPitchesModel],
     "ctm": [ctm.SimpleChordTransitionModel],
     "csm": [csm.SimpleChordSequenceModel],
     "ktm": [ktm.SimpleKeyTransitionModel],

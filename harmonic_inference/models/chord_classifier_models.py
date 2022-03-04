@@ -98,7 +98,8 @@ class ChordClassifierModel(pl.LightningModule, ABC):
 
     def add_settings_to_h5_file(self, h5_file: File) -> None:
         """
-        Add this model's hyperparameter settings to the given h5 file.
+        Add this model's hyperparameter settings to the given h5 file. This is specifically used
+        when this model has generated scheduled sampling data.
 
         Parameters
         ----------
