@@ -1,6 +1,6 @@
 """Models that generate probability distributions over the pitches present in a given chord."""
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Tuple
 
 import pytorch_lightning as pl
 import torch
@@ -15,7 +15,7 @@ from harmonic_inference.data.chord import (
     get_chord_pitches_target_vector_length,
     get_chord_pitches_vector_length,
 )
-from harmonic_inference.data.data_types import ChordType, PieceType, PitchType
+from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.datasets import ChordPitchesDataset
 
 
@@ -27,13 +27,11 @@ class ChordPitchesModel(pl.LightningModule, ABC):
 
     def __init__(
         self,
-        input_type: PieceType,
         input_pitch: PitchType,
         output_pitch: PitchType,
         reduction: Dict[ChordType, ChordType],
         use_inversions: bool,
         learning_rate: float,
-        transposition_range: Union[List[int], Tuple[int, int]],
         input_mask: List[int],
     ):
         """
@@ -91,17 +89,15 @@ class ChordPitchesModel(pl.LightningModule, ABC):
 
         outputs = self(inputs, input_lengths)
 
-        # TODO: Not softmax here
-        return F.softmax(outputs, dim=-1)
+        return outputs.round()
 
     def training_step(self, batch, batch_idx):
         inputs = batch["inputs"].float()
         input_lengths = batch["input_lengths"]
-        targets = batch["targets"].long()
+        targets = batch["targets"].float()
 
         outputs = self(inputs, input_lengths)
-        # TODO: Not cross-ent (I think?)
-        loss = F.cross_entropy(outputs, targets, ignore_index=-1)
+        loss = F.binary_cross_entropy(outputs, targets)
 
         self.log("train_loss", loss)
         return loss
@@ -109,50 +105,94 @@ class ChordPitchesModel(pl.LightningModule, ABC):
     def validation_step(self, batch, batch_idx):
         inputs = batch["inputs"].float()
         input_lengths = batch["input_lengths"]
-        targets = batch["targets"].long()
+        targets = batch["targets"].float()
 
         outputs = self(inputs, input_lengths)
-
-        # TODO: Check mask and accuracy measurement
-        # TODO: Add precision/recall?
-        mask = targets != -1
-        outputs = outputs[mask]
-        targets = targets[mask]
+        rounded_outputs = outputs.round()
 
         if len(targets) > 0:
-            acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
-            loss = F.cross_entropy(outputs, targets, ignore_index=-1)
+            pitch_correct = (rounded_outputs == targets).sum().float()
+            chord_correct = (torch.sum(pitch_correct, dim=1) == outputs.shape[1]).float()
+
+            total_pitches = len(targets.flatten())
+            total_chords = len(targets)
+
+            pitch_acc = 100 * pitch_correct / total_pitches
+            chord_acc = 100 * chord_correct / total_chords
+
+            positive_target_mask = targets == 1
+            positive_output_mask = rounded_outputs == 1
+
+            tp = (positive_target_mask & positive_output_mask).sum().float()
+            fp = (~positive_target_mask & positive_output_mask).sum().float()
+            fn = (positive_target_mask & ~positive_output_mask).sum().float()
+
+            precision = tp / (tp + fp)
+            recall = tp / (tp + fn)
+            f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
+
+            loss = F.binary_cross_entropy(outputs, targets)
 
             self.log("val_loss", loss)
-            self.log("val_acc", acc)
+            self.log("val_pitch_acc", pitch_acc)
+            self.log("val_chord_acc", chord_acc)
+            self.log("val_precision", precision)
+            self.log("val_recall", recall)
+            self.log("val_f1", f1)
 
     def evaluate(self, dataset: ChordPitchesDataset):
         dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
 
-        total = 0
+        num_pitches = 0
+        num_chords = 0
+        tp = 0
+        fp = 0
+        fn = 0
         total_loss = 0
-        total_acc = 0
+        total_pitch_acc = 0
+        total_chord_acc = 0
 
         for batch in tqdm(dl, desc="Evaluating CPM"):
             inputs = batch["inputs"].float()
             input_lengths = batch["input_lengths"]
-            targets = batch["targets"].long()
+            targets = batch["targets"].float()
 
-            # TODO: Check len
-            batch_count = len(targets)
             outputs = self(inputs, input_lengths)
-            loss = F.cross_entropy(outputs, targets)  # TODO: Check loss
-            # TODO: Check acc
-            acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
-            # TODO: add prec/recall?
+            rounded_outputs = outputs.round()
 
-            total += batch_count
-            total_loss += loss * batch_count
-            total_acc += acc * batch_count
+            pitch_correct = (rounded_outputs == targets).sum().float()
+            chord_correct = (torch.sum(pitch_correct, dim=1) == outputs.shape[1]).float()
+
+            total_pitches = len(targets.flatten())
+            total_chords = len(targets)
+
+            total_pitch_acc += 100 * pitch_correct
+            total_chord_acc += 100 * chord_correct
+
+            positive_target_mask = targets == 1
+            positive_output_mask = rounded_outputs == 1
+
+            tp += (positive_target_mask & positive_output_mask).sum().float()
+            fp += (~positive_target_mask & positive_output_mask).sum().float()
+            fn += (positive_target_mask & ~positive_output_mask).sum().float()
+
+            loss = F.binary_cross_entropy(outputs, targets)
+
+            num_chords += total_chords
+            num_pitches += total_pitches
+            total_loss += loss * total_chords
+
+        precision = tp / (tp + fp)
+        recall = tp / (tp + fn)
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
 
         return {
-            "acc": (total_acc / total).item(),
-            "loss": (total_loss / total).item(),
+            "loss": (total_loss / num_chords).item(),
+            "pitch_acc": (total_pitch_acc / num_pitches).item(),
+            "chord_acc": (total_chord_acc / num_chords).item(),
+            "precision": precision.item(),
+            "recall": recall.item(),
+            "f1": f1.item(),
         }
 
     @abstractmethod
@@ -182,7 +222,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
         return [optimizer], [{"scheduler": scheduler, "monitor": "val_loss"}]
 
 
-class SimpleChordClassifier(ChordPitchesModel):
+class SimpleChordPitchesModel(ChordPitchesModel):
     """
     The most simple chord pitches model, with layers:
         1. Linear layer (embedding)
@@ -324,5 +364,4 @@ class SimpleChordClassifier(ChordPitchesModel):
         drop1 = self.dropout1(relu2)
         output = self.fc2(drop1)
 
-        # TODO: Add sigmoid?
-        return output
+        return torch.sigmoid(output)

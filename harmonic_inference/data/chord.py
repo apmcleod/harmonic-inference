@@ -323,7 +323,9 @@ class Chord:
         key_tonic = self.key_tonic if relative_to is None else relative_to.relative_tonic
         key_mode = self.key_mode if relative_to is None else relative_to.relative_mode
 
-        num_pitches = NUM_RELATIVE_PITCHES[self.pitch_type][pad]
+        num_pitches = (
+            NUM_PITCHES[self.pitch_type] if absolute else NUM_RELATIVE_PITCHES[self.pitch_type][pad]
+        )
 
         vectors = []
 

@@ -509,8 +509,8 @@ class MultiTargetChordClassifier(ChordClassifierModel):
         outputs, (root, bass, presence) = self(notes, notes_lengths)
         output_loss = F.cross_entropy(outputs, targets, ignore_index=-1)
 
-        root_loss = F.nll_loss(root, root_targets, ignore_index=-1)
-        bass_loss = F.nll_loss(bass, bass_targets, ignore_index=-1)
+        root_loss = F.nll_loss(torch.log(root), root_targets, ignore_index=-1)
+        bass_loss = F.nll_loss(torch.log(bass), bass_targets, ignore_index=-1)
 
         mask = pitch_targets != -1
         presence_loss = F.binary_cross_entropy(presence[mask], pitch_targets[mask])
@@ -544,8 +544,8 @@ class MultiTargetChordClassifier(ChordClassifierModel):
             output_acc = 100 * (outputs.argmax(-1) == targets).sum().float() / len(targets)
             output_loss = F.cross_entropy(outputs, targets, ignore_index=-1)
 
-            root_loss = F.nll_loss(root, root_targets, ignore_index=-1)
-            bass_loss = F.nll_loss(bass, bass_targets, ignore_index=-1)
+            root_loss = F.nll_loss(torch.log(root), root_targets, ignore_index=-1)
+            bass_loss = F.nll_loss(torch.log(bass), bass_targets, ignore_index=-1)
 
             mask = root_targets != -1
             presence_loss = F.binary_cross_entropy(presence[mask], pitch_targets[mask])
@@ -558,16 +558,36 @@ class MultiTargetChordClassifier(ChordClassifierModel):
             bass_acc = (
                 100 * (bass[mask].argmax(-1) == bass_targets[mask]).sum().float() / len(targets)
             )
+
+            presence_rounded = presence[mask].round()
             presence_acc = (
                 100
-                * (presence[mask].round() == pitch_targets[mask]).sum().float()
+                * (presence_rounded == pitch_targets[mask]).sum().float()
                 / len(pitch_targets[mask].flatten())
+            )
+
+            positive_targets = pitch_targets[mask] == 1
+            positive_outputs = presence_rounded == 1
+
+            tp = (positive_targets & positive_outputs).sum().float()
+            fp = (~positive_targets & positive_outputs).sum().float()
+            fn = (positive_targets & ~positive_outputs).sum().float()
+
+            presence_prec = tp / (tp + fp)
+            presence_rec = tp / (tp + fn)
+            presence_f1 = (
+                2 * presence_prec * presence_rec / (presence_prec + presence_rec)
+                if presence_prec + presence_rec > 0
+                else 0
             )
 
             self.log("val_output_acc", output_acc)
             self.log("val_root_acc", root_acc)
             self.log("val_bass_acc", bass_acc)
             self.log("val_presence_acc", presence_acc)
+            self.log("val_presence_prec", presence_prec)
+            self.log("val_presence_rec", presence_rec)
+            self.log("val_presence_f1", presence_f1)
 
             self.log("val_output_loss", output_loss)
             self.log("val_root_loss", root_loss)
