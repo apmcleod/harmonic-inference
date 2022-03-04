@@ -89,7 +89,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
 
         outputs = self(inputs, input_lengths)
 
-        return outputs.round()
+        return outputs
 
     def training_step(self, batch, batch_idx):
         inputs = batch["inputs"].float()

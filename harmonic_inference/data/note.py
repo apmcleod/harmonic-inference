@@ -10,16 +10,11 @@ import pandas as pd
 
 from harmonic_inference.data.corpus_constants import MEASURE_OFFSET, NOTE_ONSET_BEAT
 from harmonic_inference.data.data_types import PitchType
-from harmonic_inference.utils.harmonic_constants import (
-    MIN_RELATIVE_TPC,
-    NUM_PITCHES,
-    NUM_RELATIVE_PITCHES,
-    TPC_C,
-)
+from harmonic_inference.utils.harmonic_constants import NUM_PITCHES, NUM_RELATIVE_PITCHES, TPC_C
 from harmonic_inference.utils.harmonic_utils import (
+    absolute_to_relative,
     get_pitch_from_string,
     get_pitch_string,
-    transpose_pitch,
 )
 from harmonic_inference.utils.rhythmic_utils import (
     get_metrical_level,
@@ -227,16 +222,15 @@ class Note:
         num_pitches = (
             NUM_PITCHES[self.pitch_type]
             if relative_to_pitch is None
-            else NUM_RELATIVE_PITCHES[self.pitch_type][False]
+            else NUM_RELATIVE_PITCHES[self.pitch_type][True]
         )
         pitch = np.zeros(num_pitches, dtype=np.float16)
         pitch_class = (
             self.pitch_class
             if relative_to_pitch is None
-            else transpose_pitch(
-                self.pitch_class, -relative_to_pitch, self.pitch_type, ignore_range=True
+            else absolute_to_relative(
+                self.pitch_class, relative_to_pitch, self.pitch_type, False, pad=True
             )
-            - MIN_RELATIVE_TPC
         )
         pitch[pitch_class] = 1
         vectors.append(pitch)
@@ -598,7 +592,7 @@ def get_note_vector_length(pitch_type: PitchType, for_chord_pitches: bool = Fals
     extra = 20
 
     num_pitches = (
-        NUM_RELATIVE_PITCHES[pitch_type][False] if for_chord_pitches else NUM_PITCHES[pitch_type]
+        NUM_RELATIVE_PITCHES[pitch_type][True] if for_chord_pitches else NUM_PITCHES[pitch_type]
     )
 
     return (

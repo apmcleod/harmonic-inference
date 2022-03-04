@@ -429,7 +429,7 @@ class Chord:
             self.pitch_type,
         )
 
-        return self.to_vec(relative_to=relative_key, no_root=is_center, no_bass=True)
+        return self.to_vec(relative_to=relative_key, no_root=is_center, no_bass=True, pad=True)
 
     def get_chord_pitches_target_vector(self) -> np.ndarray:
         """
@@ -445,7 +445,7 @@ class Chord:
             This allows for up to 2 cycles around the circle of fifths in each direction.
         """
         if self.chord_pitches is None:
-            logging.warning("chord_pitches is None for this Chord. Using the chord_type default.")
+            logging.info("chord_pitches is None for this Chord. Using the chord_type default.")
 
             vector = get_vector_from_chord_type(
                 self.chord_type,
@@ -458,7 +458,7 @@ class Chord:
                 to_remove = len(vector) - (2 * MAX_CHORD_PITCH_INTERVAL_TPC + 1)
                 vector = vector[to_remove // 2 : -to_remove // 2]
 
-        if self.pitch_type == PitchType.MIDI:
+        elif self.pitch_type == PitchType.MIDI:
             vector = np.zeros(NUM_PITCHES[PitchType.MIDI], dtype=int)
 
             for pitch in self.chord_pitches:
@@ -1010,7 +1010,7 @@ def get_chord_pitches_vector_length(pitch_type: PitchType, part: str = None) -> 
         The length of the chord pitches vector, or the desired part.
     """
     center = CHORD_VECTOR_NO_PITCHES_LENGTH
-    side = CHORD_VECTOR_NO_PITCHES_LENGTH + NUM_RELATIVE_PITCHES[pitch_type][False]
+    side = CHORD_VECTOR_NO_PITCHES_LENGTH + NUM_RELATIVE_PITCHES[pitch_type][True]
     chord = side * 2 + center
     full = chord + get_note_vector_length(pitch_type, for_chord_pitches=True)
 

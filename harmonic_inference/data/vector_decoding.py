@@ -297,7 +297,7 @@ def get_chord_vector_inversion_index(
     side = get_chord_pitches_vector_length(pitch_type, part="side")
     center = get_chord_pitches_vector_length(pitch_type, part="center")
 
-    num_pitches = NUM_RELATIVE_PITCHES[pitch_type][False]
+    num_pitches = NUM_RELATIVE_PITCHES[pitch_type][True]
 
     return [
         len(ChordType) + num_pitches,
@@ -343,7 +343,7 @@ def get_chord_vector_chord_type_index(
     if not for_chord_pitches:
         return NUM_RELATIVE_PITCHES[pitch_type][pad]
 
-    num_pitches = NUM_RELATIVE_PITCHES[pitch_type][False]
+    num_pitches = NUM_RELATIVE_PITCHES[pitch_type][True]
     side = get_chord_pitches_vector_length(pitch_type, part="side")
     center = get_chord_pitches_vector_length(pitch_type, part="center")
 

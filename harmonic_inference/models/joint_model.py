@@ -674,15 +674,15 @@ class HarmonicInferenceModel:
             chord_ranges, range_log_probs, rejoin_log_probs, chord_classifications
         )
 
-        # KPPM Post-processing for key labels
+        # KPPM post-processing for key labels
         if not self.no_kppm:
             logging.info("Performing KPPM post-processing")
             self.kppm_post_processing(state)
 
-        # TODO: CPM post-processing for chord pitches
+        # CPM post-processing for chord pitches
         if not self.no_cpm:
             logging.info("Performing CPM post-processing")
-            # self.cpm_post_processing(state)
+            self.cpm_post_processing(state)
 
         self.current_piece = None
 
@@ -1441,7 +1441,8 @@ class HarmonicInferenceModel:
 
     def kppm_post_processing(self, state: State) -> None:
         """
-        Run the KPPM post-processing step, and update the state in place with its outputs.
+        Run the KPPM post-processing step, and update the state in place with its outputs
+        (new key labels).
 
         Parameters
         ----------
@@ -1471,6 +1472,43 @@ class HarmonicInferenceModel:
         current_state = state
         for key in reversed(keys):
             current_state.key = key
+            current_state = current_state.prev_state
+
+    def cpm_post_processing(self, state: State) -> None:
+        """
+        Run the CPM post-processing step, and update the state in place with its outputs
+        (pitch presence vectors for each chord).
+
+        Parameters
+        ----------
+        state : State
+            The most likely state as output by the beam search.
+        """
+        piece = state.get_score_piece(
+            self.current_piece,
+            self.CHORD_OUTPUT_TYPE,
+            self.KEY_OUTPUT_TYPE,
+            self.duration_cache,
+            self.onset_cache,
+            self.onset_level_cache,
+            self.beat_duration_cache,
+            self.LABELS,
+        )
+
+        kwargs = self.chord_pitches_model.get_dataset_kwargs()
+
+        dataset = ds.ChordPitchesDataset([piece], **kwargs)
+        dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
+
+        outputs = []
+        for batch in dl:
+            outputs.extend(self.key_post_processor_model.get_output(batch).numpy())
+
+        chord_pitches = np.round(np.vstack(outputs)).astype(int)
+
+        current_state = state
+        for pitches in reversed(chord_pitches):
+            current_state.chord_pitches = pitches
             current_state = current_state.prev_state
 
 
