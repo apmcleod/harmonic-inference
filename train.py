@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 
 import harmonic_inference.data.datasets as ds
 import harmonic_inference.models.chord_classifier_models as ccm
+import harmonic_inference.models.chord_pitches_models as cpm
 import harmonic_inference.models.chord_sequence_models as csm
 import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.initial_chord_models as icm
@@ -283,6 +284,28 @@ if __name__ == "__main__":
                 model.input_dim,
             )
             model = kppm.SimpleKeyPostProcessorModel(
+                PitchType.TPC,
+                PitchType.TPC,
+                learning_rate=ARGS.lr,
+                scheduled_sampling=ARGS.sched,
+                **kwargs,
+            )
+
+    elif ARGS.model == "cpm":
+        model = cpm.SimpleChordPitchesModel(
+            PitchType.TPC,
+            PitchType.TPC,
+            learning_rate=ARGS.lr,
+            scheduled_sampling=ARGS.sched,
+            **kwargs,
+        )
+
+        if "input_mask" in kwargs:
+            kwargs["input_mask"] = ds.transform_input_mask_to_binary(
+                kwargs["input_mask"],
+                model.input_dim,
+            )
+            model = cpm.SimpleChordPitchesModel(
                 PitchType.TPC,
                 PitchType.TPC,
                 learning_rate=ARGS.lr,
