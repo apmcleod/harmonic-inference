@@ -111,8 +111,9 @@ class ChordPitchesModel(pl.LightningModule, ABC):
         rounded_outputs = outputs.round()
 
         if len(targets) > 0:
-            pitch_correct = (rounded_outputs == targets).sum().float()
+            pitch_correct = (rounded_outputs == targets).float()
             chord_correct = (torch.sum(pitch_correct, dim=1) == outputs.shape[1]).float()
+            pitch_correct = pitch_correct.sum()
 
             total_pitches = len(targets.flatten())
             total_chords = len(targets)
@@ -160,8 +161,9 @@ class ChordPitchesModel(pl.LightningModule, ABC):
             outputs = self(inputs, input_lengths)
             rounded_outputs = outputs.round()
 
-            pitch_correct = (rounded_outputs == targets).sum().float()
+            pitch_correct = (rounded_outputs == targets).float()
             chord_correct = (torch.sum(pitch_correct, dim=1) == outputs.shape[1]).float()
+            pitch_correct = pitch_correct.sum()
 
             total_pitches = len(targets.flatten())
             total_chords = len(targets)
