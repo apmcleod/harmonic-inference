@@ -225,14 +225,24 @@ class Note:
             else NUM_RELATIVE_PITCHES[self.pitch_type][True]
         )
         pitch = np.zeros(num_pitches, dtype=np.float16)
-        pitch_class = (
-            self.pitch_class
-            if relative_to_pitch is None
-            else absolute_to_relative(
-                self.pitch_class, relative_to_pitch, self.pitch_type, False, pad=True
+        try:
+            pitch_class = (
+                self.pitch_class
+                if relative_to_pitch is None
+                else absolute_to_relative(
+                    self.pitch_class, relative_to_pitch, self.pitch_type, False, pad=True
+                )
             )
-        )
-        pitch[pitch_class] = 1
+            pitch[pitch_class] = 1
+        except ValueError:
+            logging.warning(
+                (
+                    "Note %s relative to pitch %s out of range. Not including pitch class in "
+                    "vector."
+                ),
+                self,
+                relative_to_pitch,
+            )
         vectors.append(pitch)
 
         # Octave as one-hot
