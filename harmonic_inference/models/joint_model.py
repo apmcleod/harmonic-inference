@@ -1502,7 +1502,7 @@ class HarmonicInferenceModel:
 
         outputs = []
         for batch in dl:
-            outputs.extend(self.key_post_processor_model.get_output(batch).numpy())
+            outputs.extend(self.chord_pitches_model.get_output(batch).numpy())
 
         chord_pitches = np.round(np.vstack(outputs)).astype(int)
 
