@@ -182,9 +182,15 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
     )
 
     parser.add_argument(
-        "--no-post",
+        "--no-kppm",
         action="store_true",
         help="Do not perform KPPM post-processing.",
+    )
+
+    parser.add_argument(
+        "--no-cpm",
+        action="store_true",
+        help="Do not perform CPM post-processing.",
     )
 
 
@@ -208,7 +214,8 @@ class HarmonicInferenceModel:
         target_key_branch_prob: float = TARGET_KEY_BRANCH_PROB_DEFAULT,
         hash_length: int = HASH_LENGTH_DEFAULT,
         ksm_exponent: float = KSM_EXPONENT_DEFAULT,
-        no_post: bool = False,
+        no_kppm: bool = False,
+        no_cpm: bool = False,
     ):
         """
         Create a new HarmonicInferenceModel from a set of pre-loaded models.
@@ -224,6 +231,7 @@ class HarmonicInferenceModel:
                 'ksm': A KeySequenceModel
                 'icm': An InitialChordModel
                 'kppm': A KeyPostProcessorModel
+                'cpm': A ChordPitchesModel
         min_chord_change_prob : float
             The minimum probability (from the CTM) on which a chord change can occur.
         max_no_chord_change_prob : float
@@ -255,8 +263,10 @@ class HarmonicInferenceModel:
         ksm_exponent : float
             An exponent to apply to the KSM's output probabilities. Used to weight the KSM
             and CSM equally, even given their different vocabulary sizes.
-        no_post : bool
+        no_kppm : bool
             Do not perform KPPM post-processing.
+        no_cpm : bool
+            Do not perform CPM post-processing.
         """
         for model, model_classes in MODEL_CLASSES.items():
             assert model in models.keys(), f"`{model}` not in models dict."
@@ -268,13 +278,20 @@ class HarmonicInferenceModel:
         for arg_name in inspect.getfullargspec(HarmonicInferenceModel.__init__).args[1:]:
             logging.info("    %s = %s", arg_name, locals()[arg_name])
 
+        # Post-processing flags
+        self.no_kppm = no_kppm
+        self.no_cpm = no_cpm
+
         self.chord_classifier: ccm.ChordClassifierModel = models["ccm"]
         self.chord_sequence_model: csm.ChordSequenceModel = models["csm"]
         self.chord_transition_model: ctm.ChordTransitionModel = models["ctm"]
         self.key_sequence_model: ksm.KeySequenceModel = models["ksm"]
         self.key_transition_model: ktm.KeyTransitionModel = models["ktm"]
-        self.key_post_processor_model: kppm.SimpleKeyPostProcessorModel = models["kppm"]
+        if not self.no_kppm:
+            self.key_post_processor_model: kppm.SimpleKeyPostProcessorModel = models["kppm"]
         self.initial_chord_model: icm.SimpleInitialChordModel = models["icm"]
+        if not self.no_cpm:
+            self.chord_pitches_model: cpm.SimpleChordPitchesModel = models["cpm"]
         self.check_input_output_types()
 
         # Set joint model types
@@ -324,9 +341,6 @@ class HarmonicInferenceModel:
         self.target_key_branch_prob = target_key_branch_prob
         self.ksm_exponent = ksm_exponent
 
-        # Post-processing params (KPPM)
-        self.no_post = no_post
-
         # Beam search params
         self.beam_size = beam_size
         self.hash_length = hash_length
@@ -355,9 +369,10 @@ class HarmonicInferenceModel:
         assert (
             self.chord_classifier.OUTPUT_PITCH == self.chord_sequence_model.INPUT_CHORD_PITCH_TYPE
         ), "CCM output pitch type does not match CSM chord pitch type"
-        assert (
-            self.chord_classifier.OUTPUT_PITCH == self.key_post_processor_model.INPUT_PITCH
-        ), "CCM output pitch type does not match KPPM input pitch type"
+        if not self.no_kppm:
+            assert (
+                self.chord_classifier.OUTPUT_PITCH == self.key_post_processor_model.INPUT_PITCH
+            ), "CCM output pitch type does not match KPPM input pitch type"
 
         # Output from CSM
         assert (
@@ -372,6 +387,10 @@ class HarmonicInferenceModel:
             self.chord_sequence_model.OUTPUT_PITCH_TYPE
             == self.chord_sequence_model.INPUT_CHORD_PITCH_TYPE
         ), "CSM output pitch type does not match its own input chord pitch type"
+        if not self.no_cpm:
+            assert (
+                self.chord_sequence_model.OUTPUT_PITCH_TYPE == self.chord_pitches_model.OUTPUT_PITCH
+            ), "CSM output pitch type does not match CPM input pitch type"
 
         # Output from KSM
         assert (
@@ -391,6 +410,12 @@ class HarmonicInferenceModel:
         assert (
             self.initial_chord_model.PITCH_TYPE == self.chord_sequence_model.OUTPUT_PITCH_TYPE
         ), "ICM pitch type does not match CSM output pitch type"
+
+        # Output from CPM
+        if not self.no_cpm:
+            assert (
+                self.chord_pitches_model.OUTPUT_PITCH == self.chord_sequence_model.OUTPUT_PITCH_TYPE
+            ), "CPM output pitch type does not match overall and CSM output pitch type"
 
     def _validate_and_load_forced_labels(self):
         """
@@ -650,9 +675,14 @@ class HarmonicInferenceModel:
         )
 
         # KPPM Post-processing for key labels
-        if not self.no_post:
+        if not self.no_kppm:
             logging.info("Performing KPPM post-processing")
-            self.post_process(state)
+            self.kppm_post_processing(state)
+
+        # TODO: CPM post-processing for chord pitches
+        if not self.no_cpm:
+            logging.info("Performing CPM post-processing")
+            # self.cpm_post_processing(state)
 
         self.current_piece = None
 
@@ -1409,7 +1439,7 @@ class HarmonicInferenceModel:
             state.csm_log_prior = log_prior.numpy()[0]
             state.csm_hidden_state = (hidden, cell)
 
-    def post_process(self, state: State) -> None:
+    def kppm_post_processing(self, state: State) -> None:
         """
         Run the KPPM post-processing step, and update the state in place with its outputs.
 
@@ -2175,5 +2205,6 @@ def from_args(models: Dict, ARGS: Namespace) -> HarmonicInferenceModel:
         target_key_branch_prob=ARGS.target_key_branch_prob,
         hash_length=ARGS.hash_length,
         ksm_exponent=ARGS.ksm_exponent,
-        no_post=ARGS.no_post,
+        no_kppm=ARGS.no_kppm,
+        no_cpm=ARGS.no_cpm,
     )
