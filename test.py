@@ -255,6 +255,7 @@ def evaluate(
         if piece.get_chords() is None:
             logging.info("Cannot compute accuracy. Ground truth unknown.")
         else:
+            chord_acc_with_pitches = eu.evaluate_features(results_df, ["chord", "pitches"])
             chord_acc_full = eu.evaluate_features(results_df, ["chord"])
             chord_acc_no_inv = eu.evaluate_features(results_df, ["chord_type", "root"])
             chord_acc_triad = eu.evaluate_features(results_df, ["triad", "root", "inversion"])
@@ -262,6 +263,7 @@ def evaluate(
             chord_acc_root_only = eu.evaluate_features(results_df, ["root"])
 
             logging.info("Chord accuracy = %s", chord_acc_full)
+            logging.info("Chord accuracy with pitches = %s", chord_acc_with_pitches)
             logging.info("Chord accuracy, no inversions = %s", chord_acc_no_inv)
             logging.info("Chord accuracy, triads = %s", chord_acc_triad)
             logging.info("Chord accuracy, triad, no inversions = %s", chord_acc_triad_no_inv)
@@ -273,8 +275,10 @@ def evaluate(
             logging.info("Key accuracy = %s", key_acc_full)
             logging.info("Key accuracy, tonic only = %s", key_acc_tonic)
 
+            full_acc_with_pitches = eu.evaluate_features(results_df, ["chord", "key", "pitches"])
             full_acc = eu.evaluate_features(results_df, ["chord", "key"])
             logging.info("Full accuracy = %s", full_acc)
+            logging.info("Full accuracy with pitches = %s", full_acc_with_pitches)
 
         if logging.getLogger().isEnabledFor(logging.DEBUG):
             eu.log_state(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)

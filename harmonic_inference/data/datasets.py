@@ -1507,8 +1507,7 @@ class ChordPitchesDataset(HarmonicDataset):
     """
 
     train_batch_size = 256
-    valid_batch_size = 512
-    chunk_size = 1024
+    valid_batch_size = 256
 
     def __init__(
         self,

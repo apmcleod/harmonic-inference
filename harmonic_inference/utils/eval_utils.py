@@ -87,6 +87,7 @@ def get_results_df(
     gt_chord_types = np.zeros(len(piece.get_inputs()), dtype=object)
     gt_chord_triads = np.zeros(len(piece.get_inputs()), dtype=object)
     gt_chord_inversions = np.zeros(len(piece.get_inputs()), dtype=int)
+    gt_chord_pitches = np.zeros(len(piece.get_inputs()), dtype=object)
     for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
         chord = chord.to_pitch_type(chord_root_type)
         gt_chord_labels[start:end] = chord.get_one_hot_index(
@@ -96,6 +97,7 @@ def get_results_df(
         gt_chord_types[start:end] = chord.chord_type
         gt_chord_triads[start:end] = TRIAD_REDUCTION[chord.chord_type]
         gt_chord_inversions[start:end] = chord.inversion
+        gt_chord_pitches[start:end] = str(tuple(sorted(chord.chord_pitches)))
 
     last_chord = gt_chords[-1].to_pitch_type(chord_root_type)
     gt_chord_labels[gt_changes[-1] :] = last_chord.get_one_hot_index(
@@ -105,15 +107,17 @@ def get_results_df(
     gt_chord_types[gt_changes[-1] :] = last_chord.chord_type
     gt_chord_triads[gt_changes[-1] :] = TRIAD_REDUCTION[last_chord.chord_type]
     gt_chord_inversions[gt_changes[-1] :] = last_chord.inversion
+    gt_chord_pitches[gt_changes[-1] :] = str(tuple(sorted(last_chord.chord_pitches)))
 
     # Est chords
-    chords, changes = state.get_chords()
+    chords, changes, all_pitches = state.get_chords()
     estimated_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
     estimated_chord_roots = np.zeros(len(piece.get_inputs()), dtype=int)
     estimated_chord_types = np.zeros(len(piece.get_inputs()), dtype=object)
     estimated_chord_triads = np.zeros(len(piece.get_inputs()), dtype=object)
     estimated_chord_inversions = np.zeros(len(piece.get_inputs()), dtype=int)
-    for chord, start, end in zip(chords, changes[:-1], changes[1:]):
+    estimated_chord_pitches = np.zeros(len(piece.get_inputs()), dtype=object)
+    for chord, pitches, start, end in zip(chords, all_pitches, changes[:-1], changes[1:]):
         root, chord_type, inv = hu.get_chord_from_one_hot_index(chord, output_root_type)
         root = hu.get_pitch_from_string(
             hu.get_pitch_string(root, output_root_type), chord_root_type
@@ -124,6 +128,7 @@ def get_results_df(
         estimated_chord_types[start:end] = chord_type
         estimated_chord_triads[start:end] = TRIAD_REDUCTION[chord_type]
         estimated_chord_inversions[start:end] = inv
+        estimated_chord_pitches[start:end] = str(tuple(sorted(pitches)))
 
     # GT keys
     gt_keys = piece.get_keys()
@@ -171,12 +176,14 @@ def get_results_df(
         gt_chord_type,
         gt_triad,
         gt_inversion,
+        gt_pitches,
         est_tonic,
         est_mode,
         est_root,
         est_chord_type,
         est_triad,
         est_inversion,
+        est_pitches,
     ) in zip(
         piece.get_duration_cache(),
         estimated_chord_labels,
@@ -189,12 +196,14 @@ def get_results_df(
         gt_chord_types,
         gt_chord_triads,
         gt_chord_inversions,
+        gt_chord_pitches,
         estimated_key_tonics,
         estimated_key_modes,
         estimated_chord_roots,
         estimated_chord_types,
         estimated_chord_triads,
         estimated_chord_inversions,
+        estimated_chord_pitches,
     ):
         if duration == 0:
             continue
@@ -209,6 +218,7 @@ def get_results_df(
                 "gt_chord_type": gt_chord_type,
                 "gt_triad": gt_triad,
                 "gt_inversion": gt_inversion,
+                "gt_pitches": gt_pitches,
                 "est_key": key_label_list[est_key_label],
                 "est_tonic": est_tonic,
                 "est_mode": est_mode,
@@ -217,6 +227,7 @@ def get_results_df(
                 "est_chord_type": est_chord_type,
                 "est_triad": est_triad,
                 "est_inversion": est_inversion,
+                "est_pitches": est_pitches,
                 "duration": duration,
             }
         )
@@ -525,7 +536,7 @@ def get_results_annotation_df(
             relative=False, use_inversion=True, pad=False
         )
 
-    chords, changes = state.get_chords()
+    chords, changes, _ = state.get_chords()
     estimated_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
     for chord, start, end in zip(chords, changes[:-1], changes[1:]):
         estimated_chord_labels[start:end] = chord

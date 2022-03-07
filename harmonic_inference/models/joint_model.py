@@ -1507,13 +1507,16 @@ class HarmonicInferenceModel:
         chord_pitches = np.round(np.vstack(outputs)).astype(int)
 
         current_state = state
-        for pitches in reversed(chord_pitches):
+        for pitches, chord in zip(reversed(chord_pitches), reversed(piece.get_chords())):
             # Convert binary pitches array into root-relative indices
             pitch_indices = np.where(pitches)[0]
             if self.chord_pitches_model.OUTPUT_PITCH == PitchType.TPC:
                 pitch_indices -= hc.MAX_CHORD_PITCH_INTERVAL_TPC
 
-            current_state.chord_pitches = pitch_indices
+            # Convert root-relative indices into absolute pitches
+            abs_pitches = [chord.root + pitch for pitch in pitch_indices]
+
+            current_state.chord_pitches = abs_pitches
             current_state = current_state.prev_state
 
 

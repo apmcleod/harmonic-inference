@@ -805,7 +805,7 @@ class State:
             labels,
         ).get_one_hot_index(relative=True, use_inversion=True, pad=False)
 
-    def get_chords(self) -> Tuple[List[int], List[int]]:
+    def get_chords(self) -> Tuple[List[int], List[int], List[List[int]]]:
         """
         Get the chords and the chord change indexes up to this state.
 
@@ -816,15 +816,18 @@ class State:
         change_indexes : List[int]
             A List of the chord transition indexes up to this State. This list will be of
             length 1 greater than chords because it includes an initial 0.
+        pitches : List[List[int]]
+            A List of the chord pitches for each chord up to this State.
         """
         if self.prev_state is None:
-            return [], [self.change_index]
+            return [], [self.change_index], []
 
-        chords, changes = self.prev_state.get_chords()
+        chords, changes, pitches = self.prev_state.get_chords()
         chords.append(self.chord)
         changes.append(self.change_index)
+        pitches.append(self.chord_pitches if hasattr(self, "chord_pitches") else [])
 
-        return chords, changes
+        return chords, changes, pitches
 
     def get_keys(self) -> Tuple[List[int], List[int]]:
         """
@@ -891,7 +894,7 @@ class State:
         piece : ScorePiece
             A Piece containing this state's chords and keys, but no notes.
         """
-        chord_ids, chord_changes = self.get_chords()
+        chord_ids, chord_changes, all_chord_pitches = self.get_chords()
         key_ids, key_changes = self.get_keys()
 
         chords = [None] * len(chord_ids)
@@ -909,8 +912,8 @@ class State:
         key_changes = np.array([chord_changes.index(key_index) for key_index in key_changes[:-1]])
 
         # Create chords and chord_ranges
-        for i, (chord_id, prev_index, next_index) in enumerate(
-            zip(chord_ids, chord_changes[:-1], chord_changes[1:])
+        for i, (chord_id, chord_pitches, prev_index, next_index) in enumerate(
+            zip(chord_ids, all_chord_pitches, chord_changes[:-1], chord_changes[1:])
         ):
             root, chord_type, inversion = labels["chord"][chord_id]
             bass = hu.get_bass_note(chord_type, root, inversion, chord_pitch_type)
@@ -933,7 +936,7 @@ class State:
                 np.sum(duration_cache[prev_index:next_index]),
                 beat_duration_cache[prev_index],
                 chord_pitch_type,
-                chord_pitches=self.chord_pitches if hasattr(self, "chord_pitches") else None,
+                chord_pitches=chord_pitches,
             )
 
         return ScorePiece(
