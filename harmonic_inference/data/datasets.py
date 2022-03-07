@@ -766,12 +766,22 @@ class ChordClassificationDataset(HarmonicDataset):
                 self.input_lengths = np.array(h5_file["input_lengths"])
                 self.inputs = []
 
-                for start_idx, length in tqdm(
-                    zip([0] + list(np.cumsum(self.input_lengths)), self.input_lengths),
-                    desc=f"Loading input data from {h5_path}",
-                    total=len(self.input_lengths),
+                start_idxs = [0] + list(np.cumsum(self.input_lengths))
+                chunk_size = 5000
+
+                for chunk_id in tqdm(
+                    range((len(self.input_lengths) - 1) // chunk_size + 1),
+                    desc=f"Loading input data chunks from {h5_path}",
                 ):
-                    self.inputs.append(h5_file["inputs"][start_idx : start_idx + length])
+                    chunk_start_idxs = start_idxs[
+                        chunk_id * chunk_size : (chunk_id + 1) * chunk_size + 1
+                    ]
+
+                    chunk_data = h5_file["inputs"][chunk_start_idxs[0] : chunk_start_idxs[-1]]
+                    base_idx = chunk_start_idxs[0]
+
+                    for start_idx, end_idx in zip(chunk_start_idxs, chunk_start_idxs[1:]):
+                        self.inputs.append(chunk_data[start_idx - base_idx : end_idx - base_idx])
 
                 self.in_ram = True
 
@@ -1639,12 +1649,22 @@ class ChordPitchesDataset(HarmonicDataset):
                 self.input_lengths = np.array(h5_file["input_lengths"])
                 self.inputs = []
 
-                for start_idx, length in tqdm(
-                    zip([0] + list(np.cumsum(self.input_lengths)), self.input_lengths),
-                    desc=f"Loading input data from {h5_path}",
-                    total=len(self.input_lengths),
+                start_idxs = [0] + list(np.cumsum(self.input_lengths))
+                chunk_size = 5000
+
+                for chunk_id in tqdm(
+                    range((len(self.input_lengths) - 1) // chunk_size + 1),
+                    desc=f"Loading input data chunks from {h5_path}",
                 ):
-                    self.inputs.append(h5_file["inputs"][start_idx : start_idx + length])
+                    chunk_start_idxs = start_idxs[
+                        chunk_id * chunk_size : (chunk_id + 1) * chunk_size + 1
+                    ]
+
+                    chunk_data = h5_file["inputs"][chunk_start_idxs[0] : chunk_start_idxs[-1]]
+                    base_idx = chunk_start_idxs[0]
+
+                    for start_idx, end_idx in zip(chunk_start_idxs, chunk_start_idxs[1:]):
+                        self.inputs.append(chunk_data[start_idx - base_idx : end_idx - base_idx])
 
                 self.in_ram = True
 
