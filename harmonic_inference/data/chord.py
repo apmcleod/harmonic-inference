@@ -445,7 +445,7 @@ class Chord:
             This allows for up to 2 cycles around the circle of fifths in each direction.
         """
         if self.chord_pitches is None:
-            logging.info("chord_pitches is None for this Chord. Using the chord_type default.")
+            logging.debug("chord_pitches is None for this Chord. Using the chord_type default.")
 
             vector = get_vector_from_chord_type(
                 self.chord_type,

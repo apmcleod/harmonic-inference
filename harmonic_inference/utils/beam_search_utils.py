@@ -933,6 +933,7 @@ class State:
                 np.sum(duration_cache[prev_index:next_index]),
                 beat_duration_cache[prev_index],
                 chord_pitch_type,
+                chord_pitches=self.chord_pitches if hasattr(self, "chord_pitches") else None,
             )
 
         return ScorePiece(

@@ -1508,7 +1508,12 @@ class HarmonicInferenceModel:
 
         current_state = state
         for pitches in reversed(chord_pitches):
-            current_state.chord_pitches = pitches
+            # Convert binary pitches array into root-relative indices
+            pitch_indices = np.where(pitches)[0]
+            if self.chord_pitches_model.OUTPUT_PITCH == PitchType.TPC:
+                pitch_indices -= hc.MAX_CHORD_PITCH_INTERVAL_TPC
+
+            current_state.chord_pitches = pitch_indices
             current_state = current_state.prev_state
 
 
