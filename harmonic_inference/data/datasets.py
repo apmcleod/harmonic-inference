@@ -335,6 +335,59 @@ class HarmonicDataset(Dataset):
             h5_file.create_dataset("file_ids", data=np.array(file_ids), compression="gzip")
         h5_file.close()
 
+    def read_from_h5_file(self, h5_path: Union[str, Path]):
+        """
+        Read in the dataset from an h5 file.
+
+        Parameters
+        ----------
+        h5_path : Union[str, Path]
+            The path to the h5 file.
+        """
+        with h5py.File(h5_path, "r") as h5_file:
+            assert "inputs" in h5_file, f"{h5_file} must have a dataset called inputs"
+            assert "targets" in h5_file, f"{h5_file} must have a dataset called targets"
+            self.h5_path = h5_path
+            self.padded = False
+            self.in_ram = False
+            chunk_size = self.chunk_size
+
+            # This data is small and can be assumed to fit in RAM in any case
+            for key in ["piece_lengths", "key_change_replacements", "target_pitch_type"]:
+                if key in h5_file:
+                    setattr(self, key, np.array(h5_file[key]))
+
+            try:
+                for data in ["input", "target"]:
+                    if f"{data}_lengths" in h5_file:
+                        lengths = np.array(h5_file[f"{data}_lengths"])
+                        data_list = []
+
+                        for chunk_start in tqdm(
+                            range(0, len(lengths), chunk_size),
+                            desc=f"Loading {data} chunks from {h5_path}",
+                        ):
+                            chunk = h5_file[f"{data}s"][chunk_start : chunk_start + chunk_size]
+                            chunk_lengths = lengths[chunk_start : chunk_start + chunk_size]
+                            data_list.extend(
+                                [
+                                    np.array(item[:length], dtype=np.float16)
+                                    for item, length in zip(chunk, chunk_lengths)
+                                ]
+                            )
+
+                        setattr(self, f"{data}_lengths", lengths)
+                        setattr(self, f"{data}s", data_list)
+
+                    else:
+                        setattr(self, f"{data}s", np.array(h5_file[f"{data}s"], dtype=np.float16))
+
+                self.in_ram = True
+
+            except MemoryError:
+                logging.exception("Dataset too large to fit into RAM. Reading from h5 file.")
+                self.padded = True
+
 
 class ChordTransitionDataset(HarmonicDataset):
     """
@@ -465,7 +518,12 @@ class ChordClassificationDataset(HarmonicDataset):
             be masked to 0. Essentially, if given, each input vector is multiplied
             by this mask.
         """
-        super().__init__(transform=transform, pad_targets=False, input_mask=input_mask)
+        super().__init__(
+            transform=transform,
+            pad_targets=False,
+            pad_inputs=False,
+            input_mask=input_mask,
+        )
         self.target_pitch_type = []
 
         if ranges is None:
@@ -502,6 +560,8 @@ class ChordClassificationDataset(HarmonicDataset):
         self.use_inversions = use_inversions
         self.transposition_range = tuple(transposition_range)
         self.num_transpositions = self.transposition_range[1] - self.transposition_range[0] + 1
+
+        self.pad_inputs = False
 
     def __len__(self):
         return super().__len__() * self.num_transpositions
@@ -626,6 +686,98 @@ class ChordClassificationDataset(HarmonicDataset):
                 ),
             }
             return
+
+    def to_h5(self, h5_path: Union[str, Path], file_ids: Iterable[int] = None):
+        """
+        Write this CC Dataset out to an h5 file, containing its inputs and targets.
+        If the dataset is already being read from an h5py file, this simply copies that
+        file (self.h5_path) over to the given location and updates self.h5_path.
+
+        The CC version is coded differently, because a padded version of the input
+        is too large to fit in memory, so a stacked version is used instead.
+
+        Parameters
+        ----------
+        h5_path : Union[str, Path]
+            The filename of the h5 file to write to.
+        file_ids : Iterable[int]
+            The file_ids of the pieces in this dataset. Will be added to the h5 file as `file_ids`
+            if given.
+        """
+        if isinstance(h5_path, str):
+            h5_path = Path(h5_path)
+
+        if not h5_path.parent.exists():
+            h5_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if not self.padded:
+            self.pad()
+
+        if self.h5_path:
+            try:
+                shutil.copy(self.h5_path, h5_path)
+                self.h5_path = h5_path
+            except OSError:
+                logging.exception("Error copying existing h5 file %s to %s", self.h5_path, h5_path)
+            return
+
+        h5_file = h5py.File(h5_path, "w")
+
+        keys = [
+            "targets",
+            "input_lengths",
+            "target_pitch_type",
+        ]
+        for key in keys:
+            if hasattr(self, key) and getattr(self, key) is not None:
+                h5_file.create_dataset(key, data=np.array(getattr(self, key)), compression="gzip")
+
+        h5_file.create_dataset("inputs", data=np.vstack(self.inputs), compression="gzip")
+
+        if file_ids is not None:
+            h5_file.create_dataset("file_ids", data=np.array(file_ids), compression="gzip")
+        h5_file.close()
+
+    def read_from_h5_file(self, h5_path: Union[str, Path]):
+        """
+        Read in the dataset from an h5 file. The CCM is done separately because
+        its input data is stacked in the h5 file, rather than padded, since the
+        padded version does not fit in memory.
+
+        Parameters
+        ----------
+        h5_path : Union[str, Path]
+            The path to the h5 file.
+        """
+        with h5py.File(h5_path, "r") as h5_file:
+            assert "inputs" in h5_file, f"{h5_file} must have a dataset called inputs"
+            assert "targets" in h5_file, f"{h5_file} must have a dataset called targets"
+            self.h5_path = h5_path
+            self.padded = False
+            self.in_ram = False
+
+            # This data is small and can be assumed to fit in RAM in any case
+            self.target_pitch_type = np.array(h5_file["target_pitch_type"])
+
+            try:
+                self.targets = np.array(h5_file["targets"])
+
+                # Read inputs chord by chord
+                self.input_lengths = np.array(h5_file["input_lengths"])
+                self.inputs = []
+
+                for start_idx, length in tqdm(
+                    zip([0] + list(np.cumsum(self.input_lengths)), self.input_lengths),
+                    desc=f"Loading input data from {h5_path}",
+                    total=len(self.input_lengths),
+                ):
+                    self.inputs.append(h5_file["inputs"][start_idx : start_idx + length])
+
+                self.in_ram = True
+
+            except MemoryError:
+                logging.exception("Dataset too large to fit into RAM. Reading from h5 file.")
+                self.padded = True
 
 
 class ChordSequenceDataset(HarmonicDataset):
@@ -1435,50 +1587,7 @@ def h5_to_dataset(
         dataset_kwargs = {}
 
     dataset = dataset_class([], transform=transform, **dataset_kwargs)
-
-    with h5py.File(h5_path, "r") as h5_file:
-        assert "inputs" in h5_file, f"{h5_file} must have a dataset called inputs"
-        assert "targets" in h5_file, f"{h5_file} must have a dataset called targets"
-        dataset.h5_path = h5_path
-        dataset.padded = False
-        dataset.in_ram = False
-        chunk_size = dataset.chunk_size
-
-        # This data is small and can be assumed to fit in RAM in any case
-        for key in ["piece_lengths", "key_change_replacements", "target_pitch_type"]:
-            if key in h5_file:
-                setattr(dataset, key, np.array(h5_file[key]))
-
-        try:
-            for data in ["input", "target"]:
-                if f"{data}_lengths" in h5_file:
-                    lengths = np.array(h5_file[f"{data}_lengths"])
-                    data_list = []
-
-                    for chunk_start in tqdm(
-                        range(0, len(lengths), chunk_size),
-                        desc=f"Loading {data} chunks from {h5_path}",
-                    ):
-                        chunk = h5_file[f"{data}s"][chunk_start : chunk_start + chunk_size]
-                        chunk_lengths = lengths[chunk_start : chunk_start + chunk_size]
-                        data_list.extend(
-                            [
-                                np.array(item[:length], dtype=np.float16)
-                                for item, length in zip(chunk, chunk_lengths)
-                            ]
-                        )
-
-                    setattr(dataset, f"{data}_lengths", lengths)
-                    setattr(dataset, f"{data}s", data_list)
-
-                else:
-                    setattr(dataset, f"{data}s", np.array(h5_file[f"{data}s"], dtype=np.float16))
-
-            dataset.in_ram = True
-
-        except MemoryError:
-            logging.exception("Dataset too large to fit into RAM. Reading from h5 file.")
-            dataset.padded = True
+    dataset.read_from_h5_file(h5_path)
 
     return dataset
 
