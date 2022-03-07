@@ -308,7 +308,6 @@ if __name__ == "__main__":
                 PitchType.TPC,
                 PitchType.TPC,
                 learning_rate=ARGS.lr,
-                scheduled_sampling=ARGS.sched,
                 **kwargs,
             )
 
