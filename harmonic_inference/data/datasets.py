@@ -1531,7 +1531,12 @@ class ChordPitchesDataset(HarmonicDataset):
             be masked to 0. Essentially, if given, each input vector is multiplied
             by this mask.
         """
-        super().__init__(transform=transform, input_mask=input_mask)
+        super().__init__(
+            transform=transform,
+            input_mask=input_mask,
+            pad_inputs=False,
+            pad_targets=False,
+        )
         self.inputs = []
         self.targets = []
         self.target_pitch_type = []
@@ -1554,6 +1559,98 @@ class ChordPitchesDataset(HarmonicDataset):
         reduce_chord_types(data["inputs"], self.reduction, pad=False, for_chord_pitches=True)
         if not self.use_inversions:
             remove_chord_inversions(data["inputs"], pad=False, for_chord_pitches=True)
+
+    def to_h5(self, h5_path: Union[str, Path], file_ids: Iterable[int] = None):
+        """
+        Write this CP Dataset out to an h5 file, containing its inputs and targets.
+        If the dataset is already being read from an h5py file, this simply copies that
+        file (self.h5_path) over to the given location and updates self.h5_path.
+
+        The CP version is coded differently, because a padded version of the input
+        is too large to fit in memory, so a stacked version is used instead.
+
+        Parameters
+        ----------
+        h5_path : Union[str, Path]
+            The filename of the h5 file to write to.
+        file_ids : Iterable[int]
+            The file_ids of the pieces in this dataset. Will be added to the h5 file as `file_ids`
+            if given.
+        """
+        if isinstance(h5_path, str):
+            h5_path = Path(h5_path)
+
+        if not h5_path.parent.exists():
+            h5_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if not self.padded:
+            self.pad()
+
+        if self.h5_path:
+            try:
+                shutil.copy(self.h5_path, h5_path)
+                self.h5_path = h5_path
+            except OSError:
+                logging.exception("Error copying existing h5 file %s to %s", self.h5_path, h5_path)
+            return
+
+        h5_file = h5py.File(h5_path, "w")
+
+        keys = [
+            "targets",
+            "input_lengths",
+            "target_pitch_type",
+        ]
+        for key in keys:
+            if hasattr(self, key) and getattr(self, key) is not None:
+                h5_file.create_dataset(key, data=np.array(getattr(self, key)), compression="gzip")
+
+        h5_file.create_dataset("inputs", data=np.vstack(self.inputs), compression="gzip")
+
+        if file_ids is not None:
+            h5_file.create_dataset("file_ids", data=np.array(file_ids), compression="gzip")
+        h5_file.close()
+
+    def read_from_h5_file(self, h5_path: Union[str, Path]):
+        """
+        Read in the dataset from an h5 file. The CPM is done separately because
+        its input data is stacked in the h5 file, rather than padded, since the
+        padded version does not fit in memory.
+
+        Parameters
+        ----------
+        h5_path : Union[str, Path]
+            The path to the h5 file.
+        """
+        with h5py.File(h5_path, "r") as h5_file:
+            assert "inputs" in h5_file, f"{h5_file} must have a dataset called inputs"
+            assert "targets" in h5_file, f"{h5_file} must have a dataset called targets"
+            self.h5_path = h5_path
+            self.padded = False
+            self.in_ram = False
+
+            # This data is small and can be assumed to fit in RAM in any case
+            self.target_pitch_type = np.array(h5_file["target_pitch_type"])
+
+            try:
+                self.targets = np.array(h5_file["targets"])
+
+                # Read inputs chord by chord
+                self.input_lengths = np.array(h5_file["input_lengths"])
+                self.inputs = []
+
+                for start_idx, length in tqdm(
+                    zip([0] + list(np.cumsum(self.input_lengths)), self.input_lengths),
+                    desc=f"Loading input data from {h5_path}",
+                    total=len(self.input_lengths),
+                ):
+                    self.inputs.append(h5_file["inputs"][start_idx : start_idx + length])
+
+                self.in_ram = True
+
+            except MemoryError:
+                logging.exception("Dataset too large to fit into RAM. Reading from h5 file.")
+                self.padded = True
 
 
 def h5_to_dataset(
