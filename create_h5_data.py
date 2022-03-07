@@ -71,6 +71,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--changes",
+        action="store_true",
+        help="Do not merge otherwise identical chords whose changes (chord pitches) differ.",
+    )
+
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="True to parse only the first 5 pieces, as a test of data creation.",
@@ -142,6 +148,7 @@ if __name__ == "__main__":
         xml_and_csv_paths=xmls_and_csvs,
         splits=ARGS.splits,
         seed=ARGS.seed,
+        changes=ARGS.changes,
     )
 
     os.makedirs(Path(ARGS.output), exist_ok=True)

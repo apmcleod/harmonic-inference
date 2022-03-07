@@ -1728,6 +1728,7 @@ def get_split_file_ids_and_pieces(
     xml_and_csv_paths: Dict[str, List[Union[str, Path]]] = None,
     splits: Iterable[float] = (0.8, 0.1, 0.1),
     seed: int = None,
+    changes: bool = False,
 ) -> Tuple[Iterable[Iterable[int]], Iterable[Piece]]:
     """
     Get the file_ids that should go in each split of a split dataset.
@@ -1744,6 +1745,9 @@ def get_split_file_ids_and_pieces(
         This will be normalized to sum to 1.
     seed : int
         A numpy random seed, if given.
+    changes : bool
+        False to merge otherwise identical chords together when they differ only by chord
+        changes. True to treat them as separate chord symbols.
 
     Returns
     -------
@@ -1783,7 +1787,10 @@ def get_split_file_ids_and_pieces(
 
             try:
                 piece = get_score_piece_from_data_frames(
-                    data_dfs["notes"].loc[i], data_dfs["chords"].loc[i], data_dfs["measures"].loc[i]
+                    data_dfs["notes"].loc[i],
+                    data_dfs["chords"].loc[i],
+                    data_dfs["measures"].loc[i],
+                    changes=changes,
                 )
                 if piece.get_chords() is None or len(piece.get_chords()) == 0:
                     raise ValueError("No valid chords in Piece.")
@@ -1837,6 +1844,7 @@ def get_dataset_splits(
     xml_and_csv_paths: Dict[str, List[Union[str, Path]]] = None,
     splits: Iterable[float] = (0.8, 0.1, 0.1),
     seed: int = None,
+    changes: bool = False,
 ) -> Tuple[List[List[HarmonicDataset]], List[List[int]], List[List[Piece]]]:
     """
     Get datasets representing splits of the data in the given DataFrames.
@@ -1857,6 +1865,9 @@ def get_dataset_splits(
         This will be normalized to sum to 1.
     seed : int
         A numpy random seed, if given.
+    changes : bool
+        False to merge otherwise identical chords together when they differ only by chord
+        changes. True to treat them as separate chord symbols.
 
     Returns
     -------
@@ -1873,6 +1884,7 @@ def get_dataset_splits(
         xml_and_csv_paths=xml_and_csv_paths,
         splits=splits,
         seed=seed,
+        changes=changes,
     )
 
     dataset_splits = np.full((len(datasets), len(splits)), None)

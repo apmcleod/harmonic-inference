@@ -640,7 +640,7 @@ def get_score_piece_from_data_frames(
     use_inversions: bool = True,
     use_relative: bool = True,
     name: str = None,
-    use_suspensions: bool = False,
+    changes: bool = False,
 ) -> ScorePiece:
     """
     Create a ScorePiece object from the given 3 pandas DataFrames.
@@ -663,9 +663,9 @@ def get_score_piece_from_data_frames(
         within the annotated local key.
     name : str
         A string identifier for this piece.
-    use_suspensions : bool
-        False to treat consecutive chords which differ only by altered tones as the same chord
-        by merging them. True to keep them separate.
+    changes : bool
+        False to merge otherwise identical chords together when they differ only by chord
+        changes. True to treat them as separate chord symbols.
 
     Returns
     -------
@@ -732,7 +732,8 @@ def get_score_piece_from_data_frames(
         chords_list,
         kwargs={
             "use_inversion": use_inversions,
-            "use_suspension": use_suspensions,
+            "use_suspension": changes,
+            "use_chord_pitches": changes,
         },
     )
     chords = []
