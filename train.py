@@ -43,7 +43,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--int-targets",
         action="store_true",
-        help=("Train the CCM with intermediate targets rather than the simple CCM."),
+        help="Train the CCM with intermediate targets rather than the simple CCM.",
+    )
+
+    parser.add_argument(
+        "--add-remove",
+        action="store_true",
+        help="Train the AddedRemovedPitchesCPM instead of the simple CPM.",
     )
 
     parser.add_argument(
@@ -292,7 +298,10 @@ if __name__ == "__main__":
             )
 
     elif ARGS.model == "cpm":
-        model = cpm.SimpleChordPitchesModel(
+        cpm_init = (
+            cpm.AddedRemovedChordPitchesModel if ARGS.add_remove else cpm.SimpleChordPitchesModel
+        )
+        model = cpm_init(
             PitchType.TPC,
             PitchType.TPC,
             learning_rate=ARGS.lr,
@@ -304,7 +313,7 @@ if __name__ == "__main__":
                 kwargs["input_mask"],
                 model.input_dim,
             )
-            model = cpm.SimpleChordPitchesModel(
+            model = cpm_init(
                 PitchType.TPC,
                 PitchType.TPC,
                 learning_rate=ARGS.lr,

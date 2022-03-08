@@ -18,6 +18,7 @@ from harmonic_inference.utils.harmonic_constants import (
     NUM_PITCHES,
     NUM_RELATIVE_PITCHES,
     TPC_C,
+    C,
 )
 from harmonic_inference.utils.harmonic_utils import (
     absolute_to_relative,
@@ -461,13 +462,14 @@ class Chord:
             vector = get_vector_from_chord_type(
                 self.chord_type,
                 self.pitch_type,
-                0 if self.pitch_type == PitchType.MIDI else TPC_C,
+                root=C[self.pitch_type],
             )
 
             if self.pitch_type == PitchType.TPC:
-                # Returned chord vector will be too long. Leave only the middle 27.
-                to_remove = len(vector) - (2 * MAX_CHORD_PITCH_INTERVAL_TPC + 1)
-                vector = vector[to_remove // 2 : -to_remove // 2]
+                # Returned chord vector will be too long. Leave only 27 surrounding C.
+                vector = vector[
+                    TPC_C - MAX_CHORD_PITCH_INTERVAL_TPC : TPC_C + MAX_CHORD_PITCH_INTERVAL_TPC + 1
+                ]
 
         elif self.pitch_type == PitchType.MIDI:
             vector = np.zeros(NUM_PITCHES[PitchType.MIDI], dtype=int)

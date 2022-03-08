@@ -556,9 +556,16 @@ class AddedRemovedChordPitchesModel(SimpleChordPitchesModel):
             above the root. Values closer to 1 indicate presence of the pitch.
         """
         raw_output = self.get_raw_output(batch)
+        output = raw_output[:, :-4]
 
-        # TODO
-        return raw_output  # This is wrong
+        for row_id in range(len(raw_output)):
+            # TODO: Redo in root position order (with default_targets_orders)
+            for removed_target_idx, output_col_id in enumerate(
+                torch.where(batch["default_targets"][row_id] == 1)[0]
+            ):
+                output[row_id, output_col_id] = 1 - raw_output[row_id, removed_target_idx - 4]
+
+        return output
 
     def get_targets(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """
@@ -574,7 +581,6 @@ class AddedRemovedChordPitchesModel(SimpleChordPitchesModel):
         targets : torch.Tensor
             The appropriate targets to be used for this model's outputs.
         """
-        # TODO
         return batch["added_removed_targets"].float()
 
     def get_weights(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
@@ -600,5 +606,10 @@ class AddedRemovedChordPitchesModel(SimpleChordPitchesModel):
         """
         weights = super().get_weights(batch)
 
-        # TODO
-        return weights  # This is incorrect
+        # No loss for chord tones in the added pitches vector
+        weights[torch.where(batch["default_targets"] == 1)] = 0
+
+        # No loss for 4th element in removed tones for triads
+        weights[torch.where(torch.sum(batch["default_targets"], dim=1) == 3)[0], -1] = 0
+
+        return weights
