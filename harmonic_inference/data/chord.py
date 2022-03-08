@@ -436,10 +436,15 @@ class Chord:
 
         return self.to_vec(relative_to=relative_key, no_root=is_center, no_bass=True, pad=True)
 
-    def get_chord_pitches_target_vector(self) -> np.ndarray:
+    def get_chord_pitches_target_vector(self, force_defaults: bool = False) -> np.ndarray:
         """
         Get a chord pitches target vector for this chord, encoding the pitches present in the
         chord, relative to this chord's root.
+
+        Parameters
+        ----------
+        force_defaults : bool
+            No matter this Chord's chord_pitches, return the default chord pitches vector.
 
         Returns
         -------
@@ -449,8 +454,9 @@ class Chord:
             For TPC pitch_type, the vector is of length 27 and the center element is the root.
             This allows for up to 2 cycles around the circle of fifths in each direction.
         """
-        if self.chord_pitches is None:
-            logging.debug("chord_pitches is None for this Chord. Using the chord_type default.")
+        if force_defaults or self.chord_pitches is None:
+            if not force_defaults:
+                logging.debug("chord_pitches is None for this Chord. Using the chord_type default.")
 
             vector = get_vector_from_chord_type(
                 self.chord_type,

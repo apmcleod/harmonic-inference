@@ -211,8 +211,9 @@ class HarmonicDataset(Dataset):
                 ):
                     data["scheduled_sampling_data"] = h5_file["scheduled_sampling_data"][item]
 
-                if "is_default" in h5_file:
-                    data["is_default"] = h5_file["is_default"][item]
+                for key in ["is_default", "default_targets"]:
+                    if key in h5_file:
+                        data[key] = h5_file[key][item]
 
         else:
             data = {"inputs": self.inputs[item]}
@@ -221,8 +222,9 @@ class HarmonicDataset(Dataset):
                 and self.scheduled_sampling_data is not None
             ):
                 data["scheduled_sampling_data"] = self.scheduled_sampling_data[item]
-            if hasattr(self, "is_default"):
-                data["is_default"] = self.is_default[item]
+            for key in ["is_default", "default_targets"]:
+                if hasattr(self, key):
+                    data[key] = getattr(self, key)[item]
 
             # During inference, we have no targets
             if self.targets is not None:
@@ -1554,6 +1556,7 @@ class ChordPitchesDataset(HarmonicDataset):
         )
         self.inputs = []
         self.targets = []
+        self.default_targets = []
         self.is_default = []
         self.target_pitch_type = []
 
@@ -1573,6 +1576,15 @@ class ChordPitchesDataset(HarmonicDataset):
                     )
                     for chord in piece.get_chords()
                 ]
+            )
+
+            self.default_targets.extend(
+                np.array(
+                    [
+                        chord.get_chord_pitches_target_vector(force_defaults=True)
+                        for chord in piece.get_chords()
+                    ]
+                )
             )
 
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
@@ -1624,6 +1636,7 @@ class ChordPitchesDataset(HarmonicDataset):
         keys = [
             "targets",
             "is_default",
+            "default_targets",
             "input_lengths",
             "target_pitch_type",
         ]
@@ -1660,6 +1673,7 @@ class ChordPitchesDataset(HarmonicDataset):
 
             try:
                 self.targets = np.array(h5_file["targets"])
+                self.default_targets = np.array(h5_file["default_targets"])
                 self.is_default = np.array(h5_file["is_default"])
 
                 # Read inputs chord by chord
