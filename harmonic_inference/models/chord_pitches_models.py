@@ -108,7 +108,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
         """
         weights = torch.ones((len(is_default), self.output_dim), dtype=float)
         weights[is_default, :] = self.default_weight
-        return weights
+        return weights.to(self.device)
 
     def get_output(self, batch):
         inputs = batch["inputs"].float()
@@ -133,42 +133,49 @@ class ChordPitchesModel(pl.LightningModule, ABC):
     def validation_step(self, batch, batch_idx):
         inputs = batch["inputs"].float()
         input_lengths = batch["input_lengths"]
-        targets = batch["targets"].float()
-        weights = self.get_weights(batch["is_default"])
+        all_targets = batch["targets"].float()
+        all_weights = self.get_weights(batch["is_default"])
 
-        outputs = self(inputs, input_lengths)
-        rounded_outputs = outputs.round()
+        all_outputs = self(inputs, input_lengths)
 
-        if len(targets) > 0:
-            pitch_correct = (rounded_outputs == targets).float()
-            chord_correct = (torch.sum(pitch_correct, dim=1) == outputs.shape[1]).float().sum()
-            pitch_correct = pitch_correct.sum()
+        for prefix, targets, outputs, weights in zip(
+            ["", "default_", "non-default_"],
+            [all_targets, all_targets[batch["is_default"]], all_targets[~batch["is_default"]]],
+            [all_outputs, all_outputs[batch["is_default"]], all_outputs[~batch["is_default"]]],
+            [all_weights, all_weights[batch["is_default"]], all_weights[~batch["is_default"]]],
+        ):
+            if len(targets) > 0:
+                rounded_outputs = outputs.round()
 
-            total_pitches = len(targets.flatten())
-            total_chords = len(targets)
+                pitch_correct = (rounded_outputs == targets).float()
+                chord_correct = (torch.sum(pitch_correct, dim=1) == outputs.shape[1]).float().sum()
+                pitch_correct = pitch_correct.sum()
 
-            pitch_acc = 100 * pitch_correct / total_pitches
-            chord_acc = 100 * chord_correct / total_chords
+                total_pitches = len(targets.flatten())
+                total_chords = len(targets)
 
-            positive_target_mask = targets == 1
-            positive_output_mask = rounded_outputs == 1
+                pitch_acc = 100 * pitch_correct / total_pitches
+                chord_acc = 100 * chord_correct / total_chords
 
-            tp = (positive_target_mask & positive_output_mask).sum().float()
-            fp = (~positive_target_mask & positive_output_mask).sum().float()
-            fn = (positive_target_mask & ~positive_output_mask).sum().float()
+                positive_target_mask = targets == 1
+                positive_output_mask = rounded_outputs == 1
 
-            precision = tp / (tp + fp)
-            recall = tp / (tp + fn)
-            f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
+                tp = (positive_target_mask & positive_output_mask).sum().float()
+                fp = (~positive_target_mask & positive_output_mask).sum().float()
+                fn = (positive_target_mask & ~positive_output_mask).sum().float()
 
-            loss = F.binary_cross_entropy(outputs, targets, weight=weights)
+                precision = tp / (tp + fp)
+                recall = tp / (tp + fn)
+                f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
 
-            self.log("val_loss", loss)
-            self.log("val_pitch_acc", pitch_acc)
-            self.log("val_chord_acc", chord_acc)
-            self.log("val_precision", precision)
-            self.log("val_recall", recall)
-            self.log("val_f1", f1)
+                loss = F.binary_cross_entropy(outputs, targets, weight=weights)
+
+                self.log(f"{prefix}val_loss", loss)
+                self.log(f"{prefix}val_pitch_acc", pitch_acc)
+                self.log(f"{prefix}val_chord_acc", chord_acc)
+                self.log(f"{prefix}val_precision", precision)
+                self.log(f"{prefix}val_recall", recall)
+                self.log(f"{prefix}val_f1", f1)
 
     def evaluate(self, dataset: ChordPitchesDataset):
         dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
