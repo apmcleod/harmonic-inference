@@ -1593,6 +1593,8 @@ class ChordPitchesDataset(HarmonicDataset):
         self.use_inversions = use_inversions
 
     def reduce(self, data: Dict, transposition: int = None):
+        # TODO: Calculate default added/removed targets here
+
         reduce_chord_types(data["inputs"], self.reduction, pad=False, for_chord_pitches=True)
         if not self.use_inversions:
             remove_chord_inversions(data["inputs"], pad=False, for_chord_pitches=True)
