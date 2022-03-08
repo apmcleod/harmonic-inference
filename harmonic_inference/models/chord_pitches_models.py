@@ -576,3 +576,29 @@ class AddedRemovedChordPitchesModel(SimpleChordPitchesModel):
         """
         # TODO
         return batch["added_removed_targets"].float()
+
+    def get_weights(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """
+        Get the weights to use for the loss calculation given a list of whether
+        each chord contains the default pitches or not. Here, we also set to 0
+        the weights in the following 2 locations:
+        - In the added pitches vector, for chord tones.
+        - In the removed pitches vector, the 4th element in the case of triads.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            A batch Dictionary, containing the entry "is_default", which is:
+            One boolean per input chord, with True if that chord contains only the default
+            pitches and False otherwise.
+
+        Returns
+        -------
+        weights : torch.Tensor
+            A (batch_size x num_output_pitches) tensor where each row is all 1's
+            for non-default inputs, and all self.default_weight for default inputs.
+        """
+        weights = super().get_weights(batch)
+
+        # TODO
+        return weights  # This is incorrect
