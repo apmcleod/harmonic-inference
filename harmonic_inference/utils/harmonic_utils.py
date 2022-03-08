@@ -1,6 +1,6 @@
 """Utility functions for getting harmonic and pitch information from the corpus DataFrames."""
 import itertools
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Set, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -518,26 +518,31 @@ def decode_relative_keys(
     pitch_type: PitchType,
 ) -> Tuple[int, KeyMode]:
     """
-    [summary]
+    Decode a relative key symbol (which might be itself applied, e.g. `V/V`)
+    into a relative mode and tonic.
 
     Parameters
     ----------
     relative_string : str
-        [description]
+        A relative key symbol. Either a Roman Numeral, like `V` or `iii`,
+        or multiple Roman Numerals, separated by slashes, like `V/V` or
+        `vii/V`.
     tonic : int
-        [description]
+        The absolute tonic pitch of the current local key to which the given
+        root is applied.
     mode : KeyMode
-        [description]
+        The mode of the current local key to which the given root is applied.
     pitch_type : PitchType
-        [description]
+        The pitch type used for the tonic pitch, and to be used to return the
+        relative applied tonic.
 
     Returns
     -------
     relative_tonic : int
-        [description]
+        The tonic pitch of the applied key.
 
     relative_mode : KeyMode
-        [description]
+        The mode of the applied key.
     """
     # Handle doubly-relative chords iteratively
     for relative in reversed(relative_string.split("/")):
@@ -587,10 +592,11 @@ def get_default_chord_pitches(
     root: int,
     chord_type: ChordType,
     pitch_type: PitchType,
-) -> List[int]:
+) -> Set[int]:
     """
     Get the default chord pitches list given a root and a chord type. The returned chord
-    pitches list will contain
+    pitches set will contain the absolute pitch classes for the notes in the default version
+    of that chord.
 
     Parameters
     ----------
@@ -603,14 +609,14 @@ def get_default_chord_pitches(
 
     Returns
     -------
-    chord_pitches : List[int]
+    chord_pitches : Set[int]
         The absolute pitches present in the default version of the given chord,
         represented with the given pitch type.
     """
-    return [
+    return set(
         transpose_pitch(pitch, root - hc.C[pitch_type], pitch_type)
         for pitch in hc.CHORD_PITCHES[pitch_type][chord_type]
-    ]
+    )
 
 
 def get_chord_inversion_count(chord_type: ChordType) -> int:

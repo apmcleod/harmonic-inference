@@ -2,7 +2,7 @@
 import inspect
 import logging
 from fractions import Fraction
-from typing import DefaultDict, Dict, Tuple, Union
+from typing import DefaultDict, Dict, Iterable, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -59,7 +59,7 @@ class Chord:
         beat_duration: Union[float, Fraction],
         pitch_type: PitchType,
         suspension: str = None,
-        chord_pitches: Tuple[int] = None,
+        chord_pitches: Iterable[int] = None,
     ):
         """
         Create a new musical chord object.
@@ -104,7 +104,7 @@ class Chord:
             values can be later converted into MIDI, but not vice versa.
         suspension : str
             The suspension associated with this chord, if any.
-        chord_pitches : Tuple[int]
+        chord_pitches : Iterable[int]
             The absolute pitches of all of the notes in this chord, including suspensions,
             removed, and added tones.
         """
@@ -122,10 +122,10 @@ class Chord:
         self.beat_duration = beat_duration
         self.pitch_type = pitch_type
         self.suspension = suspension
-        self.chord_pitches = (
-            sorted(get_default_chord_pitches(root, chord_type, pitch_type))
+        self.chord_pitches = set(
+            get_default_chord_pitches(root, chord_type, pitch_type)
             if chord_pitches is None
-            else sorted(chord_pitches)
+            else chord_pitches
         )
 
         self.params = inspect.getfullargspec(Chord.__init__).args[1:]

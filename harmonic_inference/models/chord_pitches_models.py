@@ -89,25 +89,25 @@ class ChordPitchesModel(pl.LightningModule, ABC):
             "input_mask": self.input_mask,
         }
 
-    def get_weights(self, is_default: torch.Tensor[bool]) -> torch.Tensor[float]:
+    def get_weights(self, is_default: torch.Tensor) -> torch.Tensor:
         """
         Get the weights to use for the loss calculation given a list of whether
         each chord contains the default pitches or not.
 
         Parameters
         ----------
-        is_default : torch.Tensor[bool]
+        is_default : torch.Tensor
             One boolean per input chord, with True if that chord contains only the default
             pitches and False otherwise.
 
         Returns
         -------
-        weights : torch.Tensor[float]
+        weights : torch.Tensor
             A (batch_size x num_output_pitches) tensor where each row is all 1's
             for non-default inputs, and all self.default_weight for default inputs.
         """
         weights = torch.ones((len(is_default), self.output_dim), dtype=float)
-        weights[~is_default, :] = self.default_weight
+        weights[is_default, :] = self.default_weight
         return weights
 
     def get_output(self, batch):
