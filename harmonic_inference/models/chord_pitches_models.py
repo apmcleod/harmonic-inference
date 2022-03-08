@@ -31,6 +31,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
         output_pitch: PitchType,
         reduction: Dict[ChordType, ChordType],
         use_inversions: bool,
+        default_weight: float,
         learning_rate: float,
         input_mask: List[int],
     ):
@@ -47,6 +48,9 @@ class ChordPitchesModel(pl.LightningModule, ABC):
             The reduction used for the input chord types.
         use_inversions : bool
             Whether to use different inversions as different chords in the input.
+        default_weight : float
+            The weight to use in the loss function for chords whose targets are the default
+            pitches for their chord type and root.
         learning_rate : float
             The learning rate.
         input_mask : List[int]
@@ -61,6 +65,8 @@ class ChordPitchesModel(pl.LightningModule, ABC):
 
         self.reduction = reduction
         self.use_inversions = use_inversions
+
+        self.default_weight = default_weight
 
         self.lr = learning_rate
 
@@ -83,6 +89,27 @@ class ChordPitchesModel(pl.LightningModule, ABC):
             "input_mask": self.input_mask,
         }
 
+    def get_weights(self, is_default: torch.Tensor[bool]) -> torch.Tensor[float]:
+        """
+        Get the weights to use for the loss calculation given a list of whether
+        each chord contains the default pitches or not.
+
+        Parameters
+        ----------
+        is_default : torch.Tensor[bool]
+            One boolean per input chord, with True if that chord contains only the default
+            pitches and False otherwise.
+
+        Returns
+        -------
+        weights : torch.Tensor[float]
+            A (batch_size x num_output_pitches) tensor where each row is all 1's
+            for non-default inputs, and all self.default_weight for default inputs.
+        """
+        weights = torch.ones((len(is_default), self.output_dim), dtype=float)
+        weights[~is_default, :] = self.default_weight
+        return weights
+
     def get_output(self, batch):
         inputs = batch["inputs"].float()
         input_lengths = batch["input_lengths"]
@@ -95,9 +122,10 @@ class ChordPitchesModel(pl.LightningModule, ABC):
         inputs = batch["inputs"].float()
         input_lengths = batch["input_lengths"]
         targets = batch["targets"].float()
+        weights = self.get_weights(batch["is_default"])
 
         outputs = self(inputs, input_lengths)
-        loss = F.binary_cross_entropy(outputs, targets)
+        loss = F.binary_cross_entropy(outputs, targets, weight=weights)
 
         self.log("train_loss", loss)
         return loss
@@ -106,6 +134,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
         inputs = batch["inputs"].float()
         input_lengths = batch["input_lengths"]
         targets = batch["targets"].float()
+        weights = self.get_weights(batch["is_default"])
 
         outputs = self(inputs, input_lengths)
         rounded_outputs = outputs.round()
@@ -132,7 +161,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
             recall = tp / (tp + fn)
             f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
 
-            loss = F.binary_cross_entropy(outputs, targets)
+            loss = F.binary_cross_entropy(outputs, targets, weight=weights)
 
             self.log("val_loss", loss)
             self.log("val_pitch_acc", pitch_acc)
@@ -157,6 +186,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
             inputs = batch["inputs"].float()
             input_lengths = batch["input_lengths"]
             targets = batch["targets"].float()
+            weights = self.get_weights(batch["is_default"])
 
             outputs = self(inputs, input_lengths)
             rounded_outputs = outputs.round()
@@ -178,7 +208,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
             fp += (~positive_target_mask & positive_output_mask).sum().float()
             fn += (positive_target_mask & ~positive_output_mask).sum().float()
 
-            loss = F.binary_cross_entropy(outputs, targets)
+            loss = F.binary_cross_entropy(outputs, targets, weight=weights)
 
             num_chords += total_chords
             num_pitches += total_pitches
@@ -245,6 +275,7 @@ class SimpleChordPitchesModel(ChordPitchesModel):
         lstm_hidden_dim: int = 128,
         hidden_dim: int = 128,
         dropout: float = 0.0,
+        default_weight: float = 1.0,
         learning_rate: float = 0.001,
         input_mask: List[int] = None,
     ):
@@ -272,6 +303,9 @@ class SimpleChordPitchesModel(ChordPitchesModel):
             The size of the output vector of the first linear layer.
         dropout : float
             The dropout proportion of the first linear layer's output.
+        default_weight : float
+            The weight to use in the loss function for chords whose targets are the default
+            pitches for their chord type and root.
         learning_rate : float
             The learning rate.
         input_mask : List[int]
@@ -285,6 +319,7 @@ class SimpleChordPitchesModel(ChordPitchesModel):
             output_pitch,
             reduction,
             use_inversions,
+            default_weight,
             learning_rate,
             input_mask,
         )
