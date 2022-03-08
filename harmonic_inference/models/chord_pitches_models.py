@@ -113,10 +113,10 @@ class ChordPitchesModel(pl.LightningModule, ABC):
         weights[is_default, :] = self.default_weight
         return weights.to(self.device)
 
-    def get_output(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def get_raw_output(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """
-        Load inputs from the batch data and return the non-rounded output
-        Tensor.
+        Load inputs from the batch data and return the raw, non-rounded output
+        Tensor, directly from the model.
 
         Parameters
         ----------
@@ -126,7 +126,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
         Returns
         -------
         output : torch.Tensor
-            A raw, unrounded output tensor from the model.
+            A raw, unrounded output tensor, directly from the model.
         """
         inputs = batch["inputs"].float()
         input_lengths = batch["input_lengths"]
@@ -134,6 +134,25 @@ class ChordPitchesModel(pl.LightningModule, ABC):
         outputs = self(inputs, input_lengths)
 
         return outputs
+
+    def get_output(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """
+        Load inputs from the batch data and return a non-rounded output
+        Tensor derived from the model.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            The batch Dictionary containing any needed inputs.
+
+        Returns
+        -------
+        output : torch.Tensor
+            An unrounded output tensor derived from the model, modeling the pitches
+            at intervals on the range [-13, 13] for TPC, and [0, 11] for MIDI
+            above the root. Values closer to 1 indicate presence of the pitch.
+        """
+        return self.get_raw_output(batch)
 
     def get_targets(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """
@@ -154,7 +173,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         targets = self.get_targets(batch)
         weights = self.get_weights(batch)
-        outputs = self.get_output(batch)
+        outputs = self.get_raw_output(batch)
 
         loss = F.binary_cross_entropy(outputs, targets, weight=weights)
 
@@ -164,7 +183,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
     def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
         all_targets = self.get_targets(batch)
         all_weights = self.get_weights(batch)
-        all_outputs = self.get_output(batch)
+        all_outputs = self.get_raw_output(batch)
 
         for prefix, targets, outputs, weights in zip(
             ["", "default_", "non-default_"],
@@ -220,7 +239,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
         for batch in tqdm(dl, desc="Evaluating CPM"):
             targets = self.get_targets(batch)
             weights = self.get_weights(batch)
-            outputs = self.get_output(batch)
+            outputs = self.get_raw_output(batch)
 
             rounded_outputs = outputs.round()
 
@@ -437,7 +456,7 @@ class SimpleChordPitchesModel(ChordPitchesModel):
         return torch.sigmoid(output)
 
 
-class AddedRemovedChordPitchesModel(ChordPitchesModel):
+class AddedRemovedChordPitchesModel(SimpleChordPitchesModel):
     """
     A chord pitches model whose outputs are of the same standard format
     (pitch presence [-13, 13] steps from the root for TPC, and [0, 11]
@@ -448,4 +467,112 @@ class AddedRemovedChordPitchesModel(ChordPitchesModel):
     the case of triads.
     """
 
-    # TODO
+    def __init__(
+        self,
+        input_pitch: PitchType,
+        output_pitch: PitchType,
+        reduction: Dict[ChordType, ChordType] = None,
+        use_inversions: bool = True,
+        embed_dim: int = 128,
+        lstm_layers: int = 1,
+        lstm_hidden_dim: int = 128,
+        hidden_dim: int = 128,
+        dropout: float = 0.0,
+        default_weight: float = 1.0,
+        learning_rate: float = 0.001,
+        input_mask: List[int] = None,
+    ):
+        """
+        Create a new SimpleChordPitchesModel.
+
+        Parameters
+        ----------
+        input_pitch : PitchType
+            What pitch type the model is expecting for notes.
+        output_pitch : PitchType
+            The pitch type to use for outputs of this model. Used to derive the output length.
+        reduction : Dict[ChordType, ChordType]
+            The reduction used for the output chord types.
+        use_inversions : bool
+            Whether to use different inversions as different chords in the output. Used to
+            derive the output length.
+        embed_dim : int
+            The size of the initial embedding layer.
+        lstm_layers : int
+            The number of Bi-LSTM layers to use.
+        lstm_hidden_dim : int
+            The size of each LSTM layer's hidden vector.
+        hidden_dim : int
+            The size of the output vector of the first linear layer.
+        dropout : float
+            The dropout proportion of the first linear layer's output.
+        default_weight : float
+            The weight to use in the loss function for chords whose targets are the default
+            pitches for their chord type and root.
+        learning_rate : float
+            The learning rate.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask in the Dataset code.
+        """
+        super().__init__(
+            input_pitch,
+            output_pitch,
+            reduction=reduction,
+            use_inversions=use_inversions,
+            embed_dim=embed_dim,
+            lstm_layers=lstm_layers,
+            lstm_hidden_dim=lstm_hidden_dim,
+            hidden_dim=hidden_dim,
+            dropout=dropout,
+            default_weight=default_weight,
+            learning_rate=learning_rate,
+            input_mask=input_mask,
+        )
+
+        # Output contains additional 4 "chord tone deletions"
+        self.output_dim += 4
+        self.fc2 = nn.Linear(self.hidden_dim, self.output_dim)
+
+    def get_output(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """
+        Load inputs from the batch data and return a non-rounded output
+        Tensor derived from the model. Here, we must convert the model's
+        format of added notes plus removed chord tones into the expected
+        pitch presence vector.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            The batch Dictionary containing any needed inputs.
+
+        Returns
+        -------
+        output : torch.Tensor
+            An unrounded output tensor derived from the model, modeling the pitches
+            at intervals on the range [-13, 13] for TPC, and [0, 11] for MIDI
+            above the root. Values closer to 1 indicate presence of the pitch.
+        """
+        raw_output = self.get_raw_output(batch)
+
+        # TODO
+        return raw_output  # This is wrong
+
+    def get_targets(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """
+        Load the correct targets from a given batch dictionary.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            The batch Dictionary containing any needed inputs.
+
+        Returns
+        -------
+        targets : torch.Tensor
+            The appropriate targets to be used for this model's outputs.
+        """
+        # TODO
+        return batch["added_removed_targets"].float()
