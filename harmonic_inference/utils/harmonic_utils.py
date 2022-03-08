@@ -583,6 +583,36 @@ def get_bass_note(
     return transpose_pitch(bass, root - hc.C[pitch_type], pitch_type)
 
 
+def get_default_chord_pitches(
+    root: int,
+    chord_type: ChordType,
+    pitch_type: PitchType,
+) -> List[int]:
+    """
+    Get the default chord pitches list given a root and a chord type. The returned chord
+    pitches list will contain
+
+    Parameters
+    ----------
+    root : int
+        The root pitch of the chord.
+    chord_type : ChordType
+        The chord type.
+    pitch_type : PitchType
+        The pitch type used for the root, and to use for the returned chord pitches.
+
+    Returns
+    -------
+    chord_pitches : List[int]
+        The absolute pitches present in the default version of the given chord,
+        represented with the given pitch type.
+    """
+    return [
+        transpose_pitch(pitch, root - hc.C[pitch_type], pitch_type)
+        for pitch in hc.CHORD_PITCHES[pitch_type][chord_type]
+    ]
+
+
 def get_chord_inversion_count(chord_type: ChordType) -> int:
     """
     Get the number of possible inversions of the given chord.

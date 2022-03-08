@@ -18,7 +18,6 @@ from harmonic_inference.utils.harmonic_constants import (
     NUM_PITCHES,
     NUM_RELATIVE_PITCHES,
     TPC_C,
-    C,
 )
 from harmonic_inference.utils.harmonic_utils import (
     absolute_to_relative,
@@ -28,6 +27,7 @@ from harmonic_inference.utils.harmonic_utils import (
     get_chord_one_hot_index,
     get_chord_string,
     get_chord_type_from_string,
+    get_default_chord_pitches,
     get_interval_from_scale_degree,
     get_pitch_from_string,
     get_pitch_string,
@@ -123,9 +123,9 @@ class Chord:
         self.pitch_type = pitch_type
         self.suspension = suspension
         self.chord_pitches = (
-            np.array(CHORD_PITCHES[pitch_type][chord_type]) - C[pitch_type]
+            sorted(get_default_chord_pitches(root, chord_type, pitch_type))
             if chord_pitches is None
-            else chord_pitches
+            else sorted(chord_pitches)
         )
 
         self.params = inspect.getfullargspec(Chord.__init__).args[1:]
