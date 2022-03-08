@@ -89,14 +89,15 @@ class ChordPitchesModel(pl.LightningModule, ABC):
             "input_mask": self.input_mask,
         }
 
-    def get_weights(self, is_default: torch.Tensor) -> torch.Tensor:
+    def get_weights(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """
         Get the weights to use for the loss calculation given a list of whether
         each chord contains the default pitches or not.
 
         Parameters
         ----------
-        is_default : torch.Tensor
+        batch : Dict[str, torch.Tensor]
+            A batch Dictionary, containing the entry "is_default", which is:
             One boolean per input chord, with True if that chord contains only the default
             pitches and False otherwise.
 
@@ -106,11 +107,27 @@ class ChordPitchesModel(pl.LightningModule, ABC):
             A (batch_size x num_output_pitches) tensor where each row is all 1's
             for non-default inputs, and all self.default_weight for default inputs.
         """
+        is_default = batch["is_default"]
+
         weights = torch.ones((len(is_default), self.output_dim), dtype=float)
         weights[is_default, :] = self.default_weight
         return weights.to(self.device)
 
-    def get_output(self, batch):
+    def get_output(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """
+        Load inputs from the batch data and return the non-rounded output
+        Tensor.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            The batch Dictionary containing any needed inputs.
+
+        Returns
+        -------
+        output : torch.Tensor
+            A raw, unrounded output tensor from the model.
+        """
         inputs = batch["inputs"].float()
         input_lengths = batch["input_lengths"]
 
@@ -118,25 +135,36 @@ class ChordPitchesModel(pl.LightningModule, ABC):
 
         return outputs
 
-    def training_step(self, batch, batch_idx):
-        inputs = batch["inputs"].float()
-        input_lengths = batch["input_lengths"]
-        targets = batch["targets"].float()
-        weights = self.get_weights(batch["is_default"])
+    def get_targets(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """
+        Load the correct targets from a given batch dictionary.
 
-        outputs = self(inputs, input_lengths)
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            The batch Dictionary containing any needed inputs.
+
+        Returns
+        -------
+        targets : torch.Tensor
+            The appropriate targets to be used for this model's outputs.
+        """
+        return batch["targets"].float()
+
+    def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
+        targets = self.get_targets(batch)
+        weights = self.get_weights(batch)
+        outputs = self.get_output(batch)
+
         loss = F.binary_cross_entropy(outputs, targets, weight=weights)
 
         self.log("train_loss", loss)
         return loss
 
-    def validation_step(self, batch, batch_idx):
-        inputs = batch["inputs"].float()
-        input_lengths = batch["input_lengths"]
-        all_targets = batch["targets"].float()
-        all_weights = self.get_weights(batch["is_default"])
-
-        all_outputs = self(inputs, input_lengths)
+    def validation_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> None:
+        all_targets = self.get_targets(batch)
+        all_weights = self.get_weights(batch)
+        all_outputs = self.get_output(batch)
 
         for prefix, targets, outputs, weights in zip(
             ["", "default_", "non-default_"],
@@ -177,7 +205,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
                 self.log(f"{prefix}val_recall", recall)
                 self.log(f"{prefix}val_f1", f1)
 
-    def evaluate(self, dataset: ChordPitchesDataset):
+    def evaluate(self, dataset: ChordPitchesDataset) -> Dict[str, float]:
         dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
 
         num_pitches = 0
@@ -190,12 +218,10 @@ class ChordPitchesModel(pl.LightningModule, ABC):
         total_chord_acc = 0
 
         for batch in tqdm(dl, desc="Evaluating CPM"):
-            inputs = batch["inputs"].float()
-            input_lengths = batch["input_lengths"]
-            targets = batch["targets"].float()
-            weights = self.get_weights(batch["is_default"])
+            targets = self.get_targets(batch)
+            weights = self.get_weights(batch)
+            outputs = self.get_output(batch)
 
-            outputs = self(inputs, input_lengths)
             rounded_outputs = outputs.round()
 
             pitch_correct = (rounded_outputs == targets).float()
@@ -409,3 +435,17 @@ class SimpleChordPitchesModel(ChordPitchesModel):
         output = self.fc2(drop1)
 
         return torch.sigmoid(output)
+
+
+class AddedRemovedChordPitchesModel(ChordPitchesModel):
+    """
+    A chord pitches model whose outputs are of the same standard format
+    (pitch presence [-13, 13] steps from the root for TPC, and [0, 11]
+    steps from the root for MIDI), but ignoring pitches contained in the
+    standard chord. Instead, an additional 4 elements are appended, 1 per
+    chord tone from the root up, with a 1 indicating the *absence* of that
+    tone in the chord's realization. The 4th element here is ignored in
+    the case of triads.
+    """
+
+    # TODO
