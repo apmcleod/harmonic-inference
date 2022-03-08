@@ -810,42 +810,6 @@ def get_vector_from_chord_type(
     return chord_vector
 
 
-def get_chord_pitches_ordering(
-    chord_type: ChordType,
-    pitch_type: PitchType,
-    fill_4: bool = False,
-) -> List[int]:
-    """
-    Get a list containing, for each chord pitch (in ascending pitch class integer order),
-    its index within a root position chord of the given type.
-
-    For example, for a MINOR triad with TPC pitch type, this will return [1, 0, 2],
-    since the lowest TPC is the 2nd chord tone, the next-lowest TPC is the root,
-    and the largest TPC is the 3rd chord tone.
-
-    Parameters
-    ----------
-    chord_type : ChordType
-        _description_
-    pitch_type : PitchType
-        _description_
-    fill_4 : bool
-        _description_
-
-    Returns
-    -------
-    chord_pitches_ordering : List[int]
-        _description_
-    """
-    if pitch_type == PitchType.MIDI:
-        if len(hc.CHORD_PITCHES[PitchType.MIDI][chord_type]) == 4:
-            return [0, 1, 2, 3]
-        if fill_4:
-            return [0, 1, 2, -1]
-        return [0, 1, 2]
-    # TODO
-
-
 def get_interval_from_numeral(numeral: str, mode: KeyMode, pitch_type: PitchType) -> int:
     """
     Get the interval from the key tonic to the given scale degree numeral.

@@ -30,7 +30,6 @@ from harmonic_inference.utils.harmonic_utils import (
     get_bass_note,
     get_chord_from_one_hot_index,
     get_chord_one_hot_index,
-    get_chord_pitches_ordering,
     get_default_chord_pitches,
     get_key_from_one_hot_index,
     get_key_one_hot_index,
@@ -212,7 +211,7 @@ class HarmonicDataset(Dataset):
                 ):
                     data["scheduled_sampling_data"] = h5_file["scheduled_sampling_data"][item]
 
-                for key in ["is_default", "default_targets", "default_targets_order"]:
+                for key in ["is_default"]:
                     if key in h5_file:
                         data[key] = h5_file[key][item]
 
@@ -223,7 +222,7 @@ class HarmonicDataset(Dataset):
                 and self.scheduled_sampling_data is not None
             ):
                 data["scheduled_sampling_data"] = self.scheduled_sampling_data[item]
-            for key in ["is_default", "default_targets", "default_targets_order"]:
+            for key in ["is_default"]:
                 if hasattr(self, key):
                     data[key] = getattr(self, key)[item]
 
@@ -1557,8 +1556,6 @@ class ChordPitchesDataset(HarmonicDataset):
         )
         self.inputs = []
         self.targets = []
-        self.default_targets = []
-        self.default_targets_order = []
         self.is_default = []
         self.target_pitch_type = []
 
@@ -1579,22 +1576,6 @@ class ChordPitchesDataset(HarmonicDataset):
                     for chord in piece.get_chords()
                 ]
             )
-            self.default_targets.extend(
-                np.array(
-                    [
-                        chord.get_chord_pitches_target_vector(force_defaults=True)
-                        for chord in piece.get_chords()
-                    ]
-                )
-            )
-            self.default_targets_order.extend(
-                np.array(
-                    [
-                        get_chord_pitches_ordering(chord.chord_type, chord.pitch_type, fill_4=True)
-                        for chord in piece.get_chords()
-                    ]
-                )
-            )
 
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
 
@@ -1602,13 +1583,6 @@ class ChordPitchesDataset(HarmonicDataset):
         self.use_inversions = use_inversions
 
     def reduce(self, data: Dict, transposition: int = None):
-        # Create added_removed_targets
-        removed_targets = np.zeros(4, dtype=int)
-        for removed_target_idx, target_idx in enumerate(np.where(data["default_targets"] == 1)[0]):
-            if data["targets"][target_idx] == 0:
-                removed_targets[removed_target_idx] = 1
-        data["added_removed_targets"] = np.concatenate((data["targets"], removed_targets))
-
         reduce_chord_types(data["inputs"], self.reduction, pad=False, for_chord_pitches=True)
         if not self.use_inversions:
             remove_chord_inversions(data["inputs"], pad=False, for_chord_pitches=True)
@@ -1652,8 +1626,6 @@ class ChordPitchesDataset(HarmonicDataset):
         keys = [
             "targets",
             "is_default",
-            "default_targets",
-            "default_targets_order",
             "input_lengths",
             "target_pitch_type",
         ]
@@ -1690,8 +1662,6 @@ class ChordPitchesDataset(HarmonicDataset):
 
             try:
                 self.targets = np.array(h5_file["targets"])
-                self.default_targets = np.array(h5_file["default_targets"])
-                self.default_targets_order = np.array(h5_file["default_targets_order"])
                 self.is_default = np.array(h5_file["is_default"])
 
                 # Read inputs chord by chord
