@@ -60,6 +60,8 @@ MAX_KEY_BRANCHING_FACTOR_DEFAULT = 2
 TARGET_KEY_BRANCH_PROB_DEFAULT = 0.5
 HASH_LENGTH_DEFAULT = 5
 KSM_EXPONENT_DEFAULT = 50
+CPM_CHORD_TONE_THRESHOLD = 0.5
+CPM_NON_CHORD_TONE_THRESHOLD = 0.5
 
 
 def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
@@ -182,6 +184,28 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
     )
 
     parser.add_argument(
+        "--cpm-chord-tone-threshold",
+        default=CPM_CHORD_TONE_THRESHOLD,
+        type=float,
+        nargs="+" if grid_search else None,
+        help=(
+            "The threshold above which a default chord tone must reach in the CPM output "
+            "in order to be considered present in a given chord."
+        ),
+    )
+
+    parser.add_argument(
+        "--cpm-non-chord-tone-threshold",
+        default=CPM_NON_CHORD_TONE_THRESHOLD,
+        type=float,
+        nargs="+" if grid_search else None,
+        help=(
+            "The threshold above which a default non-chord tone must reach in the CPM output "
+            "in order to be considered present in a given chord."
+        ),
+    )
+
+    parser.add_argument(
         "--no-kppm",
         action="store_true",
         help="Do not perform KPPM post-processing.",
@@ -214,6 +238,8 @@ class HarmonicInferenceModel:
         target_key_branch_prob: float = TARGET_KEY_BRANCH_PROB_DEFAULT,
         hash_length: int = HASH_LENGTH_DEFAULT,
         ksm_exponent: float = KSM_EXPONENT_DEFAULT,
+        cpm_chord_tone_threshold: float = CPM_CHORD_TONE_THRESHOLD,
+        cpm_non_chord_tone_threshold: float = CPM_NON_CHORD_TONE_THRESHOLD,
         no_kppm: bool = False,
         no_cpm: bool = False,
     ):
@@ -263,6 +289,12 @@ class HarmonicInferenceModel:
         ksm_exponent : float
             An exponent to apply to the KSM's output probabilities. Used to weight the KSM
             and CSM equally, even given their different vocabulary sizes.
+        cpm_chord_tone_threshold : float
+            The threshold above which a default chord tone must reach in the CPM output
+            in order to be considered present in a given chord.
+        cpm_non_chord_tone_threshold : float
+            The threshold above which a default non-chord tone must reach in the CPM output
+            in order to be considered present in a given chord.
         no_kppm : bool
             Do not perform KPPM post-processing.
         no_cpm : bool
@@ -340,6 +372,10 @@ class HarmonicInferenceModel:
         self.max_key_branching_factor = max_key_branching_factor
         self.target_key_branch_prob = target_key_branch_prob
         self.ksm_exponent = ksm_exponent
+
+        # Chord pitch params (CPM)
+        self.cpm_chord_tone_threshold = cpm_chord_tone_threshold
+        self.cpm_non_chord_tone_threshold = cpm_non_chord_tone_threshold
 
         # Beam search params
         self.beam_size = beam_size
@@ -1504,7 +1540,17 @@ class HarmonicInferenceModel:
         for batch in dl:
             outputs.extend(self.chord_pitches_model.get_output(batch).numpy())
 
-        chord_pitches = np.round(np.vstack(outputs)).astype(int)
+        cpm_outputs = np.vstack(outputs)
+        default_chord_pitches = np.vstack(
+            [chord.get_chord_pitches_target_vector() for chord in piece.get_chords()]
+        )
+
+        chord_pitches = np.zeros_like(cpm_outputs, dtype=int)
+        default_mask = default_chord_pitches == 1
+        chord_pitches[default_mask] = cpm_outputs[default_mask] >= self.cpm_chord_tone_threshold
+        chord_pitches[~default_mask] = (
+            cpm_outputs[~default_mask] >= self.cpm_non_chord_tone_threshold
+        )
 
         current_state = state
         for pitches, chord in zip(reversed(chord_pitches), reversed(piece.get_chords())):
@@ -2251,6 +2297,8 @@ def from_args(models: Dict, ARGS: Namespace) -> HarmonicInferenceModel:
         target_key_branch_prob=ARGS.target_key_branch_prob,
         hash_length=ARGS.hash_length,
         ksm_exponent=ARGS.ksm_exponent,
+        cpm_chord_tone_threshold=ARGS.cpm_chord_tone_threshold,
+        cpm_non_chord_tone_threshold=ARGS.cpm_non_chord_tone_threshold,
         no_kppm=ARGS.no_kppm,
         no_cpm=ARGS.no_cpm,
     )

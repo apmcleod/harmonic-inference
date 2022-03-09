@@ -936,7 +936,7 @@ class State:
                 np.sum(duration_cache[prev_index:next_index]),
                 beat_duration_cache[prev_index],
                 chord_pitch_type,
-                chord_pitches=chord_pitches,
+                chord_pitches=None if len(chord_pitches) == 0 else chord_pitches,
             )
 
         return ScorePiece(
