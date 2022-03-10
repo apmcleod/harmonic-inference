@@ -88,6 +88,7 @@ def get_results_df(
     gt_chord_triads = np.zeros(len(piece.get_inputs()), dtype=object)
     gt_chord_inversions = np.zeros(len(piece.get_inputs()), dtype=int)
     gt_chord_pitches = np.zeros(len(piece.get_inputs()), dtype=object)
+    gt_chord_is_default = np.zeros(len(piece.get_inputes()), dtype=bool)
     for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
         chord = chord.to_pitch_type(chord_root_type)
         gt_chord_labels[start:end] = chord.get_one_hot_index(
@@ -98,6 +99,9 @@ def get_results_df(
         gt_chord_triads[start:end] = TRIAD_REDUCTION[chord.chord_type]
         gt_chord_inversions[start:end] = chord.inversion
         gt_chord_pitches[start:end] = str(tuple(sorted(chord.chord_pitches)))
+        gt_chord_is_default[start:end] = chord.chord_pitches == hu.get_default_chord_pitches(
+            chord.root, chord.chord_type, chord.pitch_type
+        )
 
     last_chord = gt_chords[-1].to_pitch_type(chord_root_type)
     gt_chord_labels[gt_changes[-1] :] = last_chord.get_one_hot_index(
@@ -108,6 +112,11 @@ def get_results_df(
     gt_chord_triads[gt_changes[-1] :] = TRIAD_REDUCTION[last_chord.chord_type]
     gt_chord_inversions[gt_changes[-1] :] = last_chord.inversion
     gt_chord_pitches[gt_changes[-1] :] = str(tuple(sorted(last_chord.chord_pitches)))
+    gt_chord_is_default[
+        gt_changes[-1] :
+    ] = last_chord.chord_pitches == hu.get_default_chord_pitches(
+        last_chord.root, last_chord.chord_type, last_chord.pitch_type
+    )
 
     # Est chords
     chords, changes, all_pitches = state.get_chords()
@@ -117,6 +126,7 @@ def get_results_df(
     estimated_chord_triads = np.zeros(len(piece.get_inputs()), dtype=object)
     estimated_chord_inversions = np.zeros(len(piece.get_inputs()), dtype=int)
     estimated_chord_pitches = np.zeros(len(piece.get_inputs()), dtype=object)
+    estimated_chord_is_default = np.zeros(len(piece.get_inputs()), dtype=bool)
     for chord, pitches, start, end in zip(chords, all_pitches, changes[:-1], changes[1:]):
         root, chord_type, inv = hu.get_chord_from_one_hot_index(chord, output_root_type)
         root = hu.get_pitch_from_string(
@@ -129,6 +139,9 @@ def get_results_df(
         estimated_chord_triads[start:end] = TRIAD_REDUCTION[chord_type]
         estimated_chord_inversions[start:end] = inv
         estimated_chord_pitches[start:end] = str(tuple(sorted(pitches)))
+        estimated_chord_is_default[start:end] = pitches == hu.get_default_chord_pitches(
+            root, chord_type, chord_root_type
+        )
 
     # GT keys
     gt_keys = piece.get_keys()
@@ -177,6 +190,7 @@ def get_results_df(
         gt_triad,
         gt_inversion,
         gt_pitches,
+        gt_is_default,
         est_tonic,
         est_mode,
         est_root,
@@ -184,6 +198,7 @@ def get_results_df(
         est_triad,
         est_inversion,
         est_pitches,
+        est_is_default,
     ) in zip(
         piece.get_duration_cache(),
         estimated_chord_labels,
@@ -197,6 +212,7 @@ def get_results_df(
         gt_chord_triads,
         gt_chord_inversions,
         gt_chord_pitches,
+        gt_chord_is_default,
         estimated_key_tonics,
         estimated_key_modes,
         estimated_chord_roots,
@@ -204,6 +220,7 @@ def get_results_df(
         estimated_chord_triads,
         estimated_chord_inversions,
         estimated_chord_pitches,
+        estimated_chord_is_default,
     ):
         if duration == 0:
             continue
@@ -219,6 +236,7 @@ def get_results_df(
                 "gt_triad": gt_triad,
                 "gt_inversion": gt_inversion,
                 "gt_pitches": gt_pitches,
+                "gt_is_default": gt_is_default,
                 "est_key": key_label_list[est_key_label],
                 "est_tonic": est_tonic,
                 "est_mode": est_mode,
@@ -228,6 +246,7 @@ def get_results_df(
                 "est_triad": est_triad,
                 "est_inversion": est_inversion,
                 "est_pitches": est_pitches,
+                "est_is_default": est_is_default,
                 "duration": duration,
             }
         )
