@@ -56,6 +56,10 @@ def evaluate_features(
     if filter is not None:
         results_df = results_df.loc[filter]
 
+    if len(results_df) == 0:
+        logging.warning("Filter contains nothing to evaluate. Returning 0.")
+        return 0
+
     correct_mask = np.full(len(results_df), True)
     for feature in features:
         correct_mask &= results_df[f"gt_{feature}"] == results_df[f"est_{feature}"]
