@@ -17,7 +17,11 @@ from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import State
 
 
-def evaluate_features(results_df: pd.DataFrame, features: List[str]) -> float:
+def evaluate_features(
+    results_df: pd.DataFrame,
+    features: List[str],
+    filter: Union[pd.Series, List[bool]] = None,
+) -> float:
     """
     Evaluate a given list of features from a results_df.
 
@@ -37,12 +41,21 @@ def evaluate_features(results_df: pd.DataFrame, features: List[str]) -> float:
             - chord_type
             - triad
             - inversion
+            - pitches
+            - is_default
+    filter : Union[pd.Series, List[bool]]
+        A boolean mask that can be used to filter the results_df before performing the
+        evaluation. If given, the results_df is filtered first (leaving only rows where
+        filter == True), before the evaluation is run on that resulting df.
 
     Returns
     -------
     accuracy : float
         A weighted average of the given features in the results_df, weighted by duration.
     """
+    if filter is not None:
+        results_df = results_df.loc[filter]
+
     correct_mask = np.full(len(results_df), True)
     for feature in features:
         correct_mask &= results_df[f"gt_{feature}"] == results_df[f"est_{feature}"]
@@ -88,7 +101,7 @@ def get_results_df(
     gt_chord_triads = np.zeros(len(piece.get_inputs()), dtype=object)
     gt_chord_inversions = np.zeros(len(piece.get_inputs()), dtype=int)
     gt_chord_pitches = np.zeros(len(piece.get_inputs()), dtype=object)
-    gt_chord_is_default = np.zeros(len(piece.get_inputes()), dtype=bool)
+    gt_chord_is_default = np.zeros(len(piece.get_inputs()), dtype=bool)
     for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
         chord = chord.to_pitch_type(chord_root_type)
         gt_chord_labels[start:end] = chord.get_one_hot_index(
