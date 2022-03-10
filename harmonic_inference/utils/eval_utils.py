@@ -156,7 +156,7 @@ def get_results_df(
         estimated_chord_triads[start:end] = TRIAD_REDUCTION[chord_type]
         estimated_chord_inversions[start:end] = inv
         estimated_chord_pitches[start:end] = str(tuple(sorted(pitches)))
-        estimated_chord_is_default[start:end] = pitches == hu.get_default_chord_pitches(
+        estimated_chord_is_default[start:end] = set(pitches) == hu.get_default_chord_pitches(
             root, chord_type, chord_root_type
         )
 
