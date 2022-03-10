@@ -110,7 +110,11 @@ class ChordPitchesModel(pl.LightningModule, ABC):
         is_default = batch["is_default"]
 
         weights = torch.ones((len(is_default), self.output_dim), dtype=float)
-        weights[is_default, :] = self.default_weight
+
+        # Only use default_weight once the model has stagnated with default_weight 1
+        if self.optimizers().param_groups[0]["lr"] != self.lr:
+            weights[is_default, :] = self.default_weight
+
         return weights.to(self.device)
 
     def get_raw_output(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:

@@ -1540,17 +1540,27 @@ class HarmonicInferenceModel:
         for batch in dl:
             outputs.extend(self.chord_pitches_model.get_output(batch).numpy())
 
-        cpm_outputs = np.vstack(outputs)
-        default_chord_pitches = np.vstack(
-            [chord.get_chord_pitches_target_vector() for chord in piece.get_chords()]
+        chord_pitches = self.decode_cpm_outputs(
+            np.vstack(outputs),
+            np.vstack([chord.get_chord_pitches_target_vector() for chord in piece.get_chords()]),
         )
 
-        chord_pitches = np.zeros_like(cpm_outputs, dtype=int)
-        default_mask = default_chord_pitches == 1
-        chord_pitches[default_mask] = cpm_outputs[default_mask] >= self.cpm_chord_tone_threshold
-        chord_pitches[~default_mask] = (
-            cpm_outputs[~default_mask] >= self.cpm_non_chord_tone_threshold
-        )
+        for chord, chord_pitch_list, cpm_output, (start, stop) in zip(
+            piece.get_chords(),
+            chord_pitches,
+            np.vstack(outputs),
+            piece.get_chord_ranges(),
+        ):
+            gt_chords = self.current_piece.get_chords_within_range(start=start, stop=stop)
+            if len(gt_chords) == 1:
+                gt_chord = gt_chords[0]
+                if gt_chord.root == chord.root and gt_chord.chord_type == chord.chord_type:
+                    if np.any(chord_pitch_list != gt_chord.get_chord_pitches_target_vector()):
+                        print("GT  chord:", gt_chord)
+                        print("EST chord:", chord)
+                        print("GT  pitch_vector:", gt_chord.get_chord_pitches_target_vector())
+                        print("EST pitch_vector:", chord_pitch_list)
+                        print("CPM output:", cpm_output)
 
         current_state = state
         for pitches, chord in zip(reversed(chord_pitches), reversed(piece.get_chords())):
@@ -1564,6 +1574,43 @@ class HarmonicInferenceModel:
 
             current_state.chord_pitches = abs_pitches
             current_state = current_state.prev_state
+
+    def decode_cpm_outputs(self, cpm_outputs: np.ndarray, defaults: np.ndarray) -> np.ndarray:
+        """
+        Given the stacked outputs from the CPM (size num_chords x num_pitches), and the default
+        output for each corresponding chord, return a List containing the binary chord pitches
+        vector for each chord.
+
+        Parameters
+        ----------
+        cpm_outputs : np.ndarray
+            An ndarray of size num_chords * num_pitches, where each value [i, j] in (0-1)
+            should roughly correspond to the probability the CPM assigns of pitch j being
+            present in the ith chord.
+        defaults : List[np.ndarray]
+            A binary array for each chord, encoding the default output, if there were no
+            suspensions or alterations.
+
+        Returns
+        -------
+        chord_pitches : List[np.ndarray]
+            A decoded CPM output. After thresholding and other heuristic logic, the pitches
+            present in each chord.
+        """
+        chord_pitches = np.zeros_like(cpm_outputs, dtype=int)
+
+        for i, output, default in enumerate(zip(cpm_outputs, defaults)):
+            default_positive = default == 1
+            chord_pitches[i, default_positive] = (
+                output[default_positive] >= self.cpm_chord_tone_threshold
+            )
+            chord_pitches[i, ~default_positive] = (
+                output[~default_positive] >= self.cpm_non_chord_tone_threshold
+            )
+
+            # TODO: Encode the heuristics here
+
+        return chord_pitches
 
 
 class DebugLogger:
