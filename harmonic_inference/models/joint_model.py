@@ -1598,17 +1598,43 @@ class HarmonicInferenceModel:
             present in each chord.
         """
         chord_pitches = np.zeros_like(cpm_outputs, dtype=int)
+        # TODO: Remove default 7ths from can_remove_tones
+        can_remove_tones = np.logical_and(
+            defaults == 1, cpm_outputs <= self.cpm_chord_tone_threshold
+        )
+        cannot_remove_tones = np.logical_and(
+            defaults == 1, cpm_outputs > self.cpm_chord_tone_threshold
+        )
+        can_add_tones = np.logical_and(
+            defaults == 0, cpm_outputs >= self.cpm_non_chord_tone_add_threshold
+        )
 
-        for i, output, default in enumerate(zip(cpm_outputs, defaults)):
-            default_positive = default == 1
-            chord_pitches[i, default_positive] = (
-                output[default_positive] >= self.cpm_chord_tone_threshold
-            )
-            chord_pitches[i, ~default_positive] = (
-                output[~default_positive] >= self.cpm_non_chord_tone_threshold
-            )
+        for i, (can_remove, cannot_remove, can_add) in enumerate(
+            zip(can_remove_tones, cannot_remove_tones, can_add_tones)
+        ):
+            # Keep non-removable chord tones
+            chord_pitches[i, np.where(cannot_remove)[0]] = 1
 
-            # TODO: Encode the heuristics here
+            # Add non-chord tones
+            chord_pitches[i, np.where(can_add)[0]] = 1
+
+            # Replace chord tones with neighbors
+
+            # default_tone_idxs = np.where(default_tones == 1)[0]
+            can_remove_idxs = np.where(can_remove)[0]
+
+            if len(can_remove_idxs) == 1:
+                # One chord tone might be altered
+                # Replace with largest prob neighbor (if over threshold)
+                # TODO
+                pass
+
+            elif len(can_remove_idxs) >= 2:
+                # More than one chord tone might be altered
+                # In the case that multiple neighbors are over threshold, we have to match them
+                # In the case that only one neighbor is over threshold, we assign it to one tone
+                # TODO
+                pass
 
         return chord_pitches
 
