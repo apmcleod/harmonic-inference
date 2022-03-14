@@ -1597,6 +1597,61 @@ class HarmonicInferenceModel:
             A decoded CPM output. After thresholding and other heuristic logic, the pitches
             present in each chord.
         """
+
+        def get_neighbor_idxs(
+            idx: int,
+            pitch_type: PitchType,
+            minimum: int = 0,
+            maximum: int = 2 * hc.MAX_CHORD_PITCH_INTERVAL_TPC,
+        ) -> np.ndarray:
+            """
+            Get the indexes for notes that could be a neighbor of the given note.
+
+            Parameters
+            ----------
+            idx : int
+                The index of the note whose neighbors we are looking for.
+            pitch_type : PitchType
+                The pitch type being used for indexing.
+            minimum : int
+                The smallest index of a neighbor note to return.
+            maximum : int
+                The largest index of a neighbor note to return. Note that the default
+                is the TPC default. If pitch_type is MIDI, 11 is used.
+
+            Returns
+            -------
+            neighbor_idxs : np.ndarray
+                The indexes of possible neighbor notes to the given note. For PitchType.MIDI,
+                this is 3 semitones in either direction (allowing for an augmented 2nd).
+                For PitchType.TPC, this is all altered versions of the given idx, and all
+                altered versions of a 2nd up and down.
+            """
+            if pitch_type == PitchType.MIDI:
+                neighbors = list(
+                    np.arange(max(minimum, idx - 3), min(hc.NUM_PITCHES[PitchType.MIDI], idx + 4))
+                )
+                neighbors.remove(idx)
+                return np.array(neighbors, dtype=int)
+
+            # Include altered versions of the given note.
+            neighbors = list(range(minimum + ((idx % 7) - (minimum % 7)) % 7, maximum + 1, 7))
+            neighbors.remove(idx)
+
+            # Include altered versions of a 2nd up
+            neighbor_up = idx + 2
+            neighbors.extend(
+                list(range(minimum + ((neighbor_up % 7) - (minimum % 7)) % 7, maximum + 1, 7))
+            )
+
+            # Include altered versions of a 2nd down
+            neighbor_down = idx - 2
+            neighbors.extend(
+                list(range(minimum + ((neighbor_down % 7) - (minimum % 7)) % 7, maximum + 1, 7))
+            )
+
+            return np.array(sorted(neighbors), dtype=int)
+
         chord_pitches = np.zeros_like(cpm_outputs, dtype=int)
         # TODO: Remove default 7ths from can_remove_tones
         can_remove_tones = np.logical_and(
@@ -1624,9 +1679,7 @@ class HarmonicInferenceModel:
             can_remove_idxs = np.where(can_remove)[0]
 
             if len(can_remove_idxs) == 1:
-                # One chord tone might be altered
-                # Replace with largest prob neighbor (if over threshold)
-                # TODO
+                get_neighbor_idxs(can_remove_idxs[0])
                 pass
 
             elif len(can_remove_idxs) >= 2:
