@@ -26,7 +26,7 @@ import harmonic_inference.models.key_transition_models as ktm
 import harmonic_inference.utils.harmonic_constants as hc
 import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.data.chord import get_chord_vector_length
-from harmonic_inference.data.data_types import KeyMode, PitchType
+from harmonic_inference.data.data_types import TRIAD_REDUCTION, KeyMode, PitchType
 from harmonic_inference.data.piece import Piece, get_range_start
 from harmonic_inference.utils.beam_search_utils import Beam, HashedBeam, State
 
@@ -1560,6 +1560,12 @@ class HarmonicInferenceModel:
         chord_pitches = self.decode_cpm_outputs(
             np.vstack(outputs),
             np.vstack([chord.get_chord_pitches_target_vector() for chord in piece.get_chords()]),
+            np.vstack(
+                [
+                    chord.get_chord_pitches_target_vector(reduction=TRIAD_REDUCTION)
+                    for chord in piece.get_chords()
+                ]
+            ),
         )
 
         for chord, chord_pitch_list, cpm_output, (start, stop) in zip(
@@ -1592,7 +1598,12 @@ class HarmonicInferenceModel:
             current_state.chord_pitches = abs_pitches
             current_state = current_state.prev_state
 
-    def decode_cpm_outputs(self, cpm_outputs: np.ndarray, defaults: np.ndarray) -> np.ndarray:
+    def decode_cpm_outputs(
+        self,
+        cpm_outputs: np.ndarray,
+        defaults: np.ndarray,
+        defaults_no_7ths: np.ndarray,
+    ) -> np.ndarray:
         """
         Given the stacked outputs from the CPM (size num_chords x num_pitches), and the default
         output for each corresponding chord, return a List containing the binary chord pitches
@@ -1607,6 +1618,9 @@ class HarmonicInferenceModel:
         defaults : List[np.ndarray]
             A binary array for each chord, encoding the default output, if there were no
             suspensions or alterations.
+        defaults_no_7ths : List[np.ndarray]
+            A binary array for each chord, encoding the default output, not including
+            7ths.
 
         Returns
         -------
@@ -1617,6 +1631,7 @@ class HarmonicInferenceModel:
 
         def get_neighbor_idxs(
             idx: int,
+            do_not_return: List[int],
             pitch_type: PitchType,
             minimum: int = 0,
             maximum: int = 2 * hc.MAX_CHORD_PITCH_INTERVAL_TPC,
@@ -1628,6 +1643,9 @@ class HarmonicInferenceModel:
             ----------
             idx : int
                 The index of the note whose neighbors we are looking for.
+            do_not_return : List[int]
+                A list of indexes not to include in the returned neighbor_idxs list.
+                This can include, for example, other already present chord tones.
             pitch_type : PitchType
                 The pitch type being used for indexing.
             minimum : int
@@ -1648,35 +1666,32 @@ class HarmonicInferenceModel:
                 neighbors = list(
                     np.arange(max(minimum, idx - 3), min(hc.NUM_PITCHES[PitchType.MIDI], idx + 4))
                 )
-                neighbors.remove(idx)
-                return np.array(neighbors, dtype=int)
 
-            # Include altered versions of the given note.
-            neighbors = list(range(minimum + ((idx % 7) - (minimum % 7)) % 7, maximum + 1, 7))
-            neighbors.remove(idx)
+            else:
+                # Include altered versions of the given note.
+                neighbors = list(range(minimum + ((idx % 7) - (minimum % 7)) % 7, maximum + 1, 7))
 
-            # Include altered versions of a 2nd up
-            neighbor_up = idx + 2
-            neighbors.extend(
-                list(range(minimum + ((neighbor_up % 7) - (minimum % 7)) % 7, maximum + 1, 7))
-            )
+                # Include altered versions of a 2nd up
+                neighbor_up = idx + 2
+                neighbors.extend(
+                    list(range(minimum + ((neighbor_up % 7) - (minimum % 7)) % 7, maximum + 1, 7))
+                )
 
-            # Include altered versions of a 2nd down
-            neighbor_down = idx - 2
-            neighbors.extend(
-                list(range(minimum + ((neighbor_down % 7) - (minimum % 7)) % 7, maximum + 1, 7))
-            )
+                # Include altered versions of a 2nd down
+                neighbor_down = idx - 2
+                neighbors.extend(
+                    list(range(minimum + ((neighbor_down % 7) - (minimum % 7)) % 7, maximum + 1, 7))
+                )
 
-            return np.array(sorted(neighbors), dtype=int)
+            neighbors_set = set(neighbors) - set(do_not_return) - set([idx])
+
+            return np.array(sorted(neighbors_set), dtype=int)
 
         chord_pitches = np.zeros_like(cpm_outputs, dtype=int)
-        # TODO: Remove default 7ths from can_remove_tones
         can_remove_tones = np.logical_and(
-            defaults == 1, cpm_outputs <= self.cpm_chord_tone_threshold
+            defaults_no_7ths == 1, cpm_outputs <= self.cpm_chord_tone_threshold
         )
-        cannot_remove_tones = np.logical_and(
-            defaults == 1, cpm_outputs > self.cpm_chord_tone_threshold
-        )
+        cannot_remove_tones = np.logical_and(defaults == 1, ~can_remove_tones)
         can_add_tones = np.logical_and(
             defaults == 0, cpm_outputs >= self.cpm_non_chord_tone_add_threshold
         )
@@ -1684,8 +1699,8 @@ class HarmonicInferenceModel:
             defaults == 0, cpm_outputs >= self.cpm_non_chord_tone_replace_threshold
         )
 
-        for i, (can_remove, cannot_remove, can_add, can_replace) in enumerate(
-            zip(can_remove_tones, cannot_remove_tones, can_add_tones, can_replace_tones)
+        for i, (can_remove, cannot_remove, can_add, can_replace, default) in enumerate(
+            zip(can_remove_tones, cannot_remove_tones, can_add_tones, can_replace_tones, defaults)
         ):
             # Keep non-removable chord tones
             chord_pitches[i, np.where(cannot_remove)[0]] = 1
@@ -1695,11 +1710,15 @@ class HarmonicInferenceModel:
 
             # Replace chord tones with neighbors
             can_remove_idxs = np.where(can_remove)[0]
+            can_replace_idxs = np.where(can_replace)[0]
+            default_idxs = np.where(default)[0]
 
             if len(can_remove_idxs) == 1:
                 # Only one chord tone can be removed
-                neighbor_idxs = get_neighbor_idxs(can_remove_idxs[0])
-                can_replace_neighbors = neighbor_idxs[np.isin(neighbor_idxs, can_replace_tones)]
+                neighbor_idxs = get_neighbor_idxs(
+                    can_remove_idxs[0], default_idxs, self.CHORD_OUTPUT_TYPE
+                )
+                can_replace_neighbors = neighbor_idxs[np.isin(neighbor_idxs, can_replace_idxs)]
 
                 if len(can_replace_neighbors) > 1:
                     to_add = neighbor_idxs[np.argmax(cpm_outputs[neighbor_idxs])]
