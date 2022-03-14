@@ -1687,6 +1687,8 @@ class HarmonicInferenceModel:
 
             return np.array(sorted(neighbors_set), dtype=int)
 
+        # TODO: Don't replace m3, M3
+        # TODO: Don't replace P5, d5, a5
         chord_pitches = np.zeros_like(cpm_outputs, dtype=int)
         can_remove_tones = np.logical_and(
             defaults_no_7ths == 1, cpm_outputs <= self.cpm_chord_tone_threshold
@@ -1721,7 +1723,8 @@ class HarmonicInferenceModel:
                 can_replace_neighbors = neighbor_idxs[np.isin(neighbor_idxs, can_replace_idxs)]
 
                 if len(can_replace_neighbors) > 1:
-                    to_add = neighbor_idxs[np.argmax(cpm_outputs[neighbor_idxs])]
+                    # Replace the note with the most likely neighbor
+                    to_add = can_replace_neighbors[np.argmax(cpm_outputs[i, can_replace_neighbors])]
                 elif len(can_replace_neighbors) == 1:
                     to_add = can_replace_neighbors[0]
                 else:
