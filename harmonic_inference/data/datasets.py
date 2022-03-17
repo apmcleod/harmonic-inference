@@ -202,7 +202,13 @@ class HarmonicDataset(Dataset):
             with h5py.File(self.h5_path, "r") as h5_file:
                 data = {
                     key: h5_file[key][item]
-                    for key in ["inputs", "targets", "input_lengths", "target_lengths"]
+                    for key in [
+                        "inputs",
+                        "targets",
+                        "input_lengths",
+                        "target_lengths",
+                        "note_based_targets",
+                    ]
                     if key in h5_file
                 }
                 if (
@@ -222,7 +228,7 @@ class HarmonicDataset(Dataset):
                 and self.scheduled_sampling_data is not None
             ):
                 data["scheduled_sampling_data"] = self.scheduled_sampling_data[item]
-            for key in ["is_default"]:
+            for key in ["is_default", "note_based_targets"]:
                 if hasattr(self, key):
                     data[key] = getattr(self, key)[item]
 
@@ -237,10 +243,8 @@ class HarmonicDataset(Dataset):
                 padded_input[: len(data["inputs"])] = data["inputs"]
                 data["inputs"] = padded_input
                 data["input_lengths"] = self.input_lengths[item]
-                if (
-                    hasattr(self, "scheduled_sampling_data")
-                    and self.scheduled_sampling_data is not None
-                ):
+
+                if "scheduled_sampling_data" in data:
                     padded_sched = np.zeros(
                         ([self.max_input_length] + list(data["inputs"][0].shape))
                     )
@@ -248,6 +252,13 @@ class HarmonicDataset(Dataset):
                         "scheduled_sampling_data"
                     ]
                     data["scheduled_sampling_data"] = padded_sched
+
+                if "note_based_targets" in data:
+                    padded_note_targets = np.full(self.max_input_length, -1)
+                    padded_note_targets[: len(data["note_based_targets"])] = data[
+                        "note_based_targets"
+                    ]
+                    data["note_based_targets"] = padded_note_targets
 
             if self.target_lengths is not None:
                 if self.max_target_length is None:
@@ -1556,6 +1567,7 @@ class ChordPitchesDataset(HarmonicDataset):
         )
         self.inputs = []
         self.targets = []
+        self.note_based_targets = []
         self.is_default = []
         self.target_pitch_type = []
 
@@ -1576,6 +1588,7 @@ class ChordPitchesDataset(HarmonicDataset):
                     for chord in piece.get_chords()
                 ]
             )
+            # TODO: note_based_targets
 
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
 
@@ -1623,6 +1636,7 @@ class ChordPitchesDataset(HarmonicDataset):
 
         h5_file = h5py.File(h5_path, "w")
 
+        # TODO: Save note-based targets
         keys = [
             "targets",
             "is_default",
@@ -1661,6 +1675,7 @@ class ChordPitchesDataset(HarmonicDataset):
             self.target_pitch_type = np.array(h5_file["target_pitch_type"])
 
             try:
+                # TODO: Load note-based targets
                 self.targets = np.array(h5_file["targets"])
                 self.is_default = np.array(h5_file["is_default"])
 

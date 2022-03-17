@@ -47,6 +47,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--note-based",
+        action="store_true",
+        help="Train the NoteBasedCPM with note-based is_chord_tone targets, not the simple CPM.",
+    )
+
+    parser.add_argument(
         "--sched",
         action="store_true",
         help=(
@@ -292,7 +298,10 @@ if __name__ == "__main__":
             )
 
     elif ARGS.model == "cpm":
-        model = cpm.SimpleChordPitchesModel(
+        cpm_init = (
+            cpm.NoteBasedChordPitchesModel if ARGS.note_based else cpm.NoteBasedChordPitchesModel
+        )
+        model = cpm_init(
             PitchType.TPC,
             PitchType.TPC,
             learning_rate=ARGS.lr,
@@ -304,7 +313,7 @@ if __name__ == "__main__":
                 kwargs["input_mask"],
                 model.input_dim,
             )
-            model = cpm.SimpleChordPitchesModel(
+            model = cpm_init(
                 PitchType.TPC,
                 PitchType.TPC,
                 learning_rate=ARGS.lr,
