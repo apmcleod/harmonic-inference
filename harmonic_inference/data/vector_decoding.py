@@ -210,6 +210,46 @@ def decode_chord_vector(
     )
 
 
+def is_chord_tone(
+    input_note: np.ndarray,
+    target: np.ndarray,
+    pitch_type: PitchType = None,
+) -> bool:
+    """
+    Return whether the given input note's pitch class is a chord tone.
+
+    Parameters
+    ----------
+    input_note : np.ndarray
+        The input note vector.
+    target : np.ndarray
+        The target chord pitches array.
+    pitch_type : PitchType
+        The pitch type used for the input and target vectors. If given, it will
+        speed up computation, but it can be inferred otherwise.
+
+    Returns
+    -------
+    is_chord_tone : bool
+        True if the input vector's pitch class is a chord tone in the target vector.
+        False otherwise.
+    """
+    if pitch_type is None:
+        pitch_type = PitchType.MIDI if len(target) == NUM_PITCHES[PitchType.MIDI] else PitchType.TPC
+
+    note_vec_length = get_note_vector_length(pitch_type, for_chord_pitches=True)
+    note_vector = input_note[-note_vec_length:]
+
+    pitch_class_idx = np.where(note_vector == 1)[0][0]
+    if pitch_type == PitchType.TPC:
+        pitch_class_idx -= int((NUM_RELATIVE_PITCHES[PitchType.TPC][True] - len(target)) / 2)
+
+        if pitch_class_idx < 0 or pitch_class_idx >= len(target):
+            return False
+
+    return target[pitch_class_idx] == 1
+
+
 def infer_chord_vector_pitch_type(
     vector_length: int,
     pad: bool,

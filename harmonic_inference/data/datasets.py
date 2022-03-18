@@ -18,6 +18,7 @@ from harmonic_inference.data.piece import (
     get_score_piece_from_music_xml,
 )
 from harmonic_inference.data.vector_decoding import (
+    is_chord_tone,
     reduce_chord_one_hots,
     reduce_chord_types,
     remove_chord_inversions,
@@ -1567,9 +1568,9 @@ class ChordPitchesDataset(HarmonicDataset):
         )
         self.inputs = []
         self.targets = []
-        self.note_based_targets = []
         self.is_default = []
         self.target_pitch_type = []
+        self.note_based_targets = []
 
         if len(pieces) > 0 and len(pieces[0].get_chords()) > 0:
             self.target_pitch_type.append(pieces[0].get_chords()[0].pitch_type.value)
@@ -1588,7 +1589,16 @@ class ChordPitchesDataset(HarmonicDataset):
                     for chord in piece.get_chords()
                 ]
             )
-            # TODO: note_based_targets
+
+        for inputs, target in zip(self.inputs, self.targets):
+            this_note_based_targets = [-1] * len(inputs)
+
+            for i, note in enumerate(inputs[2:-2]):
+                this_note_based_targets[i + 2] = int(
+                    is_chord_tone(note, target, pitch_type=pieces[0].get_chords()[0].pitch_type)
+                )
+
+            self.note_based_targets.append(this_note_based_targets)
 
         self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
 
@@ -1636,7 +1646,6 @@ class ChordPitchesDataset(HarmonicDataset):
 
         h5_file = h5py.File(h5_path, "w")
 
-        # TODO: Save note-based targets
         keys = [
             "targets",
             "is_default",
@@ -1648,6 +1657,9 @@ class ChordPitchesDataset(HarmonicDataset):
                 h5_file.create_dataset(key, data=np.array(getattr(self, key)), compression="gzip")
 
         h5_file.create_dataset("inputs", data=np.vstack(self.inputs), compression="gzip")
+        h5_file.create_dataset(
+            "note_based_targets", data=np.concatenate(self.note_based_targets), compression="gzip"
+        )
 
         if file_ids is not None:
             h5_file.create_dataset("file_ids", data=np.array(file_ids), compression="gzip")
@@ -1675,13 +1687,13 @@ class ChordPitchesDataset(HarmonicDataset):
             self.target_pitch_type = np.array(h5_file["target_pitch_type"])
 
             try:
-                # TODO: Load note-based targets
                 self.targets = np.array(h5_file["targets"])
                 self.is_default = np.array(h5_file["is_default"])
 
-                # Read inputs chord by chord
+                # Read inputs and note-based targets chord by chord
                 self.input_lengths = np.array(h5_file["input_lengths"])
                 self.inputs = []
+                self.note_based_targets = []
 
                 start_idxs = [0] + list(np.cumsum(self.input_lengths))
                 chunk_size = 5000
@@ -1694,11 +1706,14 @@ class ChordPitchesDataset(HarmonicDataset):
                         chunk_id * chunk_size : (chunk_id + 1) * chunk_size + 1
                     ]
 
-                    chunk_data = h5_file["inputs"][chunk_start_idxs[0] : chunk_start_idxs[-1]]
-                    base_idx = chunk_start_idxs[0]
+                    for key, array in zip(
+                        ["inputs", "note_based_targets"], [self.inputs, self.note_based_targets]
+                    ):
+                        chunk_data = h5_file[key][chunk_start_idxs[0] : chunk_start_idxs[-1]]
+                        base_idx = chunk_start_idxs[0]
 
-                    for start_idx, end_idx in zip(chunk_start_idxs, chunk_start_idxs[1:]):
-                        self.inputs.append(chunk_data[start_idx - base_idx : end_idx - base_idx])
+                        for start_idx, end_idx in zip(chunk_start_idxs, chunk_start_idxs[1:]):
+                            array.append(chunk_data[start_idx - base_idx : end_idx - base_idx])
 
                 self.in_ram = True
 
