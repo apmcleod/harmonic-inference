@@ -135,7 +135,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
         inputs = batch["inputs"].float()
         input_lengths = batch["input_lengths"]
 
-        outputs = self(inputs, input_lengths)
+        outputs = self(inputs[:, : torch.max(input_lengths)], input_lengths)
 
         return outputs
 
@@ -172,7 +172,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
         targets : torch.Tensor
             The appropriate targets to be used for this model's outputs.
         """
-        return batch["targets"].float()
+        return batch["targets"].float()[:, : torch.max(batch["input_lengths"])]
 
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
         targets = self.get_targets(batch)
@@ -196,37 +196,61 @@ class ChordPitchesModel(pl.LightningModule, ABC):
             [all_weights, all_weights[batch["is_default"]], all_weights[~batch["is_default"]]],
         ):
             if len(targets) > 0:
-                rounded_outputs = outputs.round()
+                self.calculate_and_log_validation_metrics(prefix, targets, outputs, weights)
 
-                pitch_correct = (rounded_outputs == targets).float()
-                chord_correct = (torch.sum(pitch_correct, dim=1) == outputs.shape[1]).float().sum()
-                pitch_correct = pitch_correct.sum()
+    def calculate_and_log_validation_metrics(
+        self,
+        prefix: str,
+        targets: torch.Tensor,
+        outputs: torch.Tensor,
+        weights: torch.Tensor,
+    ) -> None:
+        """
+        _summary_
 
-                total_pitches = len(targets.flatten())
-                total_chords = len(targets)
+        Parameters
+        ----------
+        prefix : str
+            The prefix to use for each metric when logging. Should be something like "default_"
+            or "non-default_".
+        targets : torch.Tensor
+            The model's targets.
+        outputs : torch.Tensor
+            The model's output.
+        weights : torch.Tensor
+            The weights to use in loss calculation.
+        """
+        rounded_outputs = outputs.round()
 
-                pitch_acc = 100 * pitch_correct / total_pitches
-                chord_acc = 100 * chord_correct / total_chords
+        pitch_correct = (rounded_outputs == targets).float()
+        chord_correct = (torch.sum(pitch_correct, dim=1) == outputs.shape[1]).float().sum()
+        pitch_correct = pitch_correct.sum()
 
-                positive_target_mask = targets == 1
-                positive_output_mask = rounded_outputs == 1
+        total_pitches = len(targets.flatten())
+        total_chords = len(targets)
 
-                tp = (positive_target_mask & positive_output_mask).sum().float()
-                fp = (~positive_target_mask & positive_output_mask).sum().float()
-                fn = (positive_target_mask & ~positive_output_mask).sum().float()
+        pitch_acc = 100 * pitch_correct / total_pitches
+        chord_acc = 100 * chord_correct / total_chords
 
-                precision = tp / (tp + fp)
-                recall = tp / (tp + fn)
-                f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
+        positive_target_mask = targets == 1
+        positive_output_mask = rounded_outputs == 1
 
-                loss = F.binary_cross_entropy(outputs, targets, weight=weights)
+        tp = (positive_target_mask & positive_output_mask).sum().float()
+        fp = (~positive_target_mask & positive_output_mask).sum().float()
+        fn = (positive_target_mask & ~positive_output_mask).sum().float()
 
-                self.log(f"{prefix}val_loss", loss)
-                self.log(f"{prefix}val_pitch_acc", pitch_acc)
-                self.log(f"{prefix}val_chord_acc", chord_acc)
-                self.log(f"{prefix}val_precision", precision)
-                self.log(f"{prefix}val_recall", recall)
-                self.log(f"{prefix}val_f1", f1)
+        precision = tp / (tp + fp)
+        recall = tp / (tp + fn)
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
+
+        loss = F.binary_cross_entropy(outputs, targets, weight=weights)
+
+        self.log(f"{prefix}val_loss", loss)
+        self.log(f"{prefix}val_pitch_acc", pitch_acc)
+        self.log(f"{prefix}val_chord_acc", chord_acc)
+        self.log(f"{prefix}val_precision", precision)
+        self.log(f"{prefix}val_recall", recall)
+        self.log(f"{prefix}val_f1", f1)
 
     def evaluate(self, dataset: ChordPitchesDataset) -> Dict[str, float]:
         dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
@@ -556,6 +580,109 @@ class NoteBasedChordPitchesModel(ChordPitchesModel):
         self.fc2 = nn.Linear(self.hidden_dim, 1)
         self.dropout1 = nn.Dropout(self.dropout)
 
+    def get_targets(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """
+        Load the correct targets from a given batch dictionary.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            The batch Dictionary containing any needed inputs.
+
+        Returns
+        -------
+        targets : torch.Tensor
+            The appropriate targets to be used for this model's outputs.
+        """
+        return batch["note_based_targets"].float()[:, : torch.max(batch["input_lengths"])]
+
+    def get_weights(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """
+        Get the weights to use for the loss calculation given a list of whether
+        each chord contains the default pitches or not.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            A batch Dictionary, containing the entry "is_default", which is:
+            One boolean per input chord, with True if that chord contains only the default
+            pitches and False otherwise.
+
+        Returns
+        -------
+        weights : torch.Tensor
+            A (batch_size x num_output_pitches) tensor where each row is all 1's
+            for non-default inputs, and all self.default_weight for default inputs.
+        """
+        is_default = batch["is_default"]
+
+        weights = torch.ones(batch["note_based_targets"].shape, dtype=float)
+
+        # Only use default_weight once the model has stagnated with default_weight 1
+        if self.optimizers().param_groups[0]["lr"] != self.lr:
+            weights[is_default, :] = self.default_weight
+
+        # Set to 0 any weights where the target is -1
+        weights[torch.where(batch["note_based_targets"] == -1)] = 0
+
+        return weights.to(self.device)[:, : torch.max(batch["input_lengths"])]
+
+    def calculate_and_log_validation_metrics(
+        self,
+        prefix: str,
+        targets: torch.Tensor,
+        outputs: torch.Tensor,
+        weights: torch.Tensor,
+    ) -> None:
+        """
+        _summary_
+
+        Parameters
+        ----------
+        prefix : str
+            The prefix to use for each metric when logging. Should be something like "default_"
+            or "non-default_".
+        targets : torch.Tensor
+            The model's targets.
+        outputs : torch.Tensor
+            The model's output.
+        weights : torch.Tensor
+            The weights to use in loss calculation.
+        """
+        rounded_outputs = outputs.round()
+
+        note_correct = (rounded_outputs == targets).float()
+        chord_correct = (
+            (torch.sum(note_correct, dim=1) == torch.sum(targets != -1, dim=1)).float().sum()
+        )
+        note_correct = note_correct.sum()
+
+        total_notes = torch.sum(targets != -1)
+        total_chords = len(targets)
+
+        note_acc = 100 * note_correct / total_notes
+        chord_acc = 100 * chord_correct / total_chords
+
+        positive_target_mask = targets == 1
+        positive_output_mask = rounded_outputs == 1
+
+        tp = (positive_target_mask & positive_output_mask).sum().float()
+        fp = (~positive_target_mask & positive_output_mask).sum().float()
+        fn = (positive_target_mask & ~positive_output_mask).sum().float()
+
+        precision = tp / (tp + fp)
+        recall = tp / (tp + fn)
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
+
+        loss = F.binary_cross_entropy(outputs, targets, weight=weights)
+
+        self.log(f"{prefix}val_loss", loss)
+        self.log(f"{prefix}val_note_acc", note_acc)
+        self.log(f"{prefix}val_chord_acc", chord_acc)
+        self.log(f"{prefix}val_precision", precision)
+        self.log(f"{prefix}val_recall", recall)
+        self.log(f"{prefix}val_f1", f1)
+
     def init_hidden(self, batch_size: int) -> Tuple[Variable, Variable]:
         """
         Initialize the LSTM's hidden layer for a given batch size.
@@ -588,24 +715,12 @@ class NoteBasedChordPitchesModel(ChordPitchesModel):
 
         packed_inputs = pack_padded_sequence(embed, lengths, enforce_sorted=False, batch_first=True)
         lstm_out_packed, (_, _) = self.lstm(packed_inputs, (h_0, c_0))
-        lstm_out_unpacked, lstm_out_lengths = pad_packed_sequence(lstm_out_packed, batch_first=True)
-
-        # Reshape lstm outs
-        lstm_out_forward, lstm_out_backward = torch.chunk(lstm_out_unpacked, 2, 2)
-
-        # Get lengths in proper format
-        lstm_out_lengths_tensor = (
-            lstm_out_lengths.unsqueeze(1).unsqueeze(2).expand((-1, 1, lstm_out_forward.shape[2]))
-        ).to(self.device)
-        # TODO: No gathering here
-        last_forward = torch.gather(lstm_out_forward, 1, lstm_out_lengths_tensor - 1).squeeze(dim=1)
-        last_backward = lstm_out_backward[:, 0, :]
-        lstm_out = torch.cat((last_forward, last_backward), 1)
+        lstm_out, _ = pad_packed_sequence(lstm_out_packed, batch_first=True)
 
         relu1 = F.relu(lstm_out)
         fc1 = self.fc1(relu1)
         relu2 = F.relu(fc1)
         drop1 = self.dropout1(relu2)
-        output = self.fc2(drop1)
+        output = torch.squeeze(self.fc2(drop1), dim=2)
 
         return torch.sigmoid(output)
