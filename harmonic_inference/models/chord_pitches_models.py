@@ -17,6 +17,8 @@ from harmonic_inference.data.chord import (
 )
 from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.datasets import ChordPitchesDataset
+from harmonic_inference.data.vector_decoding import get_relative_pitch_index
+from harmonic_inference.utils.harmonic_constants import MAX_CHORD_PITCH_INTERVAL_TPC, NUM_PITCHES
 
 
 class ChordPitchesModel(pl.LightningModule, ABC):
@@ -682,6 +684,46 @@ class NoteBasedChordPitchesModel(ChordPitchesModel):
         self.log(f"{prefix}val_precision", precision)
         self.log(f"{prefix}val_recall", recall)
         self.log(f"{prefix}val_f1", f1)
+
+    def get_output(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """
+        Load inputs from the batch data and return a non-rounded output
+        Tensor derived from the model.
+
+        Parameters
+        ----------
+        batch : Dict[str, torch.Tensor]
+            The batch Dictionary containing any needed inputs.
+
+        Returns
+        -------
+        output : torch.Tensor
+            An unrounded output tensor derived from the model, modeling the pitches
+            at intervals on the range [-13, 13] for TPC, and [0, 11] for MIDI
+            above the root. Values closer to 1 indicate presence of the pitch.
+        """
+        raw_outputs = self.get_raw_output(batch)
+        output = torch.zeros(
+            (
+                len(raw_outputs),
+                (
+                    NUM_PITCHES[PitchType.MIDI]
+                    if self.OUTPUT_PITCH == PitchType.MIDI
+                    else 2 * MAX_CHORD_PITCH_INTERVAL_TPC + 1
+                ),
+            ),
+        )
+
+        for i, (input_notes, length, targets, raw_output) in enumerate(
+            zip(batch["inputs"], batch["input_lengths"], batch["note_based_targets"], raw_outputs)
+        ):
+            for note, target, out in zip(input_notes[:length], targets, raw_output):
+                if target != -1:
+                    # Ensure note is not padding
+                    relative_pitch = get_relative_pitch_index(note, self.OUTPUT_PITCH)
+                    output[i, relative_pitch] = max(output[i, relative_pitch], out)
+
+        return output
 
     def init_hidden(self, batch_size: int) -> Tuple[Variable, Variable]:
         """

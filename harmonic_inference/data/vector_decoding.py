@@ -210,6 +210,29 @@ def decode_chord_vector(
     )
 
 
+def get_relative_pitch_index(input_note: np.ndarray, pitch_type: PitchType) -> int:
+    """
+    For the chord pitches model input vectors, return the relative pitch index for a given
+    input note. That is, the index into the target array for the pitch of that input note.
+
+    Parameters
+    ----------
+    input_note : np.ndarray
+        A chord pitches model input vector.
+    pitch_type : PitchType
+        The pitch type used in the input note.
+
+    Returns
+    -------
+    relative_pitch : int
+        The index into the target vector of the given note's pitch.
+    """
+    note_vec_length = get_note_vector_length(pitch_type, for_chord_pitches=True)
+    note_vector = input_note[-note_vec_length:]
+
+    return np.where(note_vector == 1)[0][0]
+
+
 def is_chord_tone(
     input_note: np.ndarray,
     target: np.ndarray,
@@ -237,10 +260,7 @@ def is_chord_tone(
     if pitch_type is None:
         pitch_type = PitchType.MIDI if len(target) == NUM_PITCHES[PitchType.MIDI] else PitchType.TPC
 
-    note_vec_length = get_note_vector_length(pitch_type, for_chord_pitches=True)
-    note_vector = input_note[-note_vec_length:]
-
-    pitch_class_idx = np.where(note_vector == 1)[0][0]
+    pitch_class_idx = get_relative_pitch_index(input_note, pitch_type)
     if pitch_type == PitchType.TPC:
         pitch_class_idx -= int((NUM_RELATIVE_PITCHES[PitchType.TPC][True] - len(target)) / 2)
 
