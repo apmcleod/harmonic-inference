@@ -11,7 +11,7 @@ import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.data.chord import Chord
 from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.key import Key, get_key_change_vector_length
-from harmonic_inference.data.piece import ScorePiece
+from harmonic_inference.data.piece import ScorePiece, get_range_start
 from harmonic_inference.data.vector_decoding import reduce_chord_one_hots
 
 
@@ -918,7 +918,10 @@ class State:
             root, chord_type, inversion = labels["chord"][chord_id]
             bass = hu.get_bass_note(chord_type, root, inversion, chord_pitch_type)
 
-            chord_ranges[i] = (prev_index, next_index)
+            chord_ranges[i] = (
+                get_range_start(onset_cache[prev_index], piece.get_inputs()),
+                next_index,
+            )
 
             key = keys[np.where(key_changes <= i)[0][-1]]
 
