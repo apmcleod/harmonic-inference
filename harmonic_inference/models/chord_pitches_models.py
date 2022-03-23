@@ -721,7 +721,8 @@ class NoteBasedChordPitchesModel(ChordPitchesModel):
                 if target != -1:
                     # Ensure note is not padding
                     relative_pitch = get_relative_pitch_index(note, self.OUTPUT_PITCH)
-                    output[i, relative_pitch] = max(output[i, relative_pitch], out)
+                    if 0 <= relative_pitch < len(output[i]):
+                        output[i, relative_pitch] = max(output[i, relative_pitch], out)
 
         return output
 

@@ -14,6 +14,7 @@ from harmonic_inference.data.data_types import ChordType, KeyMode, PitchType
 from harmonic_inference.data.key import Key, get_key_change_vector_length
 from harmonic_inference.data.note import Note, get_note_vector_length
 from harmonic_inference.utils.harmonic_constants import (
+    MAX_CHORD_PITCH_INTERVAL_TPC,
     MAX_RELATIVE_TPC,
     MIN_KEY_CHANGE_INTERVAL_TPC,
     MIN_RELATIVE_TPC,
@@ -230,7 +231,14 @@ def get_relative_pitch_index(input_note: np.ndarray, pitch_type: PitchType) -> i
     note_vec_length = get_note_vector_length(pitch_type, for_chord_pitches=True)
     note_vector = input_note[-note_vec_length:]
 
-    return np.where(note_vector == 1)[0][0]
+    relative_pitch = np.where(note_vector == 1)[0][0]
+
+    if pitch_type == PitchType.TPC:
+        relative_pitch -= int(
+            (NUM_RELATIVE_PITCHES[PitchType.TPC][True] - 2 * MAX_CHORD_PITCH_INTERVAL_TPC - 1) / 2
+        )
+
+    return relative_pitch
 
 
 def is_chord_tone(
@@ -261,11 +269,8 @@ def is_chord_tone(
         pitch_type = PitchType.MIDI if len(target) == NUM_PITCHES[PitchType.MIDI] else PitchType.TPC
 
     pitch_class_idx = get_relative_pitch_index(input_note, pitch_type)
-    if pitch_type == PitchType.TPC:
-        pitch_class_idx -= int((NUM_RELATIVE_PITCHES[PitchType.TPC][True] - len(target)) / 2)
-
-        if pitch_class_idx < 0 or pitch_class_idx >= len(target):
-            return False
+    if pitch_type == PitchType.TPC and pitch_class_idx < 0 or pitch_class_idx >= len(target):
+        return False
 
     return target[pitch_class_idx] == 1
 

@@ -32,7 +32,7 @@ from harmonic_inference.utils.beam_search_utils import Beam, HashedBeam, State
 
 MODEL_CLASSES = {
     "ccm": [ccm.SimpleChordClassifier, ccm.MultiTargetChordClassifier],
-    "cpm": [cpm.SimpleChordPitchesModel],
+    "cpm": [cpm.SimpleChordPitchesModel, cpm.NoteBasedChordPitchesModel],
     "ctm": [ctm.SimpleChordTransitionModel],
     "csm": [csm.SimpleChordSequenceModel],
     "ktm": [ktm.SimpleKeyTransitionModel],
