@@ -1584,6 +1584,10 @@ class HarmonicInferenceModel:
                         print("EST chord:", chord)
                         print("GT  pitch_vector:", gt_chord.get_chord_pitches_target_vector())
                         print("EST pitch_vector:", chord_pitch_list)
+                        print(
+                            "def pitch_vector:",
+                            gt_chord.get_chord_pitches_target_vector(default=True),
+                        )
                         print("CPM output:", cpm_output)
 
         current_state = state
