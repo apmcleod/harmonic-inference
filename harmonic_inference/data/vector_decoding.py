@@ -241,6 +241,39 @@ def get_relative_pitch_index(input_note: np.ndarray, pitch_type: PitchType) -> i
     return relative_pitch
 
 
+def is_in_chord(input_note: np.ndarray, pitch_type: PitchType = None) -> bool:
+    """
+    _summary_
+
+    Parameters
+    ----------
+    input_note : np.ndarray
+        _description_
+    pitch_type : PitchType, optional
+        _description_, by default None
+
+    Returns
+    -------
+    bool
+        _description_
+    """
+    if pitch_type is None:
+        pitch_type = infer_chord_vector_pitch_type(len(input_note), False, for_chord_pitches=True)
+
+    note_vec_length = get_note_vector_length(pitch_type, for_chord_pitches=True)
+    note_vector = input_note[-note_vec_length:]
+
+    onset_idx = (
+        NUM_RELATIVE_PITCHES[pitch_type][True]  # Pitch class
+        + 127 // NUM_PITCHES[PitchType.MIDI]  # Octave
+        + 4  # Onset level
+        + 4  # Offset level
+    )
+    offset_idx = onset_idx + 1
+
+    return note_vector[onset_idx] < 1 and note_vector[offset_idx] > 0
+
+
 def is_chord_tone(
     input_note: np.ndarray,
     target: np.ndarray,

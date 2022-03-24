@@ -19,6 +19,7 @@ from harmonic_inference.data.piece import (
 )
 from harmonic_inference.data.vector_decoding import (
     is_chord_tone,
+    is_in_chord,
     reduce_chord_one_hots,
     reduce_chord_types,
     remove_chord_inversions,
@@ -1594,6 +1595,8 @@ class ChordPitchesDataset(HarmonicDataset):
             this_note_based_targets = [-1] * len(inputs)
 
             for i, note in enumerate(inputs[2:-2]):
+                if not is_in_chord(note):
+                    continue
                 this_note_based_targets[i + 2] = int(
                     is_chord_tone(note, target, pitch_type=pieces[0].get_chords()[0].pitch_type)
                 )
