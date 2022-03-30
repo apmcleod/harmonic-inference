@@ -231,6 +231,9 @@ def evaluate(
             piece,
             model.CHORD_OUTPUT_TYPE,
             model.KEY_OUTPUT_TYPE,
+            model.chord_classifier.use_inversions,
+            model.chord_classifier.reduction,
+            use_chord_pitches=True,
         )
 
         results_df = eu.get_results_df(

@@ -12,7 +12,7 @@ from ms3 import Parse
 import harmonic_inference.utils.harmonic_constants as hc
 import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.data.chord import Chord
-from harmonic_inference.data.data_types import TRIAD_REDUCTION, PitchType
+from harmonic_inference.data.data_types import TRIAD_REDUCTION, ChordType, PitchType
 from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import State
 
@@ -514,6 +514,9 @@ def get_annotation_df(
     piece: Piece,
     root_type: PitchType,
     tonic_type: PitchType,
+    use_inversions: bool,
+    reduction: Dict[ChordType, ChordType],
+    use_chord_pitches: bool = False,
 ) -> pd.DataFrame:
     """
     Get a df containing the labels of the given state.
@@ -528,6 +531,13 @@ def get_annotation_df(
         The pitch type to use for chord root labels.
     tonic_type : PitchType
         The pitch type to use for key tonic annotations.
+    use_inversions : bool
+        True if the state's chord indexes contain inversions. False otherwise.
+    reduction : Dict[ChordType, ChordType]
+        A mapping of the state's chord types to reduced chord types. This must be the
+        reduction used by the CCM during the search process.
+    use_chord_pitches : bool
+        True to include altered tones in the output chord labels.
 
     Returns
     -------
@@ -536,17 +546,21 @@ def get_annotation_df(
     """
     labels_list = []
 
-    chords, changes = state.get_chords()
+    chords, changes, chord_pitches = state.get_chords()
     estimated_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    for chord, start, end in zip(chords, changes[:-1], changes[1:]):
+    estimated_chord_pitches = np.full(len(piece.get_inputs()), list(), dtype=object)
+    for chord, pitches, start, end in zip(chords, chord_pitches, changes[:-1], changes[1:]):
         estimated_chord_labels[start:end] = chord
+        estimated_chord_pitches[start:end] = pitches
 
     keys, changes = state.get_keys()
     estimated_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
     for key, start, end in zip(keys, changes[:-1], changes[1:]):
         estimated_key_labels[start:end] = key
 
-    chord_label_list = hu.get_chord_label_list(root_type, use_inversions=True)
+    chord_label_list = hu.get_chord_label_list(
+        root_type, use_inversions=use_inversions, reduction=reduction
+    )
     key_label_list = hu.get_key_label_list(tonic_type)
 
     prev_est_key_string = None
@@ -563,6 +577,7 @@ def get_annotation_df(
 
         est_chord_string = chord_label_list[est_chord_label]
         est_key_string = key_label_list[est_key_label]
+        # TODO: Add chord pitches string here
 
         # No change in labels
         if est_chord_string == prev_est_chord_string and est_key_string == prev_est_key_string:
@@ -599,6 +614,9 @@ def get_results_annotation_df(
     piece: Piece,
     root_type: PitchType,
     tonic_type: PitchType,
+    use_inversions: bool,
+    reduction: Dict[ChordType, ChordType],
+    use_chord_pitches: bool = False,
 ) -> pd.DataFrame:
     """
     Get a df containing the full labels of the given state, color-coded in terms of their
@@ -615,6 +633,13 @@ def get_results_annotation_df(
         The pitch type used for chord roots.
     tonic_type : PitchType
         The pitch type used for key tonics.
+    use_inversions : bool
+        True if the state's chord indexes contain inversions. False otherwise.
+    reduction : Dict[ChordType, ChordType]
+        A mapping of the state's chord types to reduced chord types. This must be the
+        reduction used by the CCM during the search process.
+    use_chord_pitches : bool
+        True to include altered tones in the output chord labels.
 
     Returns
     -------
@@ -624,21 +649,26 @@ def get_results_annotation_df(
     labels_list = []
 
     gt_chord_labels = np.full(len(piece.get_inputs()), -1, dtype=int)
+    gt_chord_pitches = np.full(len(piece.get_inputs()), list(), dtype=object)
     if len(piece.get_chords()) > 0:
         gt_chords = piece.get_chords()
         gt_changes = piece.get_chord_change_indices()
         for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
             gt_chord_labels[start:end] = chord.get_one_hot_index(
-                relative=False, use_inversion=True, pad=False
+                relative=False, use_inversion=use_inversions, pad=False, reduction=reduction
             )
+            gt_chord_pitches[start:end] = chord.chord_pitches
         gt_chord_labels[gt_changes[-1] :] = gt_chords[-1].get_one_hot_index(
-            relative=False, use_inversion=True, pad=False
+            relative=False, use_inversion=use_inversions, pad=False, reduction=reduction
         )
+        gt_chord_pitches[gt_changes[-1] :] = gt_chords[-1].chord_pitches
 
-    chords, changes, _ = state.get_chords()
+    chords, changes, chord_pitches = state.get_chords()
     estimated_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    for chord, start, end in zip(chords, changes[:-1], changes[1:]):
+    estimated_chord_pitches = np.full(len(piece.get_inputs()), list(), dtype=object)
+    for chord, pitches, start, end in zip(chords, chord_pitches, changes[:-1], changes[1:]):
         estimated_chord_labels[start:end] = chord
+        estimated_chord_pitches[start:end] = pitches
 
     gt_key_labels = np.full(len(piece.get_inputs()), -1, dtype=int)
     if len(piece.get_keys()) > 0:
@@ -654,7 +684,9 @@ def get_results_annotation_df(
     for key, start, end in zip(keys, changes[:-1], changes[1:]):
         estimated_key_labels[start:end] = key
 
-    chord_label_list = hu.get_chord_label_list(root_type, use_inversions=True)
+    chord_label_list = hu.get_chord_label_list(
+        root_type, use_inversions=use_inversions, reduction=reduction
+    )
     key_label_list = hu.get_key_label_list(tonic_type)
 
     prev_gt_chord_string = None
@@ -675,9 +707,11 @@ def get_results_annotation_df(
 
         gt_chord_string = chord_label_list[gt_chord_label]
         gt_key_string = key_label_list[gt_key_label]
+        # TODO: Add GT chord pitches here
 
         est_chord_string = chord_label_list[est_chord_label]
         est_key_string = key_label_list[est_key_label]
+        # TODO: Add est chord pitches here
 
         # No change in labels
         if (
