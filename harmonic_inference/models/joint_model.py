@@ -65,7 +65,7 @@ CPM_NON_CHORD_TONE_ADD_THRESHOLD_DEFAULT = 0.5
 CPM_NON_CHORD_TONE_REPLACE_THRESHOLD_DEFAULT = 0.5
 
 
-def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
+def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False, cpm_only: bool = False):
     """
     Add parameters for the HarmonicInferenceModel to the given ArgumentParser.
 
@@ -75,114 +75,117 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
         The ArgumentParser to add the HarmonicInferenceModel arguments to.
     grid_search : bool
         True to allow lists of values for each argument for a potential grid search.
+    cpm_only : bool
+        True to only add cpm-based hyperparameters.
     """
-    parser.add_argument(
-        "--min-chord-change-prob",
-        default=MIN_CHORD_CHANGE_PROB_DEFAULT,
-        type=float,
-        nargs="+" if grid_search else None,
-        help="The minimum CTM probability that can be a chord change.",
-    )
+    if not cpm_only:
+        parser.add_argument(
+            "--min-chord-change-prob",
+            default=MIN_CHORD_CHANGE_PROB_DEFAULT,
+            type=float,
+            nargs="+" if grid_search else None,
+            help="The minimum CTM probability that can be a chord change.",
+        )
 
-    parser.add_argument(
-        "--max-no-chord-change-prob",
-        default=MAX_NO_CHORD_CHANGE_PROB_DEFAULT,
-        type=float,
-        nargs="+" if grid_search else None,
-        help="The maximum CTM probability that can be a non-chord change.",
-    )
+        parser.add_argument(
+            "--max-no-chord-change-prob",
+            default=MAX_NO_CHORD_CHANGE_PROB_DEFAULT,
+            type=float,
+            nargs="+" if grid_search else None,
+            help="The maximum CTM probability that can be a non-chord change.",
+        )
 
-    parser.add_argument(
-        "--max-chord-length",
-        default=MAX_CHORD_LENGTH_DEFAULT,
-        type=Fraction,
-        nargs="+" if grid_search else None,
-        help="The maximum duration (in whole notes) of a chord.",
-    )
+        parser.add_argument(
+            "--max-chord-length",
+            default=MAX_CHORD_LENGTH_DEFAULT,
+            type=Fraction,
+            nargs="+" if grid_search else None,
+            help="The maximum duration (in whole notes) of a chord.",
+        )
 
-    parser.add_argument(
-        "--min-key-change-prob",
-        default=MIN_KEY_CHANGE_PROB_DEFAULT,
-        type=float,
-        nargs="+" if grid_search else None,
-        help="The minimum KTM probability that can be a key change.",
-    )
+        parser.add_argument(
+            "--min-key-change-prob",
+            default=MIN_KEY_CHANGE_PROB_DEFAULT,
+            type=float,
+            nargs="+" if grid_search else None,
+            help="The minimum KTM probability that can be a key change.",
+        )
 
-    parser.add_argument(
-        "--max-no-key-change-prob",
-        default=MAX_NO_KEY_CHANGE_PROB_DEFAULT,
-        type=float,
-        nargs="+" if grid_search else None,
-        help="The maximum KTM probability that can be a non-key change.",
-    )
+        parser.add_argument(
+            "--max-no-key-change-prob",
+            default=MAX_NO_KEY_CHANGE_PROB_DEFAULT,
+            type=float,
+            nargs="+" if grid_search else None,
+            help="The maximum KTM probability that can be a non-key change.",
+        )
 
-    parser.add_argument(
-        "--beam-size",
-        default=BEAM_SIZE_DEFAULT,
-        type=int,
-        nargs="+" if grid_search else None,
-        help="The beam size to use during decoding.",
-    )
+        parser.add_argument(
+            "--beam-size",
+            default=BEAM_SIZE_DEFAULT,
+            type=int,
+            nargs="+" if grid_search else None,
+            help="The beam size to use during decoding.",
+        )
 
-    parser.add_argument(
-        "--max-chord-branching-factor",
-        default=MAX_CHORD_BRANCHING_FACTOR_DEFAULT,
-        type=int,
-        nargs="+" if grid_search else None,
-        help="The maximum number of different chords to branch into.",
-    )
+        parser.add_argument(
+            "--max-chord-branching-factor",
+            default=MAX_CHORD_BRANCHING_FACTOR_DEFAULT,
+            type=int,
+            nargs="+" if grid_search else None,
+            help="The maximum number of different chords to branch into.",
+        )
 
-    parser.add_argument(
-        "--target-chord-branch-prob",
-        default=TARGET_CHORD_BRANCH_PROB_DEFAULT,
-        type=float,
-        nargs="+" if grid_search else None,
-        help=(
-            "Once the chords branched into account for at least this much probability mass "
-            "stop branching, disregarding --max-chord-branching-factor."
-        ),
-    )
+        parser.add_argument(
+            "--target-chord-branch-prob",
+            default=TARGET_CHORD_BRANCH_PROB_DEFAULT,
+            type=float,
+            nargs="+" if grid_search else None,
+            help=(
+                "Once the chords branched into account for at least this much probability "
+                "mass to stop branching, disregarding --max-chord-branching-factor."
+            ),
+        )
 
-    parser.add_argument(
-        "--max-key-branching-factor",
-        default=MAX_KEY_BRANCHING_FACTOR_DEFAULT,
-        type=int,
-        nargs="+" if grid_search else None,
-        help="The maximum number of different keys to branch into.",
-    )
+        parser.add_argument(
+            "--max-key-branching-factor",
+            default=MAX_KEY_BRANCHING_FACTOR_DEFAULT,
+            type=int,
+            nargs="+" if grid_search else None,
+            help="The maximum number of different keys to branch into.",
+        )
 
-    parser.add_argument(
-        "--target-key-branch-prob",
-        default=TARGET_KEY_BRANCH_PROB_DEFAULT,
-        type=float,
-        nargs="+" if grid_search else None,
-        help=(
-            "Once the keys branched into account for at least this much probability mass "
-            "stop branching, disregarding --max-key-branching-factor."
-        ),
-    )
+        parser.add_argument(
+            "--target-key-branch-prob",
+            default=TARGET_KEY_BRANCH_PROB_DEFAULT,
+            type=float,
+            nargs="+" if grid_search else None,
+            help=(
+                "Once the keys branched into account for at least this much probability "
+                "mass to stop branching, disregarding --max-key-branching-factor."
+            ),
+        )
 
-    parser.add_argument(
-        "--hash-length",
-        default=HASH_LENGTH_DEFAULT,
-        type=int,
-        nargs="+" if grid_search else None,
-        help=(
-            "If 2 states are identical in chord and key for this many chord changes "
-            "(disregarding change index), only the most likely state is kept in the beam."
-        ),
-    )
+        parser.add_argument(
+            "--hash-length",
+            default=HASH_LENGTH_DEFAULT,
+            type=int,
+            nargs="+" if grid_search else None,
+            help=(
+                "If 2 states are identical in chord and key for this many chord changes "
+                "(disregarding change index), only the most likely state is kept in the beam."
+            ),
+        )
 
-    parser.add_argument(
-        "--ksm-exponent",
-        default=KSM_EXPONENT_DEFAULT,
-        type=float,
-        nargs="+" if grid_search else None,
-        help=(
-            "An exponent to be applied to the KSM's probability outputs. Used to weight "
-            "the KSM and CSM equally even given their different vocabulary sizes."
-        ),
-    )
+        parser.add_argument(
+            "--ksm-exponent",
+            default=KSM_EXPONENT_DEFAULT,
+            type=float,
+            nargs="+" if grid_search else None,
+            help=(
+                "An exponent to be applied to the KSM's probability outputs. Used to weight "
+                "the KSM and CSM equally even given their different vocabulary sizes."
+            ),
+        )
 
     parser.add_argument(
         "--cpm-chord-tone-threshold",
@@ -217,17 +220,18 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
         ),
     )
 
-    parser.add_argument(
-        "--no-kppm",
-        action="store_true",
-        help="Do not perform KPPM post-processing.",
-    )
+    if not cpm_only:
+        parser.add_argument(
+            "--no-kppm",
+            action="store_true",
+            help="Do not perform KPPM post-processing.",
+        )
 
-    parser.add_argument(
-        "--no-cpm",
-        action="store_true",
-        help="Do not perform CPM post-processing.",
-    )
+        parser.add_argument(
+            "--no-cpm",
+            action="store_true",
+            help="Do not perform CPM post-processing.",
+        )
 
 
 class HarmonicInferenceModel:
