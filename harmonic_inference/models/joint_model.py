@@ -1569,26 +1569,26 @@ class HarmonicInferenceModel:
             [TRIAD_REDUCTION[chord.chord_type] for chord in piece.get_chords()],
         )
 
-        for chord, chord_pitch_list, cpm_output, (start, stop) in zip(
-            piece.get_chords(),
-            chord_pitches,
-            np.vstack(outputs),
-            piece.get_chord_ranges(),
-        ):
-            gt_chords = self.current_piece.get_chords_within_range(start=start, stop=stop)
-            if len(gt_chords) == 1:
-                gt_chord = gt_chords[0]
-                if gt_chord.root == chord.root and gt_chord.chord_type == chord.chord_type:
-                    if np.any(chord_pitch_list != gt_chord.get_chord_pitches_target_vector()):
-                        print("GT  chord:", gt_chord)
-                        print("EST chord:", chord)
-                        print("GT  pitch_vector:", gt_chord.get_chord_pitches_target_vector())
-                        print("EST pitch_vector:", chord_pitch_list)
-                        print(
-                            "def pitch_vector:",
-                            gt_chord.get_chord_pitches_target_vector(default=True),
-                        )
-                        print("CPM output:", cpm_output)
+        # for chord, chord_pitch_list, cpm_output, (start, stop) in zip(
+        #     piece.get_chords(),
+        #     chord_pitches,
+        #     np.vstack(outputs),
+        #     piece.get_chord_ranges(),
+        # ):
+        #     gt_chords = self.current_piece.get_chords_within_range(start=start, stop=stop)
+        #     if len(gt_chords) == 1:
+        #         gt_chord = gt_chords[0]
+        #         if gt_chord.root == chord.root and gt_chord.chord_type == chord.chord_type:
+        #             if np.any(chord_pitch_list != gt_chord.get_chord_pitches_target_vector()):
+        #                 print("GT  chord:", gt_chord)
+        #                 print("EST chord:", chord)
+        #                 print("GT  pitch_vector:", gt_chord.get_chord_pitches_target_vector())
+        #                 print("EST pitch_vector:", chord_pitch_list)
+        #                 print(
+        #                     "def pitch_vector:",
+        #                     gt_chord.get_chord_pitches_target_vector(default=True),
+        #                 )
+        #                 print("CPM output:", cpm_output)
 
         current_state = state
         for pitches, chord in zip(reversed(chord_pitches), reversed(piece.get_chords())):
@@ -1608,7 +1608,7 @@ class HarmonicInferenceModel:
         cpm_outputs: np.ndarray,
         defaults: np.ndarray,
         defaults_no_7ths: np.ndarray,
-        triad_type: List[ChordType],
+        triad_types: List[ChordType],
     ) -> np.ndarray:
         """
         Given the stacked outputs from the CPM (size num_chords x num_pitches), and the default
@@ -1787,7 +1787,7 @@ class HarmonicInferenceModel:
                 can_add_tones,
                 can_replace_tones,
                 defaults,
-                triad_type,
+                triad_types,
             )
         ):
             # Keep non-removable chord tones
@@ -1846,9 +1846,6 @@ class HarmonicInferenceModel:
                 # More than one chord tone might be altered
                 # In the case that multiple neighbors are over threshold, we have to match them
                 # In the case that only one neighbor is over threshold, we assign it to one tone
-                can_replace_neighbors = [
-                    neighbors[np.isin(neighbors, can_replace_idxs)] for neighbors in neighbor_idxs
-                ]
                 for to_add in get_best_pitches(
                     cpm_outputs[i], can_remove_idxs, can_replace_neighbors
                 ):
