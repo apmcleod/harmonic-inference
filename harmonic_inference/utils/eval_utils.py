@@ -548,10 +548,11 @@ def get_annotation_df(
 
     chords, changes, chord_pitches = state.get_chords()
     estimated_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    estimated_chord_pitches = np.full(len(piece.get_inputs()), list(), dtype=object)
+    estimated_chord_pitches = np.full(len(piece.get_inputs()), None, dtype=object)
     for chord, pitches, start, end in zip(chords, chord_pitches, changes[:-1], changes[1:]):
         estimated_chord_labels[start:end] = chord
-        estimated_chord_pitches[start:end] = pitches
+        if use_chord_pitches:
+            estimated_chord_pitches[start:end] = pitches
 
     keys, changes = state.get_keys()
     estimated_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
@@ -561,26 +562,34 @@ def get_annotation_df(
     chord_label_list = hu.get_chord_label_list(
         root_type, use_inversions=use_inversions, reduction=reduction
     )
+    # chord_list = hu.get_chord_from_one_hot_index(
+    #     slice(None), root_type, use_inversions=use_inversions, reduction=reduction
+    # )
     key_label_list = hu.get_key_label_list(tonic_type)
 
     prev_est_key_string = None
     prev_est_chord_string = None
+    prev_est_chord_pitches = None
 
-    for duration, note, est_chord_label, est_key_label in zip(
+    for duration, note, est_chord_label, est_key_label, est_pitches in zip(
         piece.get_duration_cache(),
         piece.get_inputs(),
         estimated_chord_labels,
         estimated_key_labels,
+        estimated_chord_pitches,
     ):
         if duration == 0:
             continue
 
         est_chord_string = chord_label_list[est_chord_label]
         est_key_string = key_label_list[est_key_label]
-        # TODO: Add chord pitches string here
 
         # No change in labels
-        if est_chord_string == prev_est_chord_string and est_key_string == prev_est_key_string:
+        if (
+            est_chord_string == prev_est_chord_string
+            and est_key_string == prev_est_key_string
+            and est_pitches == prev_est_chord_pitches
+        ):
             continue
 
         if est_key_string != prev_est_key_string:
@@ -594,6 +603,15 @@ def get_annotation_df(
             )
 
         if est_chord_string != prev_est_chord_string:
+            if use_chord_pitches:
+                # est_root, est_chord_type, _ = chord_list[est_chord_label]
+                # default_chord_pitches = hu.get_default_chord_pitches(
+                #     est_root, est_chord_type, root_type
+                # )
+                # TODO: Add chord pitches to est chord string here
+                # But don't overwrite (for prev_est_chord_string)
+                pass
+
             labels_list.append(
                 {
                     "label": est_chord_string,
@@ -605,6 +623,7 @@ def get_annotation_df(
 
         prev_est_key_string = est_key_string
         prev_est_chord_string = est_chord_string
+        prev_est_chord_pitches = est_pitches
 
     return pd.DataFrame(labels_list)
 
@@ -649,26 +668,31 @@ def get_results_annotation_df(
     labels_list = []
 
     gt_chord_labels = np.full(len(piece.get_inputs()), -1, dtype=int)
-    gt_chord_pitches = np.full(len(piece.get_inputs()), list(), dtype=object)
+    gt_chord_pitches = np.full(len(piece.get_inputs()), None, dtype=object)
     if len(piece.get_chords()) > 0:
         gt_chords = piece.get_chords()
         gt_changes = piece.get_chord_change_indices()
         for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
+            chord = chord.to_pitch_type(root_type)
             gt_chord_labels[start:end] = chord.get_one_hot_index(
                 relative=False, use_inversion=use_inversions, pad=False, reduction=reduction
             )
-            gt_chord_pitches[start:end] = chord.chord_pitches
-        gt_chord_labels[gt_changes[-1] :] = gt_chords[-1].get_one_hot_index(
+            if use_chord_pitches:
+                gt_chord_pitches[start:end] = chord.chord_pitches
+        last_chord = gt_chords[-1].to_pitch_type(root_type)
+        gt_chord_labels[gt_changes[-1] :] = last_chord.get_one_hot_index(
             relative=False, use_inversion=use_inversions, pad=False, reduction=reduction
         )
-        gt_chord_pitches[gt_changes[-1] :] = gt_chords[-1].chord_pitches
+        if use_chord_pitches:
+            gt_chord_pitches[gt_changes[-1] :] = last_chord.chord_pitches
 
     chords, changes, chord_pitches = state.get_chords()
     estimated_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    estimated_chord_pitches = np.full(len(piece.get_inputs()), list(), dtype=object)
+    estimated_chord_pitches = np.full(len(piece.get_inputs()), None, dtype=object)
     for chord, pitches, start, end in zip(chords, chord_pitches, changes[:-1], changes[1:]):
         estimated_chord_labels[start:end] = chord
-        estimated_chord_pitches[start:end] = pitches
+        if use_chord_pitches:
+            estimated_chord_pitches[start:end] = pitches
 
     gt_key_labels = np.full(len(piece.get_inputs()), -1, dtype=int)
     if len(piece.get_keys()) > 0:
@@ -676,8 +700,10 @@ def get_results_annotation_df(
         gt_changes = piece.get_key_change_input_indices()
         gt_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
         for key, start, end in zip(gt_keys, gt_changes, gt_changes[1:]):
+            key = key.to_pitch_type(tonic_type)
             gt_key_labels[start:end] = key.get_one_hot_index()
-        gt_key_labels[gt_changes[-1] :] = gt_keys[-1].get_one_hot_index()
+        last_key = gt_keys[-1].to_pitch_type(tonic_type)
+        gt_key_labels[gt_changes[-1] :] = last_key.get_one_hot_index()
 
     keys, changes = state.get_keys()
     estimated_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
@@ -687,31 +713,50 @@ def get_results_annotation_df(
     chord_label_list = hu.get_chord_label_list(
         root_type, use_inversions=use_inversions, reduction=reduction
     )
+    chord_list = hu.get_chord_from_one_hot_index(
+        slice(None), root_type, use_inversions=use_inversions, reduction=reduction
+    )
     key_label_list = hu.get_key_label_list(tonic_type)
+    key_list = hu.get_key_from_one_hot_index(slice(None), tonic_type)
 
     prev_gt_chord_string = None
     prev_gt_key_string = None
+    prev_gt_chord_pitches = None
     prev_est_key_string = None
     prev_est_chord_string = None
+    prev_est_chord_pitches = None
 
-    for duration, note, est_chord_label, gt_chord_label, est_key_label, gt_key_label in zip(
+    for (
+        duration,
+        note,
+        est_chord_label,
+        gt_chord_label,
+        est_key_label,
+        gt_key_label,
+        est_pitches,
+        gt_pitches,
+    ) in zip(
         piece.get_duration_cache(),
         piece.get_inputs(),
         estimated_chord_labels,
         gt_chord_labels,
         estimated_key_labels,
         gt_key_labels,
+        estimated_chord_pitches,
+        gt_chord_pitches,
     ):
         if duration == 0:
             continue
 
         gt_chord_string = chord_label_list[gt_chord_label]
+        gt_root, gt_chord_type, gt_inversion = chord_list[gt_chord_label]
         gt_key_string = key_label_list[gt_key_label]
-        # TODO: Add GT chord pitches here
+        gt_tonic, gt_mode = key_label_list[gt_key_label]
 
         est_chord_string = chord_label_list[est_chord_label]
+        est_root, est_chord_type, est_inversion = chord_list[est_chord_label]
         est_key_string = key_label_list[est_key_label]
-        # TODO: Add est chord pitches here
+        est_tonic, est_mode = key_list[est_key_label]
 
         # No change in labels
         if (
@@ -719,13 +764,12 @@ def get_results_annotation_df(
             and gt_key_string == prev_gt_key_string
             and est_chord_string == prev_est_chord_string
             and est_key_string == prev_est_key_string
+            and gt_pitches == prev_gt_chord_pitches
+            and est_pitches == prev_est_chord_pitches
         ):
             continue
 
         if gt_key_string != prev_gt_key_string or est_key_string != prev_est_key_string:
-            gt_tonic, gt_mode = hu.get_key_from_one_hot_index(int(gt_key_label), tonic_type)
-            est_tonic, est_mode = hu.get_key_from_one_hot_index(int(est_key_label), tonic_type)
-
             if gt_tonic == est_tonic and gt_mode == est_mode:
                 color = "green"
             elif gt_tonic == est_tonic:
@@ -743,14 +787,19 @@ def get_results_annotation_df(
                 }
             )
 
-        if gt_chord_string != prev_gt_chord_string or est_chord_string != prev_est_chord_string:
-            gt_root, gt_chord_type, gt_inversion = hu.get_chord_from_one_hot_index(
-                gt_chord_label, root_type, use_inversions=True
-            )
-
-            est_root, est_chord_type, est_inversion = hu.get_chord_from_one_hot_index(
-                est_chord_label, root_type, use_inversions=True
-            )
+        if (
+            gt_chord_string != prev_gt_chord_string
+            or est_chord_string != prev_est_chord_string
+            or est_pitches != prev_est_chord_pitches
+            or gt_pitches != prev_gt_chord_pitches
+        ):
+            if use_chord_pitches:
+                # default_chord_pitches = hu.get_default_chord_pitches(
+                #     est_root, est_chord_type, root_type
+                # )
+                # TODO: Add chord pitches to est chord string here
+                # But don't overwrite (for prev_est_chord_string)
+                pass
 
             if (
                 gt_root == est_root
@@ -780,8 +829,10 @@ def get_results_annotation_df(
 
         prev_gt_key_string = gt_key_string
         prev_gt_chord_string = gt_chord_string
+        prev_gt_chord_pitches = gt_pitches
         prev_est_key_string = est_key_string
         prev_est_chord_string = est_chord_string
+        prev_est_chord_pitches = est_pitches
 
     return pd.DataFrame(labels_list)
 
