@@ -2554,7 +2554,7 @@ class DebugLogger:
         logging.debug("    prob=%s rank=%s", correct_prob, correct_rank)
 
 
-def from_args(models: Dict, ARGS: Namespace) -> HarmonicInferenceModel:
+def from_args(models: Dict, ARGS: Namespace, cpm_only: bool = False) -> HarmonicInferenceModel:
     """
     Load a HarmonicInferenceModel from this given models and argparse parsed arguments.
 
@@ -2569,12 +2569,21 @@ def from_args(models: Dict, ARGS: Namespace) -> HarmonicInferenceModel:
             'ksm': A KeySequenceModel
     ARGS : Namespace
         Parsed command-line arguments for the HarmonicInferenceModel's parameters.
+    cpm_only : bool
+        True to include only cpm-based arguments for the Model constructor.
 
     Returns
     -------
     model : HarmonicInferenceModel
         A HarmonicInferenceModel, with parameters taken from the parsed args.
     """
+    if cpm_only:
+        return HarmonicInferenceModel(
+            models,
+            cpm_chord_tone_threshold=ARGS.cpm_chord_tone_threshold,
+            cpm_non_chord_tone_add_threshold=ARGS.cpm_non_chord_tone_add_threshold,
+            cpm_non_chord_tone_replace_threshold=ARGS.cpm_non_chord_tone_replace_threshold,
+        )
     return HarmonicInferenceModel(
         models,
         min_chord_change_prob=ARGS.min_chord_change_prob,

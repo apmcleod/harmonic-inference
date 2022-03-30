@@ -12,10 +12,10 @@ import torch
 from tqdm import tqdm
 
 import harmonic_inference.utils.eval_utils as eu
-from annotate import set_default_args
 from harmonic_inference.data.data_types import PitchType
 from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import (
+    MODEL_CLASSES,
     HarmonicInferenceModel,
     add_joint_model_args,
     from_args,
@@ -70,8 +70,8 @@ def evaluate(
         output_tsv_path = output_tsv_dir / piece_name
         results_tsv_path = output_tsv_path.parent / (output_tsv_path.name[:-4] + "_results.tsv")
 
-        state = load_state_from_results_tsv(results_tsv_path)
-        model.cpm_post_processing(state, piece)
+        state = load_state_from_results_tsv(results_tsv_path, piece)
+        model.cpm_post_processing(state)
 
         # Create results dfs
         results_df = eu.get_results_df(
@@ -184,25 +184,36 @@ if __name__ == "__main__":
         help="The directory containing checkpoints for each type of model.",
     )
 
-    model = "cpm"
-    DEFAULT_PATH = os.path.join(
-        "`--checkpoint`", "cpm", "lightning_logs", "version_*", "checkpoints", "*.ckpt"
-    )
-    parser.add_argument(
-        "--cpm",
-        type=str,
-        default=DEFAULT_PATH,
-        help="A checkpoint file to load the cpm from.",
-    )
+    for model in MODEL_CLASSES.keys():
+        if model == "icm":
+            continue
+
+        DEFAULT_PATH = os.path.join(
+            "`--checkpoint`", model, "lightning_logs", "version_*", "checkpoints", "*.ckpt"
+        )
+        parser.add_argument(
+            f"--{model}",
+            type=str,
+            default=DEFAULT_PATH,
+            help=f"A checkpoint file to load the {model} from.",
+        )
+
+        parser.add_argument(
+            f"--{model}-version",
+            type=int,
+            default=None,
+            help=(
+                f"Specify a version number to load the model from. If given, --{model} is ignored"
+                f" and the {model} will be loaded from "
+                + DEFAULT_PATH.replace("_*", f"_`--{model}-version`")
+            ),
+        )
 
     parser.add_argument(
-        "--cpm-version",
-        type=int,
-        default=None,
-        help=(
-            "Specify a version number to load the cpm from. If given, --cpm is ignored"
-            " and the cpm will be loaded from " + DEFAULT_PATH.replace("_*", "_`--cpm-version`")
-        ),
+        "--icm-json",
+        type=str,
+        default=os.path.join("`--checkpoint`", "icm", "initial_chord_prior.json"),
+        help="The json file to load the icm from.",
     )
 
     parser.add_argument(
@@ -222,8 +233,7 @@ if __name__ == "__main__":
         default=Path("h5_data"),
         type=Path,
         help=(
-            "The directory that holds the h5 data containing file_ids to test on, and the piece "
-            "pkl files."
+            "The directory that holds the h5 data containing file_ids, and the piece " "pkl files."
         ),
     )
 
@@ -261,14 +271,12 @@ if __name__ == "__main__":
 
     logging.basicConfig(
         filename=None if ARGS.log is sys.stderr else ARGS.output / ARGS.log,
-        level=logging.DEBUG if ARGS.verbose else logging.INFO,
+        level=logging.INFO,
         filemode="w",
     )
 
-    set_default_args(ARGS)
-
     # Load models
-    models = load_models_from_argparse(ARGS, model_type="cpm")
+    models = load_models_from_argparse(ARGS)
 
     data_type = "test" if ARGS.test else "valid"
 
@@ -294,9 +302,4 @@ if __name__ == "__main__":
         file_ids=file_ids,
     )
 
-    evaluate(
-        from_args(models, ARGS),
-        pieces,
-        output_tsv_dir=ARGS.output,
-        forces_path=ARGS.forces_json,
-    )
+    evaluate(from_args(models, ARGS, cpm_only=True), pieces, ARGS.output)
