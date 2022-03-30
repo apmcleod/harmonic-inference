@@ -17,6 +17,69 @@ from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import State
 
 
+def log_results_df_eval(results_df: pd.DataFrame):
+    """
+    Log evaluation metrics from a results_df.
+
+    Parameters
+    ----------
+    results_df : pd.DataFrame
+        A results_df to log.
+    """
+    chord_acc_with_pitches = evaluate_features(results_df, ["chord", "pitches"])
+    chord_acc_full = evaluate_features(results_df, ["chord"])
+    chord_acc_no_inv = evaluate_features(results_df, ["chord_type", "root"])
+    chord_acc_triad = evaluate_features(results_df, ["triad", "root", "inversion"])
+    chord_acc_triad_no_inv = evaluate_features(results_df, ["triad", "root"])
+    chord_acc_root_only = evaluate_features(results_df, ["root"])
+
+    pitch_acc_default = evaluate_features(
+        results_df,
+        ["pitches"],
+        filter=(
+            results_df["gt_is_default"]
+            & (results_df["gt_root"] == results_df["est_root"])
+            & (results_df["gt_chord_type"] == results_df["est_chord_type"])
+        ),
+    )
+    pitch_acc_non_default = evaluate_features(
+        results_df,
+        ["pitches"],
+        filter=(
+            ~results_df["gt_is_default"]
+            & (results_df["gt_root"] == results_df["est_root"])
+            & (results_df["gt_chord_type"] == results_df["est_chord_type"])
+        ),
+    )
+
+    logging.info("Chord accuracy = %s", chord_acc_full)
+    logging.info("Chord accuracy with pitches = %s", chord_acc_with_pitches)
+    logging.info("Chord accuracy, no inversions = %s", chord_acc_no_inv)
+    logging.info("Chord accuracy, triads = %s", chord_acc_triad)
+    logging.info("Chord accuracy, triad, no inversions = %s", chord_acc_triad_no_inv)
+    logging.info("Chord accuracy, root only = %s", chord_acc_root_only)
+
+    logging.info(
+        "Chord pitch accuracy on correct chord root+type, GT default only = %s",
+        pitch_acc_default,
+    )
+    logging.info(
+        "Chord pitch accuracy on correct chord root+type, GT non-default only = %s",
+        pitch_acc_non_default,
+    )
+
+    key_acc_full = evaluate_features(results_df, ["key"])
+    key_acc_tonic = evaluate_features(results_df, ["tonic"])
+
+    logging.info("Key accuracy = %s", key_acc_full)
+    logging.info("Key accuracy, tonic only = %s", key_acc_tonic)
+
+    full_acc_with_pitches = evaluate_features(results_df, ["chord", "key", "pitches"])
+    full_acc = evaluate_features(results_df, ["chord", "key"])
+    logging.info("Full accuracy = %s", full_acc)
+    logging.info("Full accuracy with pitches = %s", full_acc_with_pitches)
+
+
 def evaluate_features(
     results_df: pd.DataFrame,
     features: List[str],

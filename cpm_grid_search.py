@@ -132,59 +132,7 @@ def evaluate(
             PitchType.TPC,
         )
 
-        # Perform evaluations
-        chord_acc_with_pitches = eu.evaluate_features(results_df, ["chord", "pitches"])
-        chord_acc_full = eu.evaluate_features(results_df, ["chord"])
-        chord_acc_no_inv = eu.evaluate_features(results_df, ["chord_type", "root"])
-        chord_acc_triad = eu.evaluate_features(results_df, ["triad", "root", "inversion"])
-        chord_acc_triad_no_inv = eu.evaluate_features(results_df, ["triad", "root"])
-        chord_acc_root_only = eu.evaluate_features(results_df, ["root"])
-
-        pitch_acc_default = eu.evaluate_features(
-            results_df,
-            ["pitches"],
-            filter=(
-                results_df["gt_is_default"]
-                & (results_df["gt_root"] == results_df["est_root"])
-                & (results_df["gt_chord_type"] == results_df["est_chord_type"])
-            ),
-        )
-        pitch_acc_non_default = eu.evaluate_features(
-            results_df,
-            ["pitches"],
-            filter=(
-                ~results_df["gt_is_default"]
-                & (results_df["gt_root"] == results_df["est_root"])
-                & (results_df["gt_chord_type"] == results_df["est_chord_type"])
-            ),
-        )
-
-        logging.info("Chord accuracy = %s", chord_acc_full)
-        logging.info("Chord accuracy with pitches = %s", chord_acc_with_pitches)
-        logging.info("Chord accuracy, no inversions = %s", chord_acc_no_inv)
-        logging.info("Chord accuracy, triads = %s", chord_acc_triad)
-        logging.info("Chord accuracy, triad, no inversions = %s", chord_acc_triad_no_inv)
-        logging.info("Chord accuracy, root only = %s", chord_acc_root_only)
-
-        logging.info(
-            "Chord pitch accuracy on correct chord root+type, GT default only = %s",
-            pitch_acc_default,
-        )
-        logging.info(
-            "Chord pitch accuracy on correct chord root+type, GT non-default only = %s",
-            pitch_acc_non_default,
-        )
-
-        key_acc_full = eu.evaluate_features(results_df, ["key"])
-        key_acc_tonic = eu.evaluate_features(results_df, ["tonic"])
-
-        logging.info("Key accuracy = %s", key_acc_full)
-        logging.info("Key accuracy, tonic only = %s", key_acc_tonic)
-
-        full_acc_with_pitches = eu.evaluate_features(results_df, ["chord", "key", "pitches"])
-        full_acc = eu.evaluate_features(results_df, ["chord", "key"])
-        logging.info("Full accuracy = %s", full_acc)
-        logging.info("Full accuracy with pitches = %s", full_acc_with_pitches)
+        eu.log_results_df_eval(results_df)
 
 
 if __name__ == "__main__":
