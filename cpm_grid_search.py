@@ -4,15 +4,18 @@ import argparse
 import logging
 import os
 import sys
+from bisect import bisect_left
+from fractions import Fraction
 from pathlib import Path
 from typing import List, Union
 
 import h5py
+import pandas as pd
 import torch
 from tqdm import tqdm
 
 import harmonic_inference.utils.eval_utils as eu
-from harmonic_inference.data.data_types import PitchType
+from harmonic_inference.data.data_types import ChordType, KeyMode, PitchType
 from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import (
     MODEL_CLASSES,
@@ -22,11 +25,14 @@ from harmonic_inference.models.joint_model import (
 )
 from harmonic_inference.utils.beam_search_utils import State
 from harmonic_inference.utils.data_utils import load_models_from_argparse, load_pieces
+from harmonic_inference.utils.harmonic_utils import get_chord_one_hot_index, get_key_one_hot_index
 
 SPLITS = ["train", "valid", "test"]
 
 
-def load_state_from_results_tsv(results_tsv_path: Union[str, Path], piece: Piece) -> State:
+def load_state_from_results_tsv(
+    results_tsv_path: Union[str, Path], piece: Piece, model: HarmonicInferenceModel
+) -> State:
     """
     Load a State (as if it's the results of a beam search) from a results_tsv.
 
@@ -36,12 +42,54 @@ def load_state_from_results_tsv(results_tsv_path: Union[str, Path], piece: Piece
         The output results_tsv from which to load the State.
     piece : Piece
         The piece which corresponds to this results_tsv.
+    model : HarmonicInferenceModel
+        The model, used to ensure the correct label -> chord/key id mapping.
 
     Returns
     -------
     state : State
         The State which would've produced the given results_tsv.
     """
+    results_df = pd.read_csv(results_tsv_path, sep="\t", index_col=0)
+    results_df["new_state"] = results_df["est_chord"] != results_df["est_chord"].shift(1)
+
+    chord_ids = []
+    key_ids = []
+    change_indexes = []
+
+    duration = 0
+    starting_positions = [0] + list(piece.get_duration_cache().cumsum())
+
+    for _, row in results_df.iterrows():
+        if row["new_state"]:
+            chord_ids.append(
+                get_chord_one_hot_index(
+                    ChordType[row["est_chord_type"].split(".")[1]],
+                    row["est_root"],
+                    model.CHORD_OUTPUT_TYPE,
+                    inversion=row["est_inversion"],
+                    use_inversion=model.chord_classifier.use_inversions,
+                    reduction=model.chord_classifier.reduction,
+                )
+            )
+            key_ids.append(
+                get_key_one_hot_index(
+                    KeyMode[row["est_mode"].split(".")[1]],
+                    row["est_tonic"],
+                    model.KEY_OUTPUT_TYPE,
+                )
+            )
+            change_indexes.append(bisect_left(starting_positions, duration))
+
+        duration += Fraction(row["duration"])
+
+    change_indexes.append(len(piece.get_duration_cache()))
+
+    state = State(key=key_ids[0])
+    for chord_id, key_id, change_id in zip(chord_ids, key_ids, change_indexes[1:]):
+        state = State(chord=chord_id, key=key_id, change_index=change_id, prev_state=state)
+
+    return state
 
 
 def evaluate(
@@ -70,7 +118,8 @@ def evaluate(
         output_tsv_path = output_tsv_dir / piece_name
         results_tsv_path = output_tsv_path.parent / (output_tsv_path.name[:-4] + "_results.tsv")
 
-        state = load_state_from_results_tsv(results_tsv_path, piece)
+        state = load_state_from_results_tsv(results_tsv_path, piece, model)
+        model.load_piece(piece)
         model.cpm_post_processing(state)
 
         # Create results dfs

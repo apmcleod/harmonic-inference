@@ -353,7 +353,12 @@ class HarmonicInferenceModel:
 
         # Load labels
         self.LABELS = {
-            "chord": hu.get_chord_from_one_hot_index(slice(None, None), self.CHORD_OUTPUT_TYPE),
+            "chord": hu.get_chord_from_one_hot_index(
+                slice(None, None),
+                self.CHORD_OUTPUT_TYPE,
+                use_inversions=self.chord_classifier.use_inversions,
+                reduction=self.chord_classifier.reduction,
+            ),
             "key": hu.get_key_from_one_hot_index(slice(None, None), self.KEY_OUTPUT_TYPE),
             "relative_key": list(
                 itertools.product(
@@ -606,6 +611,30 @@ class HarmonicInferenceModel:
                     f"{self.forced_key_ids[change_index]} at that index."
                 )
 
+    def load_piece(self, piece: Piece):
+        """
+        Load a Piece and the corresponding caches into the model.
+
+        Parameters
+        ----------
+        piece : Piece
+            The piece to load.
+        """
+        self.current_piece = piece
+        assert piece.DATA_TYPE == self.INPUT_TYPE, "Piece type doesn't match expected input type"
+
+        # Save caches from piece
+        self.duration_cache = piece.get_duration_cache()
+        self.onset_cache = [vec.onset for vec in piece.get_inputs()] + [
+            piece.get_inputs()[-1].offset
+        ]
+        self.onset_level_cache = [vec.onset_level for vec in piece.get_inputs()] + [
+            piece.get_inputs()[-1].offset_level
+        ]
+        self.beat_duration_cache = [vec.beat_duration for vec in piece.get_inputs()] + [
+            piece.get_inputs()[-1].beat_duration
+        ]
+
     def get_harmony(
         self,
         piece: Piece,
@@ -657,26 +686,13 @@ class HarmonicInferenceModel:
         state : State
             The top estimated state.
         """
-        self.current_piece = piece
-        assert piece.DATA_TYPE == self.INPUT_TYPE, "Piece type doesn't match expected input type"
+        self.load_piece(piece)
 
         self.debugger = DebugLogger(
             self,
             self.max_chord_branching_factor,
             self.max_key_branching_factor,
         )
-
-        # Save caches from piece
-        self.duration_cache = piece.get_duration_cache()
-        self.onset_cache = [vec.onset for vec in piece.get_inputs()] + [
-            piece.get_inputs()[-1].offset
-        ]
-        self.onset_level_cache = [vec.onset_level for vec in piece.get_inputs()] + [
-            piece.get_inputs()[-1].offset_level
-        ]
-        self.beat_duration_cache = [vec.beat_duration for vec in piece.get_inputs()] + [
-            piece.get_inputs()[-1].beat_duration
-        ]
 
         # Validate forced changes
         self.forced_chord_changes = set() if forced_chord_changes is None else forced_chord_changes
