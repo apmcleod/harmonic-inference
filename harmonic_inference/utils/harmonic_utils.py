@@ -883,7 +883,14 @@ def get_chord_pitches_string(
                 PitchType.TPC,
             )
 
-        # TODO
+        pitch_int = (
+            "ABCDEFG".index(get_pitch_string(pitch, PitchType.TPC)[0])
+            - "ABCDEFG".index(get_pitch_string(root, PitchType.TPC)[0])
+        ) % 7
+        sd_string = get_scale_degree_from_interval(pitch - tonic, mode, pitch_type)
+        accidentals = sd_string.replace("V", "").replace("I", "")
+
+        return accidentals, pitch_int + 1
 
     default_pitches = get_default_chord_pitches(root, chord_type, pitch_type)
 
@@ -891,8 +898,8 @@ def get_chord_pitches_string(
     if pitch_set == default_pitches:
         return ""
 
-    removed_pitches = np.array(default_pitches - pitch_set)
-    added_pitches = np.array(pitch_set - default_pitches)
+    removed_pitches = np.array(list(default_pitches - pitch_set))
+    added_pitches = np.array(list(pitch_set - default_pitches))
 
     if len(removed_pitches) == 0:
         # We only have added pitches
