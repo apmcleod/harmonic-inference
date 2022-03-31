@@ -810,6 +810,50 @@ def get_vector_from_chord_type(
     return chord_vector
 
 
+def get_chord_pitches_string(
+    root: int,
+    chord_type: ChordType,
+    pitches: List[int],
+    tonic: int,
+    mode: KeyMode,
+    pitch_type: PitchType,
+) -> str:
+    """
+    Get a string encoding in a readable format the chord pitches for a given chord.
+    If the pitches are the chord defaults, this will be the empty string. Otherwise,
+    this will contain any alterations within parentheses.
+
+    Parameters
+    ----------
+    root : int
+        The chord's root pitch.
+    chord_type : ChordType
+        The chord type.
+    pitches : List[int]
+        The pitches contained in the chord.
+    tonic : int
+        The tonic of the current key.
+    mode : KeyMode
+        The mode of the current key.
+    pitch_type : PitchType
+        The pitch type used to encode the root and tonic.
+
+    Returns
+    -------
+    chord_pitches_string : str
+        A human-readable string of any alterations to the default chord tones. If the default
+        tones are in the given pitches list, the empty string is returned. Otherwise, an
+        alteration string is returned within parentheses.
+    """
+    default_pitches = get_default_chord_pitches(root, chord_type, pitch_type)
+
+    if set(pitches) == default_pitches:
+        return ""
+
+    # TODO
+    return "()"
+
+
 def get_interval_from_numeral(numeral: str, mode: KeyMode, pitch_type: PitchType) -> int:
     """
     Get the interval from the key tonic to the given scale degree numeral.

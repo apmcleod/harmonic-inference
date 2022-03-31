@@ -562,10 +562,11 @@ def get_annotation_df(
     chord_label_list = hu.get_chord_label_list(
         root_type, use_inversions=use_inversions, reduction=reduction
     )
-    # chord_list = hu.get_chord_from_one_hot_index(
-    #     slice(None), root_type, use_inversions=use_inversions, reduction=reduction
-    # )
+    chord_list = hu.get_chord_from_one_hot_index(
+        slice(None), root_type, use_inversions=use_inversions, reduction=reduction
+    )
     key_label_list = hu.get_key_label_list(tonic_type)
+    key_list = hu.get_key_from_one_hot_index(slice(None), tonic_type)
 
     prev_est_key_string = None
     prev_est_chord_string = None
@@ -602,19 +603,21 @@ def get_annotation_df(
                 }
             )
 
-        if est_chord_string != prev_est_chord_string:
-            if use_chord_pitches:
-                # est_root, est_chord_type, _ = chord_list[est_chord_label]
-                # default_chord_pitches = hu.get_default_chord_pitches(
-                #     est_root, est_chord_type, root_type
-                # )
-                # TODO: Add chord pitches to est chord string here
-                # But don't overwrite (for prev_est_chord_string)
-                pass
+        if est_chord_string != prev_est_chord_string or est_pitches != prev_est_chord_pitches:
+            est_root, est_chord_type, _ = chord_list[est_chord_label]
+            est_tonic, est_mode = key_list[est_key_label]
+
+            chord_pitches_string = (
+                hu.get_chord_pitches_string(
+                    est_root, est_chord_type, est_pitches, est_tonic, est_mode, root_type
+                )
+                if use_chord_pitches
+                else ""
+            )
 
             labels_list.append(
                 {
-                    "label": est_chord_string,
+                    "label": est_chord_string + chord_pitches_string,
                     "mc": note.onset[0],
                     "mc_onset": note.mc_onset,
                     "mn_onset": note.onset[1],
@@ -793,13 +796,13 @@ def get_results_annotation_df(
             or est_pitches != prev_est_chord_pitches
             or gt_pitches != prev_gt_chord_pitches
         ):
-            if use_chord_pitches:
-                # default_chord_pitches = hu.get_default_chord_pitches(
-                #     est_root, est_chord_type, root_type
-                # )
-                # TODO: Add chord pitches to est chord string here
-                # But don't overwrite (for prev_est_chord_string)
-                pass
+            chord_pitches_string = (
+                hu.get_chord_pitches_string(
+                    est_root, est_chord_type, est_pitches, est_tonic, est_mode, root_type
+                )
+                if use_chord_pitches
+                else ""
+            )
 
             if (
                 gt_root == est_root
@@ -817,7 +820,7 @@ def get_results_annotation_df(
 
             labels_list.append(
                 {
-                    "label": est_chord_string
+                    "label": est_chord_string + chord_pitches_string
                     if est_chord_string != prev_est_chord_string
                     else "--",
                     "mc": note.onset[0],
