@@ -850,28 +850,40 @@ def get_chord_pitches_string(
         pitch: int, root: int, tonic: int, mode: KeyMode, pitch_type: PitchType
     ) -> Tuple[str, int]:
         """
-        _summary_
+        Get an accidental string and a pitch integer for a given pitch. The
+        accidental + pitch_int will be the one by which the pitch should be referred to
+        in the chord alteration string.
 
         Parameters
         ----------
         pitch : int
-            _description_
+            The pitch we want to refer to.
         root : int
-            _description_
+            The root of the chord.
         tonic : int
-            _description_
+            The tonic of the key.
         mode : KeyMode
-            _description_
+            The mode of the key.
         pitch_type : PitchType
-            _description_
+            The pitch type used for the given pitch.
 
         Returns
         -------
         accidental : str
-            _description_
+            An accidental string, which should be pre-pended to the returned pitch_int.
         pitch_int : int
-            _description_
+            The pitch integer, in steps above the given pitch.
         """
+        if pitch_type == PitchType.MIDI:
+            return get_pitch_label(
+                get_pitch_from_string(get_pitch_string(pitch, PitchType.MIDI), PitchType.TPC),
+                get_pitch_from_string(get_pitch_string(root, PitchType.MIDI), PitchType.TPC),
+                get_pitch_from_string(get_pitch_string(tonic, PitchType.MIDI), PitchType.TPC),
+                mode,
+                PitchType.TPC,
+            )
+
+        # TODO
 
     default_pitches = get_default_chord_pitches(root, chord_type, pitch_type)
 
