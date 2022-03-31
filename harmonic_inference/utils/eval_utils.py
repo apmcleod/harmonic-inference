@@ -552,7 +552,8 @@ def get_annotation_df(
     for chord, pitches, start, end in zip(chords, chord_pitches, changes[:-1], changes[1:]):
         estimated_chord_labels[start:end] = chord
         if use_chord_pitches:
-            estimated_chord_pitches[start:end] = pitches
+            for i in range(start, end):
+                estimated_chord_pitches[i] = pitches
 
     keys, changes = state.get_keys()
     estimated_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
@@ -681,13 +682,15 @@ def get_results_annotation_df(
                 relative=False, use_inversion=use_inversions, pad=False, reduction=reduction
             )
             if use_chord_pitches:
-                gt_chord_pitches[start:end] = chord.chord_pitches
+                for i in range(start, end):
+                    gt_chord_pitches[i] = chord.chord_pitches
         last_chord = gt_chords[-1].to_pitch_type(root_type)
         gt_chord_labels[gt_changes[-1] :] = last_chord.get_one_hot_index(
             relative=False, use_inversion=use_inversions, pad=False, reduction=reduction
         )
         if use_chord_pitches:
-            gt_chord_pitches[gt_changes[-1] :] = last_chord.chord_pitches
+            for i in range(gt_changes[-1], len(gt_chord_pitches)):
+                gt_chord_pitches[i] = last_chord.chord_pitches
 
     chords, changes, chord_pitches = state.get_chords()
     estimated_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
@@ -695,7 +698,8 @@ def get_results_annotation_df(
     for chord, pitches, start, end in zip(chords, chord_pitches, changes[:-1], changes[1:]):
         estimated_chord_labels[start:end] = chord
         if use_chord_pitches:
-            estimated_chord_pitches[start:end] = pitches
+            for i in range(start, end):
+                estimated_chord_pitches[i] = pitches
 
     gt_key_labels = np.full(len(piece.get_inputs()), -1, dtype=int)
     if len(piece.get_keys()) > 0:
@@ -754,7 +758,7 @@ def get_results_annotation_df(
         gt_chord_string = chord_label_list[gt_chord_label]
         gt_root, gt_chord_type, gt_inversion = chord_list[gt_chord_label]
         gt_key_string = key_label_list[gt_key_label]
-        gt_tonic, gt_mode = key_label_list[gt_key_label]
+        gt_tonic, gt_mode = key_list[gt_key_label]
 
         est_chord_string = chord_label_list[est_chord_label]
         est_root, est_chord_type, est_inversion = chord_list[est_chord_label]
