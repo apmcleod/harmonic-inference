@@ -906,16 +906,68 @@ def get_chord_pitches_string(
         accidentals, pitch_ints = zip(
             *[get_pitch_label(pitch, root, tonic, mode, pitch_type) for pitch in added_pitches]
         )
-
-        accidentals = np.array(accidentals)
-        pitch_ints = np.array(pitch_ints)
         pitch_strings = [f"+{accidentals[i]}{pitch_ints[i]}" for i in np.argsort(pitch_ints)]
 
         return "(" + "".join(reversed(pitch_strings)) + ")"
 
     # Here we have added and removed pitches
+    added_accidentals, added_pitch_ints = zip(
+        *[get_pitch_label(pitch, root, tonic, mode, pitch_type) for pitch in added_pitches]
+    )
+    added_accidentals = list(added_accidentals)
+    added_pitch_ints = list(added_pitch_ints)
+    removed_pitch_ints = [
+        get_pitch_label(pitch, root, tonic, mode, pitch_type)[1] for pitch in removed_pitches
+    ]
 
-    return "()"
+    additional_marks = []
+    pitch_ints = []
+    accidentals = []
+
+    # Check for specific common replacements
+    for added, removed, if_sharp, if_natural, if_flat in [
+        (6, 7, "", "^", "^"),
+        (6, 5, "v", "", ""),
+        (4, 5, "", "^", "^"),
+        (4, 3, "v", "", ""),
+        (2, 3, "", "^", "^"),
+        (2, 1, "v", "", ""),
+    ]:
+        if added in added_pitch_ints and removed in removed_pitch_ints:
+            added_idx = added_pitch_ints.index(added)
+            pitch_ints.append(added_pitch_ints[added_idx])
+            accidentals.append(added_accidentals[added_idx])
+
+            additional_marks.append(
+                if_sharp
+                if "#" in accidentals[-1]
+                else if_flat
+                if "b" in accidentals[-1]
+                else if_natural
+            )
+
+            del added_accidentals[added_idx]
+            del added_pitch_ints[added_idx]
+            del removed_pitch_ints[removed_pitch_ints.index(removed)]
+
+    # Add and remove remaining pitches ad hoc
+    if len(added_pitch_ints) != 0:
+        for accidental, pitch_int in zip(added_accidentals, added_pitch_ints):
+            accidentals.append(accidental)
+            pitch_ints.append(pitch_int)
+            additional_marks.append("+")
+
+    if len(removed_pitch_ints) != 0:
+        for pitch_int in removed_pitch_ints:
+            accidentals.append("")
+            pitch_ints.append(pitch_int)
+            additional_marks.append("-")
+
+    pitch_strings = [
+        f"{additional_marks[i]}{accidentals[i]}{pitch_ints[i]}" for i in np.argsort(pitch_ints)
+    ]
+
+    return "(" + "".join(reversed(pitch_strings)) + ")"
 
 
 def get_interval_from_numeral(numeral: str, mode: KeyMode, pitch_type: PitchType) -> int:
