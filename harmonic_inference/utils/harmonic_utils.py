@@ -845,12 +845,57 @@ def get_chord_pitches_string(
         tones are in the given pitches list, the empty string is returned. Otherwise, an
         alteration string is returned within parentheses.
     """
+
+    def get_pitch_label(
+        pitch: int, root: int, tonic: int, mode: KeyMode, pitch_type: PitchType
+    ) -> Tuple[str, int]:
+        """
+        _summary_
+
+        Parameters
+        ----------
+        pitch : int
+            _description_
+        root : int
+            _description_
+        tonic : int
+            _description_
+        mode : KeyMode
+            _description_
+        pitch_type : PitchType
+            _description_
+
+        Returns
+        -------
+        accidental : str
+            _description_
+        pitch_int : int
+            _description_
+        """
+
     default_pitches = get_default_chord_pitches(root, chord_type, pitch_type)
 
-    if set(pitches) == default_pitches:
+    pitch_set = set(pitches)
+    if pitch_set == default_pitches:
         return ""
 
-    # TODO
+    removed_pitches = np.array(default_pitches - pitch_set)
+    added_pitches = np.array(pitch_set - default_pitches)
+
+    if len(removed_pitches) == 0:
+        # We only have added pitches
+        accidentals, pitch_ints = zip(
+            *[get_pitch_label(pitch, root, tonic, mode, pitch_type) for pitch in added_pitches]
+        )
+
+        accidentals = np.array(accidentals)
+        pitch_ints = np.array(pitch_ints)
+        pitch_strings = [f"+{accidentals[i]}{pitch_ints[i]}" for i in np.argsort(pitch_ints)]
+
+        return "(" + "".join(reversed(pitch_strings)) + ")"
+
+    # Here we have added and removed pitches
+
     return "()"
 
 
