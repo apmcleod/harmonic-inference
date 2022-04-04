@@ -124,14 +124,10 @@ if __name__ == "__main__":
         xmls_and_csvs = {"xmls": xmls, "csvs": csvs}
 
     else:
-        files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(ARGS.input)
-
-        dfs = {
-            "files": files_df,
-            "measures": measures_df,
-            "chords": chords_df,
-            "notes": notes_df,
-        }
+        dfs = {}
+        dfs["files"], dfs["measures"], dfs["chords"], dfs["notes"] = load_clean_corpus_dfs(
+            ARGS.input
+        )
 
         if ARGS.debug:
             dfs["files"] = dfs["files"].iloc[:5]
@@ -158,6 +154,7 @@ if __name__ == "__main__":
         changes=ARGS.changes,
         cpm_window=ARGS.cpm_window,
     )
+    dfs = None  # To save memory
 
     os.makedirs(Path(ARGS.output), exist_ok=True)
 
@@ -167,8 +164,9 @@ if __name__ == "__main__":
             with open(pickle_path, "wb") as pickle_file:
                 pickle.dump([piece.to_dict() for piece in pieces], pickle_file)
 
-    # Should save a lot of data
-    del pieces
+    # Should save a lot of memory
+    pieces = None
+    split_pieces = None
 
     for i1, data_type in enumerate(ds.DATASETS.values()):
         for i2, split in enumerate(SPLITS):
