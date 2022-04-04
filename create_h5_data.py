@@ -77,6 +77,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--cpm-window",
+        type=int,
+        default=2,
+        help="The window size to use for creating the CPM data.",
+    )
+
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="True to parse only the first 5 pieces, as a test of data creation.",
@@ -149,6 +156,7 @@ if __name__ == "__main__":
         splits=ARGS.splits,
         seed=ARGS.seed,
         changes=ARGS.changes,
+        cpm_window=ARGS.cpm_window,
     )
 
     os.makedirs(Path(ARGS.output), exist_ok=True)

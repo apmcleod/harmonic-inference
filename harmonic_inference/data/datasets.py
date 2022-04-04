@@ -1537,6 +1537,7 @@ class ChordPitchesDataset(HarmonicDataset):
         reduction: Dict[ChordType, ChordType] = None,
         use_inversions: bool = True,
         input_mask: List[int] = None,
+        window: int = 2,
     ):
         """
         Create a chord pitches dataset from the given pieces.
@@ -1560,6 +1561,9 @@ class ChordPitchesDataset(HarmonicDataset):
             should be left unchanged, and 0 elsewhere where the input vectors should
             be masked to 0. Essentially, if given, each input vector is multiplied
             by this mask.
+        window : int
+            The window to use in data creation. Each chord's input will contain this many
+            extra notes on either side.
         """
         super().__init__(
             transform=transform,
@@ -1572,12 +1576,13 @@ class ChordPitchesDataset(HarmonicDataset):
         self.is_default = []
         self.target_pitch_type = []
         self.note_based_targets = []
+        self.window = [window]
 
         if len(pieces) > 0 and len(pieces[0].get_chords()) > 0:
             self.target_pitch_type.append(pieces[0].get_chords()[0].pitch_type.value)
 
         for piece in pieces:
-            self.inputs.extend(piece.get_chord_note_inputs(window=2, for_chord_pitches=True))
+            self.inputs.extend(piece.get_chord_note_inputs(window=window, for_chord_pitches=True))
             self.targets.extend(
                 np.array([chord.get_chord_pitches_target_vector() for chord in piece.get_chords()])
             )
@@ -1594,10 +1599,10 @@ class ChordPitchesDataset(HarmonicDataset):
         for inputs, target in zip(self.inputs, self.targets):
             this_note_based_targets = [-1] * len(inputs)
 
-            for i, note in enumerate(inputs[2:-2]):
+            for i, note in enumerate(inputs[window:-window]):
                 if not is_in_chord(note):
                     continue
-                this_note_based_targets[i + 2] = int(
+                this_note_based_targets[i + window] = int(
                     is_chord_tone(note, target, pitch_type=pieces[0].get_chords()[0].pitch_type)
                 )
 
@@ -1654,6 +1659,7 @@ class ChordPitchesDataset(HarmonicDataset):
             "is_default",
             "input_lengths",
             "target_pitch_type",
+            "window",
         ]
         for key in keys:
             if hasattr(self, key) and getattr(self, key) is not None:
@@ -1688,6 +1694,7 @@ class ChordPitchesDataset(HarmonicDataset):
 
             # This data is small and can be assumed to fit in RAM in any case
             self.target_pitch_type = np.array(h5_file["target_pitch_type"])
+            self.window = np.array(h5_file["window"])
 
             try:
                 self.targets = np.array(h5_file["targets"])
@@ -1917,6 +1924,7 @@ def get_dataset_splits(
     splits: Iterable[float] = (0.8, 0.1, 0.1),
     seed: int = None,
     changes: bool = False,
+    cpm_window: int = 2,
 ) -> Tuple[List[List[HarmonicDataset]], List[List[int]], List[List[Piece]]]:
     """
     Get datasets representing splits of the data in the given DataFrames.
@@ -1940,6 +1948,9 @@ def get_dataset_splits(
     changes : bool
         False to merge otherwise identical chords together when they differ only by chord
         changes. True to treat them as separate chord symbols.
+    cpm_window : int
+        The window padding to use for the CPM. That is, how many additional notes on either
+        side of each chord should be given to the model.
 
     Returns
     -------
@@ -1970,7 +1981,8 @@ def get_dataset_splits(
             continue
 
         for dataset_index, dataset_class in enumerate(datasets):
-            dataset_splits[dataset_index][split_index] = dataset_class(pieces)
+            kwargs = {} if dataset_class != ChordPitchesDataset else {"window": cpm_window}
+            dataset_splits[dataset_index][split_index] = dataset_class(pieces, **kwargs)
 
     return dataset_splits, split_ids, split_pieces
 

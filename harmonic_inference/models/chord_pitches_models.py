@@ -36,6 +36,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
         default_weight: float,
         learning_rate: float,
         input_mask: List[int],
+        window: int,
     ):
         """
         Create a new base ChordPitchesModel with the given input and output formats.
@@ -60,6 +61,9 @@ class ChordPitchesModel(pl.LightningModule, ABC):
             should be left unchanged, and 0 elsewhere where the input vectors should
             be masked to 0. Essentially, if given, each input vector is multiplied
             by this mask in the Dataset code.
+        window : int
+            The window size for data creation. As input to each chord, there will be this
+            many additional input vectors on either side.
         """
         super().__init__()
         self.INPUT_PITCH = input_pitch
@@ -73,6 +77,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
         self.lr = learning_rate
 
         self.input_mask = input_mask
+        self.window = window
 
     def get_dataset_kwargs(self) -> Dict[str, Any]:
         """
@@ -89,6 +94,7 @@ class ChordPitchesModel(pl.LightningModule, ABC):
             "reduction": self.reduction,
             "use_inversions": self.use_inversions,
             "input_mask": self.input_mask,
+            "window": self.window,
         }
 
     def get_weights(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
@@ -360,6 +366,7 @@ class SimpleChordPitchesModel(ChordPitchesModel):
         default_weight: float = 1.0,
         learning_rate: float = 0.001,
         input_mask: List[int] = None,
+        window: int = 2,
     ):
         """
         Create a new SimpleChordPitchesModel.
@@ -394,6 +401,9 @@ class SimpleChordPitchesModel(ChordPitchesModel):
             should be left unchanged, and 0 elsewhere where the input vectors should
             be masked to 0. Essentially, if given, each input vector is multiplied
             by this mask in the Dataset code.
+        window : int
+            The window size for data creation. As input to each chord, there will be this
+            many additional input vectors on either side.
         """
         super().__init__(
             input_pitch,
@@ -403,6 +413,7 @@ class SimpleChordPitchesModel(ChordPitchesModel):
             default_weight,
             learning_rate,
             input_mask,
+            window,
         )
         self.save_hyperparameters()
 
@@ -512,6 +523,7 @@ class NoteBasedChordPitchesModel(ChordPitchesModel):
         default_weight: float = 1.0,
         learning_rate: float = 0.001,
         input_mask: List[int] = None,
+        window: int = 2,
     ):
         """
         Create a new SimpleChordPitchesModel.
@@ -546,6 +558,9 @@ class NoteBasedChordPitchesModel(ChordPitchesModel):
             should be left unchanged, and 0 elsewhere where the input vectors should
             be masked to 0. Essentially, if given, each input vector is multiplied
             by this mask in the Dataset code.
+        window : int
+            The window size for data creation. As input to each chord, there will be this
+            many additional input vectors on either side.
         """
         super().__init__(
             input_pitch,
@@ -555,6 +570,7 @@ class NoteBasedChordPitchesModel(ChordPitchesModel):
             default_weight,
             learning_rate,
             input_mask,
+            window,
         )
         self.save_hyperparameters()
 

@@ -298,6 +298,14 @@ if __name__ == "__main__":
             )
 
     elif ARGS.model == "cpm":
+        # Special case: we need to load the window from the dataset for model creation
+        h5_path_valid = Path(
+            ARGS.h5_dir / f"{ds.DATASETS[ARGS.model].__name__}_valid_seed_{ARGS.seed}.h5"
+        )
+        with h5py.File(h5_path_valid, "r") as h5_file:
+            window = h5_file["window"][0]
+        # End special case
+
         cpm_init = (
             cpm.NoteBasedChordPitchesModel if ARGS.note_based else cpm.NoteBasedChordPitchesModel
         )
@@ -305,6 +313,7 @@ if __name__ == "__main__":
             PitchType.TPC,
             PitchType.TPC,
             learning_rate=ARGS.lr,
+            window=window,
             **kwargs,
         )
 
@@ -317,6 +326,7 @@ if __name__ == "__main__":
                 PitchType.TPC,
                 PitchType.TPC,
                 learning_rate=ARGS.lr,
+                window=window,
                 **kwargs,
             )
 
