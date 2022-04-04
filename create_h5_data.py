@@ -167,6 +167,9 @@ if __name__ == "__main__":
             with open(pickle_path, "wb") as pickle_file:
                 pickle.dump([piece.to_dict() for piece in pieces], pickle_file)
 
+    # Should save a lot of data
+    del pieces
+
     for i1, data_type in enumerate(ds.DATASETS.values()):
         for i2, split in enumerate(SPLITS):
             if dataset_splits[i1][i2] is not None:
