@@ -955,7 +955,12 @@ def get_chord_pitches_string(
         for accidental, pitch_int in zip(added_accidentals, added_pitch_ints):
             accidentals.append(accidental)
             pitch_ints.append(pitch_int)
-            additional_marks.append("+")
+
+            if pitch_int in removed_pitch_ints:
+                additional_marks.append("")
+                del removed_pitch_ints[removed_pitch_ints.index(pitch_int)]
+            else:
+                additional_marks.append("+")
 
     if len(removed_pitch_ints) != 0:
         for pitch_int in removed_pitch_ints:
