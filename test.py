@@ -182,6 +182,7 @@ def evaluate(
     pieces: List[Piece],
     output_tsv_dir: Union[Path, str] = None,
     forces_path: Union[Path, str] = None,
+    force_segs: bool = False,
 ):
     """
     Get estimated chords and keys on the given pieces using the given model.
@@ -197,6 +198,8 @@ def evaluate(
         a sub-directory according to its name field. If None, label TSVs are not generated.
     forces_path : Union[Path, str]
         The path to a json file containing forced labels, changes, or non-changes.
+    force_segs : bool
+        Force the model to use the ground truth segmentations.
     """
     if output_tsv_dir is not None:
         output_tsv_dir = Path(output_tsv_dir)
@@ -204,6 +207,7 @@ def evaluate(
     all_forces_dict = {} if forces_path is None else load_forces_from_json(forces_path)
 
     for piece in tqdm(pieces, desc="Getting harmony for pieces"):
+        piece: Piece
         if piece.name is not None:
             logging.info("Running piece %s", piece.name)
 
@@ -218,6 +222,18 @@ def evaluate(
 
         if forces_dict is None:
             forces_dict = all_forces_dict["default"] if "default" in all_forces_dict else {}
+
+        if force_segs:
+            forces_dict["forced_chord_changes"] = set(
+                [i for i in range(len(piece.get_inputs())) if i in piece.get_chord_change_indices()]
+            )
+            forces_dict["forced_chord_non_changes"] = set(
+                [
+                    i
+                    for i in range(len(piece.get_inputs()))
+                    if i not in piece.get_chord_change_indices()
+                ]
+            )
 
         state = model.get_harmony(piece, **forces_dict)
 
@@ -470,6 +486,12 @@ if __name__ == "__main__":
         help="The number of pytorch cpu threads to create.",
     )
 
+    parser.add_argument(
+        "--force-segs",
+        action="store_true",
+        help="Force the model to use ground truth segmentations.",
+    )
+
     add_joint_model_args(parser)
 
     ARGS = parser.parse_args()
@@ -527,4 +549,5 @@ if __name__ == "__main__":
         pieces,
         output_tsv_dir=ARGS.output,
         forces_path=ARGS.forces_json,
+        force_segs=ARGS.force_segs,
     )
