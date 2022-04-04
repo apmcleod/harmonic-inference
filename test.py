@@ -283,35 +283,19 @@ def evaluate(
             piece_name = Path(piece.name.split(" ")[-1])
             output_tsv_path = output_tsv_dir / piece_name
 
-            try:
-                output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
-                results_tsv_path = output_tsv_path.parent / (
-                    output_tsv_path.name[:-4] + "_results.tsv"
-                )
-                results_df.to_csv(results_tsv_path, sep="\t")
-                logging.info("Results TSV written out to %s", results_tsv_path)
-            except Exception:
-                logging.exception("Error writing to csv %s", results_tsv_path)
-                logging.debug(results_df)
-
-            try:
-                output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
-                results_tsv_path = output_tsv_path.parent / (
-                    output_tsv_path.name[:-4] + "_results_midi.tsv"
-                )
-                results_midi_df.to_csv(results_tsv_path, sep="\t")
-                logging.info("MIDI results TSV written out to %s", results_tsv_path)
-            except Exception:
-                logging.exception("Error writing to csv %s", results_tsv_path)
-                logging.debug(results_midi_df)
-
-            try:
-                output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
-                results_annotation_df.to_csv(output_tsv_path, sep="\t")
-                logging.info("Results annotation TSV written out to %s", output_tsv_path)
-            except Exception:
-                logging.exception("Error writing to csv %s", output_tsv_path)
-                logging.debug(results_annotation_df)
+            for suffix, name, df in (
+                ["_results.tsv", "Results", results_df],
+                ["_results_midi.tsv", "MIDI results", results_midi_df],
+                ["", "Results annotation", results_annotation_df],
+            ):
+                try:
+                    output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
+                    tsv_path = output_tsv_path.parent / (output_tsv_path.name[:-4] + suffix)
+                    df.to_csv(tsv_path, sep="\t")
+                    logging.info("%s TSV written out to %s", name, tsv_path)
+                except Exception:
+                    logging.exception("Error writing to csv %s", tsv_path)
+                    logging.debug(results_df)
 
         else:
             logging.debug(results_annotation_df)
