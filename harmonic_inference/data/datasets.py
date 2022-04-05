@@ -1527,7 +1527,7 @@ class ChordPitchesDataset(HarmonicDataset):
     other altered or added tones.
     """
 
-    train_batch_size = 256
+    train_batch_size = 128
     valid_batch_size = 256
 
     def __init__(
