@@ -286,7 +286,7 @@ def evaluate(
             for suffix, name, df in (
                 ["_results.tsv", "Results", results_df],
                 ["_results_midi.tsv", "MIDI results", results_midi_df],
-                ["", "Results annotation", results_annotation_df],
+                [".tsv", "Results annotation", results_annotation_df],
             ):
                 try:
                     output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
