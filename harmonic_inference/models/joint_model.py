@@ -80,6 +80,16 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False, cpm_
     """
     if not cpm_only:
         parser.add_argument(
+            "--changes",
+            action="store_true",
+            help=(
+                "Consider alterations of a chord as different chord symbols entirely."
+                "If so, consecutive identical chords will not be merged during the search "
+                "process."
+            ),
+        )
+
+        parser.add_argument(
             "--min-chord-change-prob",
             default=MIN_CHORD_CHANGE_PROB_DEFAULT,
             type=float,
@@ -242,6 +252,7 @@ class HarmonicInferenceModel:
     def __init__(
         self,
         models: Dict,
+        changes: bool = False,
         min_chord_change_prob: float = MIN_CHORD_CHANGE_PROB_DEFAULT,
         max_no_chord_change_prob: float = MAX_NO_CHORD_CHANGE_PROB_DEFAULT,
         max_chord_length: Fraction = MAX_CHORD_LENGTH_DEFAULT,
@@ -275,6 +286,10 @@ class HarmonicInferenceModel:
                 'icm': An InitialChordModel
                 'kppm': A KeyPostProcessorModel
                 'cpm': A ChordPitchesModel
+        changes : bool
+            True to consider consecutive chords that differ only by alterations
+            entirely different chord symbols. If True, such chords will not be merged
+            during the search process.
         min_chord_change_prob : float
             The minimum probability (from the CTM) on which a chord change can occur.
         max_no_chord_change_prob : float
@@ -330,7 +345,8 @@ class HarmonicInferenceModel:
         for arg_name in inspect.getfullargspec(HarmonicInferenceModel.__init__).args[1:]:
             logging.info("    %s = %s", arg_name, locals()[arg_name])
 
-        # Post-processing flags
+        # Post-processing and other flags
+        self.changes = changes
         self.no_kppm = no_kppm
         self.no_cpm = no_cpm
 
@@ -1073,6 +1089,9 @@ class HarmonicInferenceModel:
             desc="Beam searching through inputs",
             total=len(all_states) - 1,
         ):
+            current_start: int
+            current_states: List[State]
+
             if len(current_states) == 0:
                 continue
 
@@ -1106,7 +1125,7 @@ class HarmonicInferenceModel:
                     # Quick exit if range will never get into resulting beam
                     continue
 
-                # Ensure each state branches at least once
+                # Ensure each state branches to at least one completely new chord
                 if max_index == 1 and chord_priors_argsort[0] == state.chord:
                     max_index = 2
 
@@ -1118,7 +1137,7 @@ class HarmonicInferenceModel:
 
                 # Branch
                 for chord_id in chord_priors_argsort[:max_index]:
-                    if chord_id == state.chord:
+                    if chord_id == state.chord and not self.changes:
                         # Same chord as last range: rejoin a split range
                         new_state = state.rejoin(
                             range_end,
@@ -1588,27 +1607,6 @@ class HarmonicInferenceModel:
             ),
             [TRIAD_REDUCTION[chord.chord_type] for chord in piece.get_chords()],
         )
-
-        # for chord, chord_pitch_list, cpm_output, (start, stop) in zip(
-        #     piece.get_chords(),
-        #     chord_pitches,
-        #     np.vstack(outputs),
-        #     piece.get_chord_ranges(),
-        # ):
-        #     gt_chords = self.current_piece.get_chords_within_range(start=start, stop=stop)
-        #     if len(gt_chords) == 1:
-        #         gt_chord = gt_chords[0]
-        #         if gt_chord.root == chord.root and gt_chord.chord_type == chord.chord_type:
-        #             if np.any(chord_pitch_list != gt_chord.get_chord_pitches_target_vector()):
-        #                 print("GT  chord:", gt_chord)
-        #                 print("EST chord:", chord)
-        #                 print("GT  pitch_vector:", gt_chord.get_chord_pitches_target_vector())
-        #                 print("EST pitch_vector:", chord_pitch_list)
-        #                 print(
-        #                     "def pitch_vector:",
-        #                     gt_chord.get_chord_pitches_target_vector(default=True),
-        #                 )
-        #                 print("CPM output:", cpm_output)
 
         current_state = state
         for pitches, chord in zip(reversed(chord_pitches), reversed(piece.get_chords())):
@@ -2602,6 +2600,7 @@ def from_args(models: Dict, ARGS: Namespace, cpm_only: bool = False) -> Harmonic
         )
     return HarmonicInferenceModel(
         models,
+        changes=ARGS.changes,
         min_chord_change_prob=ARGS.min_chord_change_prob,
         max_no_chord_change_prob=ARGS.max_no_chord_change_prob,
         max_chord_length=ARGS.max_chord_length,
