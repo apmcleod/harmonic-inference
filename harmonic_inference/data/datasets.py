@@ -1694,7 +1694,7 @@ class ChordPitchesDataset(HarmonicDataset):
 
             # This data is small and can be assumed to fit in RAM in any case
             self.target_pitch_type = np.array(h5_file["target_pitch_type"])
-            self.window = np.array(h5_file["window"])
+            self.window = np.array(h5_file["window"] if "window" in h5_file else [2])
 
             try:
                 self.targets = np.array(h5_file["targets"])
