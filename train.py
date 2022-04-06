@@ -303,7 +303,7 @@ if __name__ == "__main__":
             ARGS.h5_dir / f"{ds.DATASETS[ARGS.model].__name__}_valid_seed_{ARGS.seed}.h5"
         )
         with h5py.File(h5_path_valid, "r") as h5_file:
-            window = h5_file["window"][0]
+            window = h5_file["window"][0] if "window" in h5_file else 2
         # End special case
 
         cpm_init = (
