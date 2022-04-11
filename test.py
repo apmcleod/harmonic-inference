@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Set, Union
 
 import h5py
+import numpy as np
 import torch
 from tqdm import tqdm
 
@@ -527,6 +528,9 @@ if __name__ == "__main__":
         file_ids=file_ids,
         specific_id=ARGS.id,
     )
+
+    if ARGS.force_segs:
+        ARGS.max_chord_length = np.inf
 
     evaluate(
         from_args(models, ARGS),
