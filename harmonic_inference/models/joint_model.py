@@ -26,7 +26,7 @@ import harmonic_inference.models.key_transition_models as ktm
 import harmonic_inference.utils.harmonic_constants as hc
 import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.data.chord import get_chord_vector_length
-from harmonic_inference.data.data_types import TRIAD_REDUCTION, ChordType, KeyMode, PitchType
+from harmonic_inference.data.data_types import TRIAD_REDUCTION, KeyMode, PitchType
 from harmonic_inference.data.piece import Piece, get_range_start
 from harmonic_inference.utils.beam_search_utils import Beam, HashedBeam, State
 
@@ -1596,7 +1596,7 @@ class HarmonicInferenceModel:
         for batch in dl:
             outputs.extend(self.chord_pitches_model.get_output(batch).numpy())
 
-        chord_pitches = self.decode_cpm_outputs(
+        chord_pitches = cpm.decode_cpm_outputs(
             np.vstack(outputs),
             np.vstack([chord.get_chord_pitches_target_vector() for chord in piece.get_chords()]),
             np.vstack(
@@ -1606,6 +1606,10 @@ class HarmonicInferenceModel:
                 ]
             ),
             [TRIAD_REDUCTION[chord.chord_type] for chord in piece.get_chords()],
+            self.cpm_chord_tone_threshold,
+            self.cpm_non_chord_tone_add_threshold,
+            self.cpm_non_chord_tone_replace_threshold,
+            self.CHORD_OUTPUT_TYPE,
         )
 
         current_state = state
@@ -1620,256 +1624,6 @@ class HarmonicInferenceModel:
 
             current_state.chord_pitches = abs_pitches
             current_state = current_state.prev_state
-
-    def decode_cpm_outputs(
-        self,
-        cpm_outputs: np.ndarray,
-        defaults: np.ndarray,
-        defaults_no_7ths: np.ndarray,
-        triad_types: List[ChordType],
-    ) -> np.ndarray:
-        """
-        Given the stacked outputs from the CPM (size num_chords x num_pitches), and the default
-        output for each corresponding chord, return a List containing the binary chord pitches
-        vector for each chord.
-
-        Parameters
-        ----------
-        cpm_outputs : np.ndarray
-            An ndarray of size num_chords * num_pitches, where each value [i, j] in (0-1)
-            should roughly correspond to the probability the CPM assigns of pitch j being
-            present in the ith chord.
-        defaults : List[np.ndarray]
-            A binary array for each chord, encoding the default output, if there were no
-            suspensions or alterations.
-        defaults_no_7ths : List[np.ndarray]
-            A binary array for each chord, encoding the default output, not including
-            7ths.
-        triad_types : List[ChordType]
-            A list of the triad reduced type of each chord.
-
-        Returns
-        -------
-        chord_pitches : List[np.ndarray]
-            A decoded CPM output. After thresholding and other heuristic logic, the pitches
-            present in each chord.
-        """
-
-        def get_neighbor_idxs(
-            idx: int,
-            do_not_return: List[int],
-            pitch_type: PitchType,
-            is_M5: bool,
-            is_d3: bool,
-            minimum: int = 0,
-            maximum: int = 2 * hc.MAX_CHORD_PITCH_INTERVAL_TPC,
-        ) -> np.ndarray:
-            """
-            Get the indexes for notes that could be a neighbor of the given note.
-
-            Parameters
-            ----------
-            idx : int
-                The index of the note whose neighbors we are looking for.
-            do_not_return : List[int]
-                A list of indexes not to include in the returned neighbor_idxs list.
-                This can include, for example, other already present chord tones.
-            pitch_type : PitchType
-                The pitch type being used for indexing.
-            is_M5 : bool
-                The chord from which the note comes is a major chord and the idx represents
-                its 5th. In that case, a flat version of the given idx is returned as a
-                potential neighbor.
-            is_d3 : bool
-                The chord from which the note comes is a diminished chord and the idx
-                represents its 3rd. In that case, a flat version of the given idx is
-                returned as a potential neighbor.
-            minimum : int
-                The smallest index of a neighbor note to return.
-            maximum : int
-                The largest index of a neighbor note to return. Note that the default
-                is the TPC default. If pitch_type is MIDI, 11 is used.
-
-            Returns
-            -------
-            neighbor_idxs : np.ndarray
-                The indexes of possible neighbor notes to the given note. For PitchType.MIDI,
-                this is 3 semitones in either direction (allowing for an augmented 2nd).
-                For PitchType.TPC, this is all altered versions of the given idx, and all
-                altered versions of a 2nd up and down.
-            """
-            if pitch_type == PitchType.MIDI:
-                neighbors = list(
-                    np.arange(max(minimum, idx - 3), min(hc.NUM_PITCHES[PitchType.MIDI], idx + 4))
-                )
-
-            else:
-                # Include a flat version of the given note if is_M5 or is_d3.
-                neighbors = (
-                    [idx - 7] if (is_M5 or is_d3) and (minimum <= idx - 7 <= maximum) else []
-                )
-
-                # Include altered versions of a 2nd up
-                neighbor_up = idx + 2
-                neighbors.extend(
-                    list(range(minimum + ((neighbor_up % 7) - (minimum % 7)) % 7, maximum + 1, 7))
-                )
-
-                # Include altered versions of a 2nd down
-                neighbor_down = idx - 2
-                neighbors.extend(
-                    list(range(minimum + ((neighbor_down % 7) - (minimum % 7)) % 7, maximum + 1, 7))
-                )
-
-            neighbors_set = set(neighbors) - set(do_not_return) - set([idx])
-
-            return np.array(sorted(neighbors_set), dtype=int)
-
-        def get_best_pitches(
-            cpm_output: np.ndarray,
-            can_remove: np.ndarray,
-            can_replace: np.ndarray,
-        ) -> List[int]:
-            """
-            Get a list of the best pitches to include in the chord pitches for a given chord.
-
-            Parameters
-            ----------
-            cpm_output : np.ndarray
-                The output of the cpm, used to disambiguate selections of pitches and pick the
-                best.
-            can_remove : np.ndarray
-                A list of the pitches that could be removed from the chord.
-            can_replace : np.ndarray
-                For each pitch in can_remove, a list of pitches that could replace that pitch.
-
-            Returns
-            -------
-            to_add : List[int]
-                A List of pitches to include in the chord. The returned list's length will be
-                equal to the length of can_remove, and include one pitch per pitch in can_remove
-                (though not necessarily in order). This might be the given can_remove pitch, or a
-                pitch from the corresponding can_replace list, depending on the found optimal
-                configuration.
-            """
-            # Always prefer replacing as many notes as possible
-            best = (0, 1, list(can_remove))  # Num_replaced, prob, to_add
-            index_ranges = [list(range(len(replace) + 1)) for replace in can_replace]
-
-            for indexes in itertools.product(*index_ranges):
-                prob = 1
-                to_add = list(can_remove)
-                added = set()
-                num_added = 0
-
-                for i, index in enumerate(indexes):
-                    if index < len(can_replace[i]):
-                        replacement_idx = can_replace[i][index]
-
-                        prob *= (1 - cpm_output[can_remove[i]]) * cpm_output[replacement_idx]
-
-                        # Add idx to tracking objects
-                        to_add[i] = replacement_idx
-                        added.add(replacement_idx)
-                        num_added += 1
-
-                if len(added) == num_added:
-                    # Valid configuration: all added pitches were unique
-                    best = max(best, (num_added, prob, to_add))
-
-            return best[2]
-
-        chord_pitches = np.zeros_like(cpm_outputs, dtype=int)
-        can_remove_tones = np.logical_and(
-            defaults_no_7ths == 1, cpm_outputs <= self.cpm_chord_tone_threshold
-        )
-        cannot_remove_tones = np.logical_and(defaults == 1, ~can_remove_tones)
-        can_add_tones = np.logical_and(
-            defaults == 0, cpm_outputs >= self.cpm_non_chord_tone_add_threshold
-        )
-        can_replace_tones = np.logical_and(
-            defaults == 0, cpm_outputs >= self.cpm_non_chord_tone_replace_threshold
-        )
-
-        M5_idx = hc.CHORD_PITCHES[self.CHORD_OUTPUT_TYPE][ChordType.MAJOR][2]
-        if self.CHORD_OUTPUT_TYPE == PitchType.TPC:
-            M5_idx += chord_pitches.shape[1] // 2 - hc.TPC_C
-        d3_idx = hc.CHORD_PITCHES[self.CHORD_OUTPUT_TYPE][ChordType.DIMINISHED][1]
-        if self.CHORD_OUTPUT_TYPE == PitchType.TPC:
-            d3_idx += chord_pitches.shape[1] // 2 - hc.TPC_C
-
-        for i, (can_remove, cannot_remove, can_add, can_replace, default, triad_type) in enumerate(
-            zip(
-                can_remove_tones,
-                cannot_remove_tones,
-                can_add_tones,
-                can_replace_tones,
-                defaults,
-                triad_types,
-            )
-        ):
-            # Keep non-removable chord tones
-            chord_pitches[i, np.where(cannot_remove)[0]] = 1
-
-            # Add non-chord tones
-            chord_pitches[i, np.where(can_add)[0]] = 1
-
-            # Replace chord tones with neighbors
-            can_remove_idxs = np.where(can_remove)[0]
-            can_replace_idxs = np.where(can_replace)[0]
-            default_idxs = np.where(default)[0]
-
-            if len(can_remove_idxs) == 0:
-                continue
-
-            neighbor_idxs = [
-                get_neighbor_idxs(
-                    idx,
-                    default_idxs,
-                    self.CHORD_OUTPUT_TYPE,
-                    is_M5=triad_type == ChordType.MAJOR and idx == M5_idx,
-                    is_d3=triad_type == ChordType.DIMINISHED and idx == d3_idx,
-                )
-                for idx in can_remove_idxs
-            ]
-
-            can_replace_neighbors = [
-                neighbors[np.isin(neighbors, can_replace_idxs)] for neighbors in neighbor_idxs
-            ]
-            # Mask tones for which no neighbors can actually replace them
-            valid_mask = np.array([len(n) > 0 for n in can_replace_neighbors])
-
-            # Add back tones that actually can't be removed
-            chord_pitches[i, can_remove_idxs[~valid_mask]] = 1
-
-            # Apply mask to index lists
-            can_remove_idxs = can_remove_idxs[valid_mask]
-            can_replace_neighbors = [
-                n for n, mask in zip(can_replace_neighbors, valid_mask) if mask
-            ]
-
-            if len(can_replace_neighbors) == 1:
-                # Only one chord tone can be removed -- Faster than using get_best_pitches
-                can_replace_neighbors = can_replace_neighbors[0]
-
-                if len(can_replace_neighbors) > 1:
-                    # Replace the note with the most likely neighbor
-                    to_add = can_replace_neighbors[np.argmax(cpm_outputs[i, can_replace_neighbors])]
-                else:
-                    to_add = can_replace_neighbors[0]
-
-                chord_pitches[i, to_add] = 1
-
-            elif len(can_replace_neighbors) >= 2:
-                # More than one chord tone might be altered
-                # In the case that multiple neighbors are over threshold, we have to match them
-                # In the case that only one neighbor is over threshold, we assign it to one tone
-                for to_add in get_best_pitches(
-                    cpm_outputs[i], can_remove_idxs, can_replace_neighbors
-                ):
-                    chord_pitches[i, to_add] = 1
-
-        return chord_pitches
 
 
 class DebugLogger:
