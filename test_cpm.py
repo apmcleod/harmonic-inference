@@ -12,9 +12,10 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from harmonic_inference.data.data_types import TRIAD_REDUCTION
+import harmonic_inference.utils.eval_utils as eu
+from harmonic_inference.data.data_types import TRIAD_REDUCTION, PitchType
 from harmonic_inference.data.datasets import ChordPitchesDataset
-from harmonic_inference.data.piece import Piece
+from harmonic_inference.data.piece import Piece, ScorePiece, get_score_piece_from_dict
 from harmonic_inference.models.chord_pitches_models import ChordPitchesModel, decode_cpm_outputs
 from harmonic_inference.models.joint_model import (
     CPM_CHORD_TONE_THRESHOLD_DEFAULT,
@@ -23,6 +24,7 @@ from harmonic_inference.models.joint_model import (
     add_joint_model_args,
 )
 from harmonic_inference.utils.data_utils import load_models_from_argparse, load_pieces
+from harmonic_inference.utils.harmonic_constants import MAX_CHORD_PITCH_INTERVAL_TPC
 
 
 def evaluate_cpm(
@@ -55,6 +57,7 @@ def evaluate_cpm(
         in order to replace a chord tone in a given chord.
     """
     for piece in tqdm(pieces):
+        piece: ScorePiece
         dataset = ChordPitchesDataset([piece], **cpm.get_dataset_kwargs())
         dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
 
@@ -78,8 +81,74 @@ def evaluate_cpm(
             cpm.INPUT_PITCH,
         )
 
-        # TODO: Post-process and evaluate
-        print(chord_pitches)
+        processed_piece = get_score_piece_from_dict(piece.measures_df, piece.to_dict(), piece.name)
+        for pitches, chord in zip(chord_pitches, processed_piece.get_chords()):
+            # Convert binary pitches array into root-relative indices
+            pitch_indices = np.where(pitches)[0]
+            if cpm.INPUT_PITCH == PitchType.TPC:
+                pitch_indices -= MAX_CHORD_PITCH_INTERVAL_TPC
+
+            # Convert root-relative indices into absolute pitches
+            abs_pitches = set([chord.root + pitch for pitch in pitch_indices])
+
+            chord.chord_pitches = abs_pitches
+
+        # Create results dfs
+        results_annotation_df = eu.get_results_annotation_df(
+            processed_piece,
+            piece,
+            cpm.OUTPUT_PITCH,
+            cpm.OUTPUT_PITCH,
+            True,
+            None,
+            use_chord_pitches=True,
+        )
+
+        results_df = eu.get_results_df(
+            piece,
+            processed_piece,
+            cpm.OUTPUT_PITCH,
+            cpm.OUTPUT_PITCH,
+            PitchType.TPC,
+            PitchType.TPC,
+            True,
+            None,
+        )
+
+        results_midi_df = eu.get_results_df(
+            piece,
+            processed_piece,
+            cpm.OUTPUT_PITCH,
+            cpm.OUTPUT_PITCH,
+            PitchType.MIDI,
+            PitchType.MIDI,
+            True,
+            None,
+        )
+
+        # Perform evaluations
+        if piece.get_chords() is None:
+            logging.info("Cannot compute accuracy. Ground truth unknown.")
+        else:
+            eu.log_results_df_eval(results_df)
+
+        if piece.name is not None and output_tsv_dir is not None:
+            piece_name = Path(piece.name.split(" ")[-1])
+            output_tsv_path = output_tsv_dir / piece_name
+
+            for suffix, name, df in (
+                ["_results.tsv", "Results", results_df],
+                ["_results_midi.tsv", "MIDI results", results_midi_df],
+                [".tsv", "Results annotation", results_annotation_df],
+            ):
+                try:
+                    output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
+                    tsv_path = output_tsv_path.parent / (output_tsv_path.name[:-4] + suffix)
+                    df.to_csv(tsv_path, sep="\t")
+                    logging.info("%s TSV written out to %s", name, tsv_path)
+                except Exception:
+                    logging.exception("Error writing to csv %s", tsv_path)
+                    logging.debug(results_df)
 
 
 if __name__ == "__main__":
