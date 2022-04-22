@@ -130,27 +130,308 @@ def evaluate_features(
     return float(np.average(correct_mask, weights=results_df["duration"]))
 
 
-def get_results_df(
+def get_full_results_from_piece(
     piece: Piece,
+    root_type: PitchType,
+    tonic_type: PitchType,
+    use_inversions: bool,
+    reduction: Dict[ChordType, ChordType],
+    chord_pitches_type: Union[None, str],
+) -> Tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+]:
+    """
+    Get Lists of chord and key info from a Piece object, returned in arrays with one
+    element per piece input.
+
+    Parameters
+    ----------
+    piece : Piece
+        The piece whose labels we will return.
+    root_type : PitchType
+        The pitch type to use to encode chord roots.
+    tonic_type : PitchType
+        The pitch type to use to encode key tonics.
+    use_inversions : bool
+        Whether to use inversions or not in the labels.
+    reduction : Dict[ChordType, ChordType]
+        A chord type reduction to use.
+    chord_pitches_type : Union[None, str]
+        The encoding type for the returned chord pitches array. Either None (to return
+        an array of all Nones), `set`, or `str`.
+
+    Returns
+    -------
+    chord_labels : np.ndarray
+        An array of chord one-hot indexes.
+    chord_roots : np.ndarray
+        An array of chord root pitches.
+    chord_types : np.ndarray
+        An array of chord types.
+    chord_triads : np.ndarray
+        An array of chord types, reduced to their triad form.
+    chord_inversions : np.ndarray
+        An array of chord inversions (or 0 if use_inversions is False).
+    chord_pitches : np.ndarray
+        An array of strings of chord pitches for each chord, or an array of Nones if
+        chord_pitches_type is None.
+    chord_is_default : np.ndarray
+        An array of booleans indicating whether each chord uses its default pitches.
+    key_labels : np.ndarray
+        An array of key one-hot indexes, one per piece input.
+    key_tonics : np.ndarray
+        An array of key tonic pitches.
+    key_modes : np.ndarray
+        An array of key modes.
+    """
+    # Chord info
+    chords = piece.get_chords()
+    changes = piece.get_chord_change_indices()
+    chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    chord_roots = np.zeros(len(piece.get_inputs()), dtype=int)
+    chord_types = np.zeros(len(piece.get_inputs()), dtype=object)
+    chord_triads = np.zeros(len(piece.get_inputs()), dtype=object)
+    chord_inversions = np.zeros(len(piece.get_inputs()), dtype=int)
+    chord_pitches = np.full(len(piece.get_inputs()), None, dtype=object)
+    chord_is_default = np.zeros(len(piece.get_inputs()), dtype=bool)
+    for chord, start, end in zip(chords, changes, changes[1:]):
+        chord = chord.to_pitch_type(root_type)
+        chord_labels[start:end] = chord.get_one_hot_index(
+            relative=False, use_inversion=use_inversions, pad=False, reduction=reduction
+        )
+        chord_roots[start:end] = chord.root
+        chord_types[start:end] = reduction[chord.chord_type] if reduction else chord.chord_type
+        chord_triads[start:end] = TRIAD_REDUCTION[chord.chord_type]
+        chord_inversions[start:end] = chord.inversion if use_inversions else 0
+        if chord_pitches_type == "str":
+            chord_pitches[start:end] = str(tuple(sorted(chord.chord_pitches)))
+        elif chord_pitches_type == "set":
+            chord_pitches[start:end] = chord.chord_pitches
+        chord_is_default[start:end] = chord.chord_pitches == hu.get_default_chord_pitches(
+            chord.root, chord.chord_type, chord.pitch_type
+        )
+
+    last_chord = chords[-1].to_pitch_type(root_type)
+    chord_labels[changes[-1] :] = last_chord.get_one_hot_index(
+        relative=False, use_inversion=use_inversions, pad=False, reduction=reduction
+    )
+    chord_roots[changes[-1] :] = last_chord.root
+    chord_types[changes[-1] :] = (
+        reduction[last_chord.chord_type] if reduction else last_chord.chord_type
+    )
+    chord_triads[changes[-1] :] = TRIAD_REDUCTION[last_chord.chord_type]
+    chord_inversions[changes[-1] :] = last_chord.inversion if use_inversions else 0
+    if chord_pitches_type == "str":
+        chord_pitches[changes[-1] :] = str(tuple(sorted(last_chord.chord_pitches)))
+    elif chord_pitches_type == "set":
+        chord_pitches[changes[-1] :] = last_chord.chord_pitches
+    chord_is_default[changes[-1] :] = last_chord.chord_pitches == hu.get_default_chord_pitches(
+        last_chord.root, last_chord.chord_type, last_chord.pitch_type
+    )
+
+    # Key info
+    keys = piece.get_keys()
+    changes = piece.get_key_change_input_indices()
+    key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
+    key_tonics = np.zeros(len(piece.get_inputs()), dtype=int)
+    key_modes = np.zeros(len(piece.get_inputs()), dtype=object)
+    for key, start, end in zip(keys, changes, changes[1:]):
+        key = key.to_pitch_type(tonic_type)
+        key_labels[start:end] = key.get_one_hot_index()
+        key_tonics[start:end] = key.relative_tonic
+        key_modes[start:end] = key.relative_mode
+    last_key = keys[-1].to_pitch_type(tonic_type)
+    key_labels[changes[-1] :] = last_key.get_one_hot_index()
+    key_tonics[changes[-1] :] = last_key.relative_tonic
+    key_modes[changes[-1] :] = last_key.relative_mode
+
+    return (
+        chord_labels,
+        chord_roots,
+        chord_types,
+        chord_triads,
+        chord_inversions,
+        chord_pitches,
+        chord_is_default,
+        key_labels,
+        key_tonics,
+        key_modes,
+    )
+
+
+def get_full_results_from_state(
     state: State,
+    num_inputs: int,
+    input_root_type: PitchType,
+    input_tonic_type: PitchType,
     output_root_type: PitchType,
     output_tonic_type: PitchType,
-    chord_root_type: PitchType,
-    key_tonic_type: PitchType,
+    use_inversions: bool,
+    reduction: Dict[ChordType, ChordType],
+    chord_pitches_type: Union[None, str],
+) -> Tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+]:
+    """
+    Get Lists of chord and key info from a Piece object, returned in arrays with one
+    element per piece input.
+
+    Parameters
+    ----------
+    piece : Piece
+        The piece whose labels we will return.
+    num_inputs : int
+        The number of inputs to return. This will be the length of the returned arrays.
+    root_type : PitchType
+        The pitch type to use to encode chord roots.
+    tonic_type : PitchType
+        The pitch type to use to encode key tonics.
+    use_inversions : bool
+        Whether to use inversions or not in the labels.
+    reduction : Dict[ChordType, ChordType]
+        A chord type reduction to use.
+    use_chord_pitches : bool
+        True to use chord pitches. False to instead return an array of Nones.
+
+    Returns
+    -------
+    chord_labels : np.ndarray
+        An array of chord one-hot indexes.
+    chord_roots : np.ndarray
+        An array of chord root pitches.
+    chord_types : np.ndarray
+        An array of chord types.
+    chord_triads : np.ndarray
+        An array of chord types, reduced to their triad form.
+    chord_inversions : np.ndarray
+        An array of chord inversions (or 0 if use_inversions is False).
+    chord_pitches : np.ndarray
+        An array of strings of chord pitches for each chord, or an array of Nones if
+        use_chord_pitches is False.
+    chord_is_default : np.ndarray
+        An array of booleans indicating whether each chord uses its default pitches.
+    key_labels : np.ndarray
+        An array of key one-hot indexes, one per piece input.
+    key_tonics : np.ndarray
+        An array of key tonic pitches.
+    key_modes : np.ndarray
+        An array of key modes.
+    """
+    # Est chords
+    chords, changes, all_pitches = state.get_chords()
+    chord_labels = np.zeros(num_inputs, dtype=int)
+    chord_roots = np.zeros(num_inputs, dtype=int)
+    chord_types = np.zeros(num_inputs, dtype=object)
+    chord_triads = np.zeros(num_inputs, dtype=object)
+    chord_inversions = np.zeros(num_inputs, dtype=int)
+    chord_pitches = np.full(num_inputs, None, dtype=object)
+    chord_is_default = np.zeros(num_inputs, dtype=bool)
+    for chord, pitches, start, end in zip(chords, all_pitches, changes[:-1], changes[1:]):
+        root, chord_type, inv = hu.get_chord_from_one_hot_index(
+            chord, input_root_type, use_inversions=use_inversions, reduction=reduction
+        )
+        root = hu.get_pitch_from_string(
+            hu.get_pitch_string(root, input_root_type), output_root_type
+        )
+        chord = hu.get_chord_one_hot_index(
+            chord_type,
+            root,
+            output_root_type,
+            inversion=inv,
+            use_inversion=use_inversions,
+            reduction=reduction,
+        )
+        chord_labels[start:end] = chord
+        chord_roots[start:end] = root
+        chord_types[start:end] = chord_type
+        chord_triads[start:end] = TRIAD_REDUCTION[chord_type]
+        chord_inversions[start:end] = inv
+        if chord_pitches_type == "str":
+            chord_pitches[start:end] = str(tuple(sorted(pitches)))
+        elif chord_pitches_type == "set":
+            chord_pitches[start:end] = set(pitches)
+        chord_is_default[start:end] = set(pitches) == hu.get_default_chord_pitches(
+            root, chord_type, output_root_type
+        )
+
+    # Est keys
+    keys, changes = state.get_keys()
+    key_labels = np.zeros(num_inputs, dtype=int)
+    key_tonics = np.zeros(num_inputs, dtype=int)
+    key_modes = np.zeros(num_inputs, dtype=object)
+    for key, start, end in zip(keys, changes[:-1], changes[1:]):
+        tonic, mode = hu.get_key_from_one_hot_index(key, input_tonic_type)
+        tonic = hu.get_pitch_from_string(
+            hu.get_pitch_string(tonic, input_tonic_type), output_tonic_type
+        )
+        key = hu.get_key_one_hot_index(mode, tonic, output_tonic_type)
+        key_labels[start:end] = key
+        key_tonics[start:end] = tonic
+        key_modes[start:end] = mode
+
+    return (
+        chord_labels,
+        chord_roots,
+        chord_types,
+        chord_triads,
+        chord_inversions,
+        chord_pitches,
+        chord_is_default,
+        key_labels,
+        key_tonics,
+        key_modes,
+    )
+
+
+def get_results_df(
+    gt_piece: Piece,
+    estimated: Union[State, Piece],
+    input_root_type: PitchType,
+    input_tonic_type: PitchType,
+    output_root_type: PitchType,
+    output_tonic_type: PitchType,
+    use_inversions: bool,
+    reduction: Dict[ChordType, ChordType],
 ) -> pd.DataFrame:
     """
     Evaluate the piece's estimated chords.
 
     Parameters
     ----------
-    piece : Piece
+    gt_piece : Piece
         The piece, containing the ground truth harmonic structure.
-    state : State
-        The state, containing the estimated harmonic structure.
-    chord_root_type : PitchType
-        The pitch type used for chord roots.
-    key_tonic_type : PitchType
-        The pitch type used for key tonics.
+    estimated : Union[State, Piece]
+        The state or piece, containing the estimated harmonic structure.
+    input_root_type : PitchType
+        The pitch type used for chord roots in the input piece and state.
+    input_tonic_type : PitchType
+        The pitch type used for key tonics in the input piece and state.
+    output_root_type : PitchType
+        The pitch type to use for chord roots in the output df.
+    output_tonic_type : PitchType
+        The pitch type to use for key tonics in the output df.
+    use_inversions : bool
+        Whether to use inversions in the chords.
+    reduction : Dict[ChordType, ChordType]
+        The chord type reduction to use.
 
     Returns
     -------
@@ -159,103 +440,52 @@ def get_results_df(
     """
     labels_list = []
 
-    # GT chords
-    gt_chords = piece.get_chords()
-    gt_changes = piece.get_chord_change_indices()
-    gt_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    gt_chord_roots = np.zeros(len(piece.get_inputs()), dtype=int)
-    gt_chord_types = np.zeros(len(piece.get_inputs()), dtype=object)
-    gt_chord_triads = np.zeros(len(piece.get_inputs()), dtype=object)
-    gt_chord_inversions = np.zeros(len(piece.get_inputs()), dtype=int)
-    gt_chord_pitches = np.zeros(len(piece.get_inputs()), dtype=object)
-    gt_chord_is_default = np.zeros(len(piece.get_inputs()), dtype=bool)
-    for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
-        chord = chord.to_pitch_type(chord_root_type)
-        gt_chord_labels[start:end] = chord.get_one_hot_index(
-            relative=False, use_inversion=True, pad=False
-        )
-        gt_chord_roots[start:end] = chord.root
-        gt_chord_types[start:end] = chord.chord_type
-        gt_chord_triads[start:end] = TRIAD_REDUCTION[chord.chord_type]
-        gt_chord_inversions[start:end] = chord.inversion
-        gt_chord_pitches[start:end] = str(tuple(sorted(chord.chord_pitches)))
-        gt_chord_is_default[start:end] = chord.chord_pitches == hu.get_default_chord_pitches(
-            chord.root, chord.chord_type, chord.pitch_type
-        )
-
-    last_chord = gt_chords[-1].to_pitch_type(chord_root_type)
-    gt_chord_labels[gt_changes[-1] :] = last_chord.get_one_hot_index(
-        relative=False, use_inversion=True, pad=False
-    )
-    gt_chord_roots[gt_changes[-1] :] = last_chord.root
-    gt_chord_types[gt_changes[-1] :] = last_chord.chord_type
-    gt_chord_triads[gt_changes[-1] :] = TRIAD_REDUCTION[last_chord.chord_type]
-    gt_chord_inversions[gt_changes[-1] :] = last_chord.inversion
-    gt_chord_pitches[gt_changes[-1] :] = str(tuple(sorted(last_chord.chord_pitches)))
-    gt_chord_is_default[
-        gt_changes[-1] :
-    ] = last_chord.chord_pitches == hu.get_default_chord_pitches(
-        last_chord.root, last_chord.chord_type, last_chord.pitch_type
+    (
+        gt_chord_labels,
+        gt_chord_roots,
+        gt_chord_types,
+        gt_chord_triads,
+        gt_chord_inversions,
+        gt_chord_pitches,
+        gt_chord_is_default,
+        gt_key_labels,
+        gt_key_tonics,
+        gt_key_modes,
+    ) = get_full_results_from_piece(
+        gt_piece, output_root_type, output_tonic_type, use_inversions, reduction, "str"
     )
 
-    # Est chords
-    chords, changes, all_pitches = state.get_chords()
-    estimated_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    estimated_chord_roots = np.zeros(len(piece.get_inputs()), dtype=int)
-    estimated_chord_types = np.zeros(len(piece.get_inputs()), dtype=object)
-    estimated_chord_triads = np.zeros(len(piece.get_inputs()), dtype=object)
-    estimated_chord_inversions = np.zeros(len(piece.get_inputs()), dtype=int)
-    estimated_chord_pitches = np.zeros(len(piece.get_inputs()), dtype=object)
-    estimated_chord_is_default = np.zeros(len(piece.get_inputs()), dtype=bool)
-    for chord, pitches, start, end in zip(chords, all_pitches, changes[:-1], changes[1:]):
-        root, chord_type, inv = hu.get_chord_from_one_hot_index(chord, output_root_type)
-        root = hu.get_pitch_from_string(
-            hu.get_pitch_string(root, output_root_type), chord_root_type
+    (
+        estimated_chord_labels,
+        estimated_chord_roots,
+        estimated_chord_types,
+        estimated_chord_triads,
+        estimated_chord_inversions,
+        estimated_chord_pitches,
+        estimated_chord_is_default,
+        estimated_key_labels,
+        estimated_key_tonics,
+        estimated_key_modes,
+    ) = (
+        get_full_results_from_piece(
+            estimated, output_root_type, output_tonic_type, use_inversions, reduction, "str"
         )
-        chord = hu.get_chord_one_hot_index(chord_type, root, chord_root_type, inversion=inv)
-        estimated_chord_labels[start:end] = chord
-        estimated_chord_roots[start:end] = root
-        estimated_chord_types[start:end] = chord_type
-        estimated_chord_triads[start:end] = TRIAD_REDUCTION[chord_type]
-        estimated_chord_inversions[start:end] = inv
-        estimated_chord_pitches[start:end] = str(tuple(sorted(pitches)))
-        estimated_chord_is_default[start:end] = set(pitches) == hu.get_default_chord_pitches(
-            root, chord_type, chord_root_type
+        if isinstance(estimated, Piece)
+        else get_full_results_from_state(
+            estimated,
+            len(gt_piece),
+            input_root_type,
+            input_tonic_type,
+            output_root_type,
+            output_tonic_type,
+            use_inversions,
+            reduction,
+            "str",
         )
+    )
 
-    # GT keys
-    gt_keys = piece.get_keys()
-    gt_changes = piece.get_key_change_input_indices()
-    gt_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    gt_key_tonics = np.zeros(len(piece.get_inputs()), dtype=int)
-    gt_key_modes = np.zeros(len(piece.get_inputs()), dtype=object)
-    for key, start, end in zip(gt_keys, gt_changes, gt_changes[1:]):
-        key = key.to_pitch_type(key_tonic_type)
-        gt_key_labels[start:end] = key.get_one_hot_index()
-        gt_key_tonics[start:end] = key.relative_tonic
-        gt_key_modes[start:end] = key.relative_mode
-    last_key = gt_keys[-1].to_pitch_type(key_tonic_type)
-    gt_key_labels[gt_changes[-1] :] = last_key.get_one_hot_index()
-    gt_key_tonics[gt_changes[-1] :] = last_key.relative_tonic
-    gt_key_modes[gt_changes[-1] :] = last_key.relative_mode
-
-    # Est keys
-    keys, changes = state.get_keys()
-    estimated_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    estimated_key_tonics = np.zeros(len(piece.get_inputs()), dtype=int)
-    estimated_key_modes = np.zeros(len(piece.get_inputs()), dtype=object)
-    for key, start, end in zip(keys, changes[:-1], changes[1:]):
-        tonic, mode = hu.get_key_from_one_hot_index(key, output_tonic_type)
-        tonic = hu.get_pitch_from_string(
-            hu.get_pitch_string(tonic, output_tonic_type), key_tonic_type
-        )
-        key = hu.get_key_one_hot_index(mode, tonic, key_tonic_type)
-        estimated_key_labels[start:end] = key
-        estimated_key_tonics[start:end] = tonic
-        estimated_key_modes[start:end] = mode
-
-    chord_label_list = hu.get_chord_label_list(chord_root_type, use_inversions=True)
-    key_label_list = hu.get_key_label_list(key_tonic_type)
+    chord_label_list = hu.get_chord_label_list(output_root_type, use_inversions=True)
+    key_label_list = hu.get_key_label_list(output_tonic_type)
 
     for (
         duration,
@@ -280,7 +510,7 @@ def get_results_df(
         est_pitches,
         est_is_default,
     ) in zip(
-        piece.get_duration_cache(),
+        gt_piece.get_duration_cache(),
         estimated_chord_labels,
         gt_chord_labels,
         estimated_key_labels,
@@ -510,8 +740,8 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
 
 
 def get_annotation_df(
-    state: State,
-    piece: Piece,
+    estimated: Union[State, Piece],
+    gt_piece: Piece,
     root_type: PitchType,
     tonic_type: PitchType,
     use_inversions: bool,
@@ -519,13 +749,13 @@ def get_annotation_df(
     use_chord_pitches: bool = False,
 ) -> pd.DataFrame:
     """
-    Get a df containing the labels of the given state.
+    Get a df containing the labels of the given estimated output.
 
     Parameters
     ----------
-    state : State
-        The state containing harmony annotations.
-    piece : Piece
+    estimated : Union[State, Piece]
+        The estimated harmony annotations.
+    gt_piece : Piece
         The piece which was used as input when creating the given state.
     root_type : PitchType
         The pitch type to use for chord root labels.
@@ -546,19 +776,13 @@ def get_annotation_df(
     """
     labels_list = []
 
-    chords, changes, chord_pitches = state.get_chords()
-    estimated_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    estimated_chord_pitches = np.full(len(piece.get_inputs()), None, dtype=object)
-    for chord, pitches, start, end in zip(chords, chord_pitches, changes[:-1], changes[1:]):
-        estimated_chord_labels[start:end] = chord
-        if use_chord_pitches:
-            for i in range(start, end):
-                estimated_chord_pitches[i] = pitches
-
-    keys, changes = state.get_keys()
-    estimated_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    for key, start, end in zip(keys, changes[:-1], changes[1:]):
-        estimated_key_labels[start:end] = key
+    estimated_chord_labels, estimated_chord_pitches, estimated_key_labels = (
+        get_labels_from_state(estimated, len(gt_piece), use_chord_pitches)
+        if isinstance(estimated, State)
+        else get_labels_from_piece(
+            estimated, root_type, tonic_type, use_inversions, reduction, use_chord_pitches
+        )
+    )
 
     chord_label_list = hu.get_chord_label_list(
         root_type, use_inversions=use_inversions, reduction=reduction
@@ -574,8 +798,8 @@ def get_annotation_df(
     prev_est_chord_pitches = None
 
     for duration, note, est_chord_label, est_key_label, est_pitches in zip(
-        piece.get_duration_cache(),
-        piece.get_inputs(),
+        gt_piece.get_duration_cache(),
+        gt_piece.get_inputs(),
         estimated_chord_labels,
         estimated_key_labels,
         estimated_chord_pitches,
@@ -632,9 +856,105 @@ def get_annotation_df(
     return pd.DataFrame(labels_list)
 
 
-def get_results_annotation_df(
+def get_labels_from_state(
     state: State,
+    num_inputs: int,
+    use_chord_pitches: bool,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Get Lists of chord, pitches, and key labels from a State object. Each list will
+    contain one label per piece input (the total length of which is given by num_inputs).
+
+    Parameters
+    ----------
+    state : State
+        The state chain whose labels we will return.
+    num_inputs : int
+        The number of inputs for the associated piece. Each returned array will be this length.
+    use_chord_pitches : bool
+        True to calculate chord pitches. False otherwise.
+
+    Returns
+    -------
+    chord_labels : np.ndarray
+        An array of chord one-hot indexes, one per piece input.
+    chord_pitches : np.ndarray
+        An array of sets of chord pitches for each chord. This will be an array of Nones
+        if use_chord_pitches is False.
+    key_labels : np.ndarray
+        An array of key one-hot indexes, one per piece input.
+    """
+    # Chord info
+    chords, changes, chord_pitches = state.get_chords()
+    state_chord_labels = np.zeros(num_inputs, dtype=int)
+    state_chord_pitches = np.full(num_inputs, None, dtype=object)
+    for chord, pitches, start, end in zip(chords, chord_pitches, changes[:-1], changes[1:]):
+        state_chord_labels[start:end] = chord
+        if use_chord_pitches:
+            for i in range(start, end):
+                state_chord_pitches[i] = pitches
+
+    # Key info
+    keys, changes = state.get_keys()
+    state_key_labels = np.zeros(num_inputs, dtype=int)
+    for key, start, end in zip(keys, changes[:-1], changes[1:]):
+        state_key_labels[start:end] = key
+
+    return state_chord_labels, state_chord_pitches, state_key_labels
+
+
+def get_labels_from_piece(
     piece: Piece,
+    root_type: PitchType,
+    tonic_type: PitchType,
+    use_inversions: bool,
+    reduction: Dict[ChordType, ChordType],
+    use_chord_pitches: bool,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Get Lists of chord, pitches, and key labels from a Piece object. Each list will
+    contain one label per piece input.
+
+    Parameters
+    ----------
+    piece : Piece
+        The piece whose labels we will return.
+    root_type : PitchType
+        The pitch type to use to encode chord roots.
+    tonic_type : PitchType
+        The pitch type to use to encode key tonics.
+    use_inversions : bool
+        Whether to use inversions or not in the labels.
+    reduction : Dict[ChordType, ChordType]
+        A chord type reduction to use.
+    use_chord_pitches : bool
+        True to calculate chord pitches. False otherwise.
+
+    Returns
+    -------
+    chord_labels : np.ndarray
+        An array of chord one-hot indexes, one per piece input.
+    chord_pitches : np.ndarray
+        An array of sets of chord pitches for each chord. This will be an array of Nones
+        if use_chord_pitches is False.
+    key_labels : np.ndarray
+        An array of key one-hot indexes, one per piece input.
+    """
+    chord_labels, _, _, _, _, chord_pitches, _, key_labels, _, _ = get_full_results_from_piece(
+        piece,
+        root_type,
+        tonic_type,
+        use_inversions,
+        reduction,
+        "set" if use_chord_pitches else None,
+    )
+
+    return chord_labels, chord_pitches, key_labels
+
+
+def get_results_annotation_df(
+    estimated: Union[State, Piece],
+    gt_piece: Piece,
     root_type: PitchType,
     tonic_type: PitchType,
     use_inversions: bool,
@@ -642,15 +962,15 @@ def get_results_annotation_df(
     use_chord_pitches: bool = False,
 ) -> pd.DataFrame:
     """
-    Get a df containing the full labels of the given state, color-coded in terms of their
-    accuracy according to the ground truth harmony in the given piece. This can be used
+    Get a df containing the full labels of the given estimated output, color-coded in terms
+    of their accuracy according to the ground truth harmony in the given piece. This can be used
     to attach color-coded labels to a musescore3 score using ms3.
 
     Parameters
     ----------
-    state : State
-        The state, containing the estimated harmonic structure.
-    piece : Piece
+    estimated : Union[State, Piece]
+        A state or piece, containing the estimated harmonic structure.
+    gt_piece : Piece
         The piece, containing the ground truth harmonic structure.
     root_type : PitchType
         The pitch type used for chord roots.
@@ -671,51 +991,17 @@ def get_results_annotation_df(
     """
     labels_list = []
 
-    gt_chord_labels = np.full(len(piece.get_inputs()), -1, dtype=int)
-    gt_chord_pitches = np.full(len(piece.get_inputs()), None, dtype=object)
-    if len(piece.get_chords()) > 0:
-        gt_chords = piece.get_chords()
-        gt_changes = piece.get_chord_change_indices()
-        for chord, start, end in zip(gt_chords, gt_changes, gt_changes[1:]):
-            chord = chord.to_pitch_type(root_type)
-            gt_chord_labels[start:end] = chord.get_one_hot_index(
-                relative=False, use_inversion=use_inversions, pad=False, reduction=reduction
-            )
-            if use_chord_pitches:
-                for i in range(start, end):
-                    gt_chord_pitches[i] = chord.chord_pitches
-        last_chord = gt_chords[-1].to_pitch_type(root_type)
-        gt_chord_labels[gt_changes[-1] :] = last_chord.get_one_hot_index(
-            relative=False, use_inversion=use_inversions, pad=False, reduction=reduction
+    gt_chord_labels, gt_chord_pitches, gt_key_labels = get_labels_from_piece(
+        gt_piece, root_type, tonic_type, use_inversions, reduction, use_chord_pitches
+    )
+
+    estimated_chord_labels, estimated_chord_pitches, estimated_key_labels = (
+        get_labels_from_state(estimated, len(gt_piece), use_chord_pitches)
+        if isinstance(estimated, State)
+        else get_labels_from_piece(
+            estimated, root_type, tonic_type, use_inversions, reduction, use_chord_pitches
         )
-        if use_chord_pitches:
-            for i in range(gt_changes[-1], len(gt_chord_pitches)):
-                gt_chord_pitches[i] = last_chord.chord_pitches
-
-    chords, changes, chord_pitches = state.get_chords()
-    estimated_chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    estimated_chord_pitches = np.full(len(piece.get_inputs()), None, dtype=object)
-    for chord, pitches, start, end in zip(chords, chord_pitches, changes[:-1], changes[1:]):
-        estimated_chord_labels[start:end] = chord
-        if use_chord_pitches:
-            for i in range(start, end):
-                estimated_chord_pitches[i] = pitches
-
-    gt_key_labels = np.full(len(piece.get_inputs()), -1, dtype=int)
-    if len(piece.get_keys()) > 0:
-        gt_keys = piece.get_keys()
-        gt_changes = piece.get_key_change_input_indices()
-        gt_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-        for key, start, end in zip(gt_keys, gt_changes, gt_changes[1:]):
-            key = key.to_pitch_type(tonic_type)
-            gt_key_labels[start:end] = key.get_one_hot_index()
-        last_key = gt_keys[-1].to_pitch_type(tonic_type)
-        gt_key_labels[gt_changes[-1] :] = last_key.get_one_hot_index()
-
-    keys, changes = state.get_keys()
-    estimated_key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
-    for key, start, end in zip(keys, changes[:-1], changes[1:]):
-        estimated_key_labels[start:end] = key
+    )
 
     chord_label_list = hu.get_chord_label_list(
         root_type, use_inversions=use_inversions, reduction=reduction
@@ -743,8 +1029,8 @@ def get_results_annotation_df(
         est_pitches,
         gt_pitches,
     ) in zip(
-        piece.get_duration_cache(),
-        piece.get_inputs(),
+        gt_piece.get_duration_cache(),
+        gt_piece.get_inputs(),
         estimated_chord_labels,
         gt_chord_labels,
         estimated_key_labels,
