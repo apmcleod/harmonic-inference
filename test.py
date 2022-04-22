@@ -260,6 +260,8 @@ def evaluate(
             model.KEY_OUTPUT_TYPE,
             PitchType.TPC,
             PitchType.TPC,
+            True,
+            None,
         )
 
         results_midi_df = eu.get_results_df(
@@ -269,6 +271,8 @@ def evaluate(
             model.KEY_OUTPUT_TYPE,
             PitchType.MIDI,
             PitchType.MIDI,
+            True,
+            None,
         )
 
         # Perform evaluations

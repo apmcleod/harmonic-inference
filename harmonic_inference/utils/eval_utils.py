@@ -473,7 +473,7 @@ def get_results_df(
         if isinstance(estimated, Piece)
         else get_full_results_from_state(
             estimated,
-            len(gt_piece),
+            len(gt_piece.get_inputs()),
             input_root_type,
             input_tonic_type,
             output_root_type,
@@ -777,7 +777,7 @@ def get_annotation_df(
     labels_list = []
 
     estimated_chord_labels, estimated_chord_pitches, estimated_key_labels = (
-        get_labels_from_state(estimated, len(gt_piece), use_chord_pitches)
+        get_labels_from_state(estimated, len(gt_piece.get_inputs()), use_chord_pitches)
         if isinstance(estimated, State)
         else get_labels_from_piece(
             estimated, root_type, tonic_type, use_inversions, reduction, use_chord_pitches
@@ -996,7 +996,7 @@ def get_results_annotation_df(
     )
 
     estimated_chord_labels, estimated_chord_pitches, estimated_key_labels = (
-        get_labels_from_state(estimated, len(gt_piece), use_chord_pitches)
+        get_labels_from_state(estimated, len(gt_piece.get_inputs()), use_chord_pitches)
         if isinstance(estimated, State)
         else get_labels_from_piece(
             estimated, root_type, tonic_type, use_inversions, reduction, use_chord_pitches
