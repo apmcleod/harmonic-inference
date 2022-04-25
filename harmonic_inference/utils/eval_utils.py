@@ -1114,6 +1114,7 @@ def get_results_annotation_df(
                 {
                     "label": est_chord_string + chord_pitches_string
                     if est_chord_string != prev_est_chord_string
+                    or est_pitches != prev_est_chord_pitches
                     else "--",
                     "mc": note.onset[0],
                     "mc_onset": note.mc_onset,
