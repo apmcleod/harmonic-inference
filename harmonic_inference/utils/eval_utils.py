@@ -2,6 +2,7 @@
 import logging
 import re
 from collections import defaultdict
+from fractions import Fraction
 from pathlib import Path
 from typing import Dict, List, Tuple, Union
 
@@ -50,6 +51,15 @@ def log_results_df_eval(results_df: pd.DataFrame):
             & (results_df["gt_root"] == results_df["est_root"])
             & (results_df["gt_chord_type"] == results_df["est_chord_type"])
         ),
+    )
+
+    logging.info(
+        "GT default duration = %s",
+        results_df.loc[results_df["gt_is_default"], "duration"].sum(),
+    )
+    logging.info(
+        "GT non-default duration = %s",
+        results_df.loc[~results_df["gt_is_default"], "duration"].sum(),
     )
 
     logging.info("Chord accuracy = %s", chord_acc_full)
@@ -1206,6 +1216,62 @@ def average_results(results_path: Union[Path, str], split_on: str = " = ") -> Di
                 averages[key].append(float(value))
 
     return {key: np.mean(value_list) for key, value_list in averages.items()}
+
+
+def duration_weighted_pitch_average(results_path: Union[Path, str]) -> Dict[str, float]:
+    """
+    Calculate duration-weighted average pitch accuracies across a log file.
+
+    Parameters
+    ----------
+    results_path : Union[Path, str]
+        A log file with pitch accuracies and durations for each piece.
+
+    Returns
+    -------
+    accuracies : Dict[str, float]
+        A duration-weighted pitch accuracy for both default and non-default pitches.
+    """
+    split_on = " = "
+
+    tot_default_dur = 0
+    tot_non_default_dur = 0
+
+    default_dur = 0
+    non_default_dur = 0
+
+    tot_default_acc = 0
+    tot_non_default_acc = 0
+
+    with open(results_path, "r") as results_file:
+        for line in results_file:
+            if split_on not in line:
+                continue
+
+            line_split = line.split(split_on)
+            if len(line_split) != 2:
+                continue
+
+            key, value = line_split
+            key = key.strip()
+
+            if "non-default" in key:
+                if "duration" in key:
+                    non_default_dur = Fraction(value)
+                else:
+                    tot_non_default_dur += non_default_dur
+                    tot_non_default_acc += non_default_dur * float(value)
+            elif "default" in key:
+                if "duration" in key:
+                    default_dur = Fraction(value)
+                else:
+                    tot_default_dur += default_dur
+                    tot_default_acc += default_dur * float(value)
+
+    return {
+        "GT default pitch accuracy": tot_default_acc / tot_default_dur,
+        "GT non-default pitch accuracy": tot_non_default_acc / tot_non_default_dur,
+    }
 
 
 def log_state(state: State, piece: Piece, root_type: PitchType, tonic_type: PitchType):

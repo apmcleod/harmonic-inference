@@ -165,6 +165,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--average",
+        type=Path,
+        default=False,
+        help="Calculate duration-weighted chord pitch accuracies from the given log file.",
+    )
+
+    parser.add_argument(
         "--test",
         action="store_true",
         help="Run tests on the actual test set, rather than the validation set.",
@@ -265,6 +272,11 @@ if __name__ == "__main__":
         level=logging.DEBUG if ARGS.verbose else logging.INFO,
         filemode="w",
     )
+
+    if ARGS.average:
+        for key, average in eu.duration_weighted_pitch_average(ARGS.average).items():
+            print(f"Average {key} = {average}")
+        sys.exit(0)
 
     # Load models
     cpm = load_models_from_argparse(ARGS, model_type="cpm")["cpm"]
