@@ -15,7 +15,7 @@ from tqdm import tqdm
 import harmonic_inference.utils.eval_utils as eu
 from harmonic_inference.data.data_types import TRIAD_REDUCTION, PitchType
 from harmonic_inference.data.datasets import ChordPitchesDataset
-from harmonic_inference.data.piece import Piece, ScorePiece, get_score_piece_from_dict
+from harmonic_inference.data.piece import Piece, get_score_piece_from_dict
 from harmonic_inference.models.chord_pitches_models import ChordPitchesModel, decode_cpm_outputs
 from harmonic_inference.models.joint_model import (
     CPM_CHORD_TONE_THRESHOLD_DEFAULT,
@@ -57,7 +57,6 @@ def evaluate_cpm(
         in order to replace a chord tone in a given chord.
     """
     for piece in tqdm(pieces):
-        piece: ScorePiece
         dataset = ChordPitchesDataset([piece], **cpm.get_dataset_kwargs())
         dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
 
@@ -274,7 +273,7 @@ if __name__ == "__main__":
 
     # Load data for ctm to get file_ids
     h5_path = Path(ARGS.h5_dir / f"ChordTransitionDataset_{data_type}_seed_{ARGS.seed}.h5")
-    if not ARGS.no_h5 and h5_path.exists():
+    if h5_path.exists():
         with h5py.File(h5_path, "r") as h5_file:
             if "file_ids" not in h5_file:
                 logging.error("file_ids not found in %s. Re-create with create_h5_data.py", h5_path)

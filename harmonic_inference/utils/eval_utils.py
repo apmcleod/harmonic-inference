@@ -196,6 +196,7 @@ def get_full_results_from_piece(
     # Chord info
     chords = piece.get_chords()
     changes = piece.get_chord_change_indices()
+    changes[0] = 0  # Bugfix for if first label isn't at the beginning
     chord_labels = np.zeros(len(piece.get_inputs()), dtype=int)
     chord_roots = np.zeros(len(piece.get_inputs()), dtype=int)
     chord_types = np.zeros(len(piece.get_inputs()), dtype=object)
@@ -241,6 +242,7 @@ def get_full_results_from_piece(
     # Key info
     keys = piece.get_keys()
     changes = piece.get_key_change_input_indices()
+    changes[0] = 0  # Bugfix for if first label isn't at the beginning
     key_labels = np.zeros(len(piece.get_inputs()), dtype=int)
     key_tonics = np.zeros(len(piece.get_inputs()), dtype=int)
     key_modes = np.zeros(len(piece.get_inputs()), dtype=object)
