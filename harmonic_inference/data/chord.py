@@ -516,6 +516,7 @@ class Chord:
     def is_repeated(
         self,
         other: "Chord",
+        reduction: Dict[ChordType, ChordType] = None,
         use_inversion: bool = True,
         use_suspension: bool = False,
         use_chord_pitches: bool = False,
@@ -528,6 +529,8 @@ class Chord:
         ----------
         other : Chord
             The other chord to check for repeat.
+        reduction : Dict[ChordType, ChordType]
+            Map a chord type onto another in order to merge chords with different types.
         use_inversion : bool
             True to take inversions into account. False otherwise.
         use_suspension : bool
@@ -552,8 +555,12 @@ class Chord:
             attr_names.append("chord_pitches")
 
         for attr_name in attr_names:
-            if getattr(self, attr_name) != getattr(other, attr_name):
-                return False
+            if attr_name == "chord_type" and reduction is not None:
+                if reduction[self.chord_type] != reduction[other.chord_type]:
+                    return False
+            else:
+                if getattr(self, attr_name) != getattr(other, attr_name):
+                    return False
         return True
 
     def merge_with(self, next_chord: "Chord"):

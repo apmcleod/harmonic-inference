@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import List, Union
+from typing import Dict, List, Union
 
 import h5py
 import numpy as np
@@ -13,7 +13,12 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import harmonic_inference.utils.eval_utils as eu
-from harmonic_inference.data.data_types import TRIAD_REDUCTION, PitchType
+from harmonic_inference.data.data_types import (
+    MAJOR_MINOR_REDUCTION,
+    TRIAD_REDUCTION,
+    ChordType,
+    PitchType,
+)
 from harmonic_inference.data.datasets import ChordPitchesDataset
 from harmonic_inference.data.piece import Piece, get_score_piece_from_dict
 from harmonic_inference.models.chord_pitches_models import ChordPitchesModel, decode_cpm_outputs
@@ -34,6 +39,8 @@ def evaluate_cpm(
     cpm_chord_tone_threshold: float = CPM_CHORD_TONE_THRESHOLD_DEFAULT,
     cpm_non_chord_tone_add_threshold: float = CPM_NON_CHORD_TONE_ADD_THRESHOLD_DEFAULT,
     cpm_non_chord_tone_replace_threshold: float = CPM_NON_CHORD_TONE_REPLACE_THRESHOLD_DEFAULT,
+    merge_changes: bool = False,
+    merge_reduction: Dict[ChordType, ChordType] = None,
 ) -> None:
     """
     _summary_
@@ -55,9 +62,22 @@ def evaluate_cpm(
     cpm_non_chord_tone_replace_threshold : float
         The threshold above which a default non-chord tone must reach in the CPM output
         in order to replace a chord tone in a given chord.
+    merge_changes : bool
+        Merge chords which differ only by their chord tone changes into single chords
+        as input. The targets will remain unchanged, so the CPM will ideally split
+        such chords in its post-processing step.
+    merge_reduction : Dict[ChordType, ChordType]
+        Merge chords which no longer differ after this chord type reduction together
+        as input. The targets will remain unchanged, so the CPM will ideally split
+        such chords in its post-processing step.
     """
     for piece in tqdm(pieces):
-        dataset = ChordPitchesDataset([piece], **cpm.get_dataset_kwargs())
+        dataset = ChordPitchesDataset(
+            [piece],
+            **cpm.get_dataset_kwargs(),
+            merge_changes=merge_changes,
+            merge_reduction=merge_reduction,
+        )
         dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
 
         outputs = []
@@ -178,6 +198,18 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--merge-changes",
+        action="store_true",
+        help="Merge input (but not target) chords which differ only by chord pitches.",
+    )
+
+    parser.add_argument(
+        "--merge-reduction",
+        type=str,
+        choices=["triad", "Mm"],
+    )
+
+    parser.add_argument(
         "-o",
         "--output",
         type=Path,
@@ -260,6 +292,8 @@ if __name__ == "__main__":
 
     ARGS = parser.parse_args()
 
+    print(ARGS.merge_reduction)
+
     if ARGS.threads is not None:
         torch.set_num_threads(ARGS.threads)
 
@@ -309,4 +343,12 @@ if __name__ == "__main__":
         cpm_chord_tone_threshold=ARGS.cpm_chord_tone_threshold,
         cpm_non_chord_tone_add_threshold=ARGS.cpm_non_chord_tone_add_threshold,
         cpm_non_chord_tone_replace_threshold=ARGS.cpm_non_chord_tone_replace_threshold,
+        merge_changes=ARGS.merge_changes,
+        merge_reduction=(
+            TRIAD_REDUCTION
+            if ARGS.merge_reduction == "triad"
+            else MAJOR_MINOR_REDUCTION
+            if ARGS.merge_reduction == "Mm"
+            else None
+        ),
     )

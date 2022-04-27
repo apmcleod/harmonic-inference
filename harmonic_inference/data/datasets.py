@@ -1538,6 +1538,8 @@ class ChordPitchesDataset(HarmonicDataset):
         use_inversions: bool = True,
         input_mask: List[int] = None,
         window: int = 2,
+        merge_changes: bool = False,
+        merge_reduction: Dict[ChordType, ChordType] = None,
     ):
         """
         Create a chord pitches dataset from the given pieces.
@@ -1564,6 +1566,14 @@ class ChordPitchesDataset(HarmonicDataset):
         window : int
             The window to use in data creation. Each chord's input will contain this many
             extra notes on either side.
+        merge_changes : bool
+            Merge chords which differ only by their chord tone changes into single chords
+            as input. The targets will remain unchanged, so the CPM will ideally split
+            such chords in its post-processing step.
+        merge_reduction : Dict[ChordType, ChordType]
+            Merge chords which no longer differ after this chord type reduction together
+            as input. The targets will remain unchanged, so the CPM will ideally split
+            such chords in its post-processing step.
         """
         super().__init__(
             transform=transform,
@@ -1582,6 +1592,13 @@ class ChordPitchesDataset(HarmonicDataset):
             self.target_pitch_type.append(pieces[0].get_chords()[0].pitch_type.value)
 
         for piece in pieces:
+            # Merge chords
+            if merge_changes:
+                pass
+
+            if merge_reduction is not None:
+                pass
+
             self.inputs.extend(piece.get_chord_note_inputs(window=window, for_chord_pitches=True))
             self.targets.extend(
                 np.array([chord.get_chord_pitches_target_vector() for chord in piece.get_chords()])
