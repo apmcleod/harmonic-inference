@@ -1,7 +1,7 @@
 """Models that generate probability distributions over the pitches present in a given chord."""
 import itertools
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
 import pytorch_lightning as pl
@@ -19,6 +19,7 @@ from harmonic_inference.data.chord import (
 )
 from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.datasets import ChordPitchesDataset
+from harmonic_inference.data.note import Note
 from harmonic_inference.data.vector_decoding import get_relative_pitch_index
 from harmonic_inference.utils.harmonic_constants import (
     CHORD_PITCHES,
@@ -154,7 +155,9 @@ class ChordPitchesModel(pl.LightningModule, ABC):
 
         return outputs
 
-    def get_output(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def get_output(
+        self, batch: Dict[str, torch.Tensor], return_notes: bool = False
+    ) -> torch.Tensor:
         """
         Load inputs from the batch data and return a non-rounded output
         Tensor derived from the model.
@@ -163,6 +166,8 @@ class ChordPitchesModel(pl.LightningModule, ABC):
         ----------
         batch : Dict[str, torch.Tensor]
             The batch Dictionary containing any needed inputs.
+        return_notes : bool
+            Unused for a SimpleCPM.
 
         Returns
         -------
@@ -708,7 +713,9 @@ class NoteBasedChordPitchesModel(ChordPitchesModel):
         self.log(f"{prefix}val_recall", recall)
         self.log(f"{prefix}val_f1", f1)
 
-    def get_output(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def get_output(
+        self, batch: Dict[str, torch.Tensor], return_notes: bool = False
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
         Load inputs from the batch data and return a non-rounded output
         Tensor derived from the model.
@@ -717,6 +724,8 @@ class NoteBasedChordPitchesModel(ChordPitchesModel):
         ----------
         batch : Dict[str, torch.Tensor]
             The batch Dictionary containing any needed inputs.
+        return_notes : bool
+            Also return the raw output notes binary vector for each input.
 
         Returns
         -------
@@ -724,6 +733,9 @@ class NoteBasedChordPitchesModel(ChordPitchesModel):
             An unrounded output tensor derived from the model, modeling the pitches
             at intervals on the range [-13, 13] for TPC, and [0, 11] for MIDI
             above the root. Values closer to 1 indicate presence of the pitch.
+        notes_output : torch.Tensor
+            A binary vector for each input, with 1 value per note, with each input
+            being the probability that thee note is a chord tone.
         """
         raw_outputs = self.get_raw_output(batch)
         output = torch.zeros(
@@ -747,6 +759,8 @@ class NoteBasedChordPitchesModel(ChordPitchesModel):
                     if 0 <= relative_pitch < len(output[i]):
                         output[i, relative_pitch] = max(output[i, relative_pitch], out)
 
+        if return_notes:
+            return output, raw_output
         return output
 
     def init_hidden(self, batch_size: int) -> Tuple[Variable, Variable]:
@@ -790,6 +804,59 @@ class NoteBasedChordPitchesModel(ChordPitchesModel):
         output = torch.squeeze(self.fc2(drop1), dim=2)
 
         return torch.sigmoid(output)
+
+
+def decode_cpm_note_based_outputs(
+    cpm_note_based_outputs: np.ndarray,
+    notes: List[Note],
+    defaults: np.ndarray,
+    defaults_no_7ths: np.ndarray,
+    triad_types: List[ChordType],
+    cpm_chord_tone_threshold: float,
+    cpm_non_chord_tone_add_threshold: float,
+    cpm_non_chord_tone_replace_threshold: float,
+    pitch_type: PitchType,
+) -> np.ndarray:
+    """
+    Given the stacked outputs from the CPM (size num_chords x num_pitches), and the default
+    output for each corresponding chord, return a List containing the binary chord pitches
+    vector for each chord.
+
+    Parameters
+    ----------
+    cpm_note_based_outputs : np.ndarray
+        An ndarray of length num_chords, where each row is a list of the probability
+        that the CPM has assigned to the corresponding note being a chord tone.
+    notes : List[Note]
+        The notes of the piece, to associate each output with a note.
+    defaults : List[np.ndarray]
+        A binary array for each chord, encoding the default output, if there were no
+        suspensions or alterations.
+    defaults_no_7ths : List[np.ndarray]
+        A binary array for each chord, encoding the default output, not including
+        7ths.
+    triad_types : List[ChordType]
+        A list of the triad reduced type of each chord.
+    cpm_chord_tone_threshold : float
+        The threshold above which a default chord tone must reach in the CPM output
+        in order to be considered present in a given chord.
+    cpm_non_chord_tone_add_threshold : float
+        The threshold above which a default non-chord tone must reach in the CPM output
+        in order to be an added tone in a given chord.
+    cpm_non_chord_tone_replace_threshold : float
+        The threshold above which a default non-chord tone must reach in the CPM output
+        in order to replace a chord tone in a given chord.
+    pitch_type : PitchType
+        The pitch type used in the outputs.
+
+    Returns
+    -------
+    chord_pitches : List[np.ndarray]
+        A decoded CPM output. After thresholding and other heuristic logic, the pitches
+        present for each input note.
+    """
+    # TODO
+    pass
 
 
 def decode_cpm_outputs(
