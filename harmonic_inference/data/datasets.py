@@ -1592,7 +1592,6 @@ class ChordPitchesDataset(HarmonicDataset):
             self.target_pitch_type.append(pieces[0].get_chords()[0].pitch_type.value)
 
         for piece in pieces:
-            # Merge chords
             if merge_changes:
                 pass
 

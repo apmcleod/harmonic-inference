@@ -1,6 +1,7 @@
 """Models that generate probability distributions over the pitches present in a given chord."""
 import itertools
 from abc import ABC, abstractmethod
+from fractions import Fraction
 from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
@@ -760,7 +761,7 @@ class NoteBasedChordPitchesModel(ChordPitchesModel):
                         output[i, relative_pitch] = max(output[i, relative_pitch], out)
 
         if return_notes:
-            return output, raw_output
+            return output, raw_outputs
         return output
 
     def init_hidden(self, batch_size: int) -> Tuple[Variable, Variable]:
@@ -809,6 +810,8 @@ class NoteBasedChordPitchesModel(ChordPitchesModel):
 def decode_cpm_note_based_outputs(
     cpm_note_based_outputs: np.ndarray,
     notes: List[Note],
+    chord_onsets: List[Tuple[int, Fraction]],
+    chord_offsets: List[Tuple[int, Fraction]],
     defaults: np.ndarray,
     defaults_no_7ths: np.ndarray,
     triad_types: List[ChordType],
@@ -829,6 +832,10 @@ def decode_cpm_note_based_outputs(
         that the CPM has assigned to the corresponding note being a chord tone.
     notes : List[Note]
         The notes of the piece, to associate each output with a note.
+    chord_onsets : Tuple[int, Fraction]
+        The onset positions of each chord in the piece.
+    chord_offsets : Tuple[int, Fraction]
+        The offset positions of each chord in the piece.
     defaults : List[np.ndarray]
         A binary array for each chord, encoding the default output, if there were no
         suspensions or alterations.
