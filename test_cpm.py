@@ -100,7 +100,7 @@ def evaluate_cpm(
         if isinstance(cpm, NoteBasedChordPitchesModel):
             chord_pitches = decode_cpm_note_based_outputs(
                 np.vstack(note_outputs),
-                piece.get_inputs(),
+                piece.get_chord_note_inputs(window=dataset.window[0], notes_only=True),
                 [chord.onset for chord in piece.get_chords()],
                 [chord.offset for chord in piece.get_chords()],
                 np.vstack(

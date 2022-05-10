@@ -809,7 +809,7 @@ class NoteBasedChordPitchesModel(ChordPitchesModel):
 
 def decode_cpm_note_based_outputs(
     cpm_note_based_outputs: np.ndarray,
-    notes: List[Note],
+    notes: List[List[Note]],
     chord_onsets: List[Tuple[int, Fraction]],
     chord_offsets: List[Tuple[int, Fraction]],
     defaults: np.ndarray,
@@ -831,7 +831,7 @@ def decode_cpm_note_based_outputs(
         An ndarray of length num_chords, where each row is a list of the probability
         that the CPM has assigned to the corresponding note being a chord tone.
     notes : List[Note]
-        The notes of the piece, to associate each output with a note.
+        A List of the notes in each chord's window.
     chord_onsets : Tuple[int, Fraction]
         The onset positions of each chord in the piece.
     chord_offsets : Tuple[int, Fraction]

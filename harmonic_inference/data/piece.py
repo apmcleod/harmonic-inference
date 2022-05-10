@@ -64,6 +64,7 @@ def get_chord_note_input(
     prev_chord: Chord = None,
     next_chord: Chord = None,
     for_chord_pitches: bool = False,
+    notes_only: bool = False,
 ) -> np.array:
     """
     Get an np.array or input vectors relative to a given chord.
@@ -101,11 +102,13 @@ def get_chord_note_input(
     for_chord_pitches : bool
         True if the generated input should be in the format for a ChordPitchesDataset.
         False otherwise.
+    notes_only : bool
+        True to return only a list of notes for this chord, rather than their vectors.
 
     Returns
     -------
     chord_input : np.array
-        The input note vectors for this chord.
+        The input note vectors for this chord, or a list of notes if note_only is True.
     """
     # Chord aligns with duration cache
     chord_onset_aligns = chord is None or chord.onset == chord_onset
@@ -143,6 +146,14 @@ def get_chord_note_input(
                 note_onset = Fraction(0)
             note_onsets.append(note_onset)
 
+    start = 0 + (first_note_index - window_onset_index)
+    end = last_note_index - window_onset_index
+
+    if notes_only:
+        notes = np.full(window_offset_index - window_onset_index, None, dtype=object)
+        notes[start:end] = chord_notes
+        return notes
+
     note_vectors = np.vstack(
         [
             note.to_vec(
@@ -168,8 +179,6 @@ def get_chord_note_input(
 
     # Place the note vectors within the final tensor and return
     chord_input = np.zeros((window_offset_index - window_onset_index, note_vectors.shape[1]))
-    start = 0 + (first_note_index - window_onset_index)
-    end = len(chord_input) - (window_offset_index - last_note_index)
     chord_input[start:end] = note_vectors
 
     # Prepend chord pitch input vectors
@@ -335,6 +344,7 @@ class Piece:
         ranges: List[Tuple[int, int]] = None,
         change_indices: List[int] = None,
         for_chord_pitches: bool = False,
+        notes_only: bool = False,
     ) -> np.array:
         """
         Get a list of the note input vectors for each chord in this piece, using an optional
@@ -353,11 +363,14 @@ class Piece:
             A List of the note whose onset is the onset of each chord range.
         for_chord_pitches : bool
             True if the inputs should be for a ChordPitchesDataset. False otherwise.
+        notes_only : bool
+            True to return only a list of notes per chord window, rather than note vectors.
 
         Returns
         -------
         chord_inputs : np.array
-            The input note tensor for each chord in this piece.
+            The input note tensor for each chord in this piece, or a list of notes for each chord,
+            if notes_only is True.
         """
         raise NotImplementedError
 
@@ -509,6 +522,7 @@ class ScorePiece(Piece):
         ranges: List[Tuple[int, int]] = None,
         change_indices: List[int] = None,
         for_chord_pitches: bool = False,
+        notes_only: bool = False,
     ):
         use_real_chords = False
 
@@ -567,6 +581,7 @@ class ScorePiece(Piece):
                     prev_chord=prev_chord,
                     next_chord=next_chord,
                     for_chord_pitches=for_chord_pitches,
+                    notes_only=notes_only,
                 )
             )
 
