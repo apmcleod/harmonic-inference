@@ -426,6 +426,25 @@ class Piece:
         """
         raise NotImplementedError
 
+    def get_key_at(self, position: Union[Tuple[int, Fraction], float]) -> Key:
+        """
+        Get the key at the given position.
+
+        Parameters
+        ----------
+        position : Union[Tuple[int, Fraction], float]
+            The position at which to return the current key.
+
+        Returns
+        -------
+        Key : key
+            The Key at the given position.
+        """
+        chords = self.get_chords()
+        key_change_positions = [chords[i].onset for i in self.get_key_change_indices()]
+
+        return self.get_keys()[bisect.bisect_right(key_change_positions, position) - 1]
+
 
 class ScorePiece(Piece):
     """
