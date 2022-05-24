@@ -91,7 +91,7 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
         The notes data frame, cleaned as described.
     """
     files_df = read_dump(Path(dir_path, "files.tsv"), index_col=0)
-    measures_df = read_dump(Path(dir_path, "measures.tsv"))
+    measures_df = read_dump(Path(dir_path, "measures.tsv"), low_memory=False)
     notes_df = read_dump(Path(dir_path, "notes.tsv"))
     try:
         chords_df = read_dump(Path(dir_path, "chords.tsv"), low_memory=False)
