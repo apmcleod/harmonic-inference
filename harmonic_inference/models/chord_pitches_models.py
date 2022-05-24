@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from harmonic_inference.data.chord import (
+    Chord,
     get_chord_pitches_target_vector_length,
     get_chord_pitches_vector_length,
 )
@@ -26,8 +27,10 @@ from harmonic_inference.utils.harmonic_constants import (
     CHORD_PITCHES,
     MAX_CHORD_PITCH_INTERVAL_TPC,
     NUM_PITCHES,
+    NUM_RELATIVE_PITCHES,
     TPC_C,
 )
+from harmonic_inference.utils.harmonic_utils import absolute_to_relative
 
 
 class ChordPitchesModel(pl.LightningModule, ABC):
@@ -809,9 +812,8 @@ class NoteBasedChordPitchesModel(ChordPitchesModel):
 
 def decode_cpm_note_based_outputs(
     cpm_note_based_outputs: np.ndarray,
-    notes: List[List[Note]],
-    chord_onsets: List[Tuple[int, Fraction]],
-    chord_offsets: List[Tuple[int, Fraction]],
+    all_notes: List[List[Note]],
+    chords: List[Chord],
     defaults: np.ndarray,
     defaults_no_7ths: np.ndarray,
     triad_types: List[ChordType],
@@ -830,12 +832,10 @@ def decode_cpm_note_based_outputs(
     cpm_note_based_outputs : np.ndarray
         An ndarray of length num_chords, where each row is a list of the probability
         that the CPM has assigned to the corresponding note being a chord tone.
-    notes : List[Note]
+    all_notes : List[List[Note]]
         A List of the notes in each chord's window.
-    chord_onsets : Tuple[int, Fraction]
-        The onset positions of each chord in the piece.
-    chord_offsets : Tuple[int, Fraction]
-        The offset positions of each chord in the piece.
+    chords : List[Chord]
+        The chords in for the piece.
     defaults : List[np.ndarray]
         A binary array for each chord, encoding the default output, if there were no
         suspensions or alterations.
@@ -860,10 +860,141 @@ def decode_cpm_note_based_outputs(
     -------
     chord_pitches : List[np.ndarray]
         A decoded CPM output. After thresholding and other heuristic logic, the pitches
-        present for each input note.
+        present for each input note, in a num_chords x num_rel_pitches array.
     """
-    # TODO
-    pass
+
+    def get_windows(
+        onset: Fraction, offset: Fraction, notes: List[Note]
+    ) -> List[Tuple[Fraction, Fraction]]:
+        """
+        Get the windows of all unique note slices in this chord.
+
+        Parameters
+        ----------
+        onset : Fraction
+            The initial onset position of the chord.
+        offset : Fraction
+            The offset position of the chord.
+        notes : List[Note]
+            A list of Notes (and Nones) that might occur during the chord.
+
+        Returns
+        -------
+        windows : List[Tuple[Fraction, Fraction]]
+            A List of all slice windows, represented as Tuples of (onset, offset).
+        """
+        times = set([onset, offset])
+        for note in notes:
+            if note is not None:
+                if onset < note.onset < offset:
+                    times.add(note.onset)
+                if onset < note.offset < offset:
+                    times.add(note.offset)
+
+        times = sorted(times)
+        return [(start, end) for start, end in zip(times[:-1], times[1:])]
+
+    def get_window_chord_pitches(
+        cpm_note_based_output: np.ndarray,
+        chord_root: int,
+        notes: List[Note],
+        default: np.ndarray,
+        default_no_7th: np.ndarray,
+        triad_type: ChordType,
+        windows: List[Tuple[Fraction, Fraction]],
+    ) -> List[List[float]]:
+        """
+        Get chord pitches lists for each chord window, given the cpm output.
+
+        Parameters
+        ----------
+        cpm_note_based_output : np.ndarray
+            The cpm's note-based output for this chord.
+        chord_root : int
+            The root pitch of the current chord.
+        notes : List[Note]
+            The notes within this chord window.
+        default : np.ndarray
+            The default chord pitches array for this chord.
+        default_no_7th : np.ndarray
+            The default chord pitches array with no 7ths, for this chord.
+        triad_type : ChordType
+            The triad type of this chord.
+        windows : List[Tuple[Fraction, Fraction]]
+            The windows for which we want to create chord pitches.
+
+        Returns
+        -------
+        chord_pitches : List[List[float]]
+            The output of the chord in each window.
+        """
+        window_chord_probs = []
+
+        for start, end in windows:
+            chord_probs = np.zeros_like(default, dtype=float)
+            window_chord_probs.append(chord_probs)
+
+            for note, note_output in zip(notes, cpm_note_based_output):
+                if note is None or note.onset >= end or note.offset <= start:
+                    continue
+
+                relative_pitch = absolute_to_relative(
+                    note.pitch_class, chord_root, note.pitch_type, False, pad=True
+                )
+                if note.pitch_type == PitchType.TPC:
+                    relative_pitch -= int(
+                        (
+                            NUM_RELATIVE_PITCHES[PitchType.TPC][True]
+                            - 2 * MAX_CHORD_PITCH_INTERVAL_TPC
+                            - 1
+                        )
+                        / 2
+                    )
+
+                if 0 <= relative_pitch < len(chord_probs):
+                    chord_probs[relative_pitch] = max(chord_probs[relative_pitch], note_output)
+
+        num_windows = len(window_chord_probs)
+        chord_pitches = decode_cpm_outputs(
+            np.vstack(window_chord_probs),
+            np.full((num_windows, len(default)), default),
+            np.full((num_windows, len(default)), default_no_7th),
+            np.full(num_windows, triad_type),
+            cpm_chord_tone_threshold,
+            cpm_non_chord_tone_add_threshold,
+            cpm_non_chord_tone_replace_threshold,
+            pitch_type,
+            add_pitches=False,
+        )
+
+        return chord_pitches
+
+    chord_pitches = np.zeros(
+        (len(cpm_note_based_outputs), NUM_RELATIVE_PITCHES[all_notes[0][-1].pitch_type][False])
+    )
+    for i, (cpm_note_based_output, notes, chord, default, default_no_7th, triad_type,) in enumerate(
+        zip(
+            cpm_note_based_outputs,
+            all_notes,
+            chords,
+            defaults,
+            defaults_no_7ths,
+            triad_types,
+        )
+    ):
+        _ = [
+            get_window_chord_pitches(
+                cpm_note_based_output,
+                chord.root,
+                notes,
+                default,
+                default_no_7th,
+                triad_type,
+                get_windows(chord.onset, chord.offset, notes),
+            )
+        ]
+
+    return chord_pitches
 
 
 def decode_cpm_outputs(
@@ -875,6 +1006,7 @@ def decode_cpm_outputs(
     cpm_non_chord_tone_add_threshold: float,
     cpm_non_chord_tone_replace_threshold: float,
     pitch_type: PitchType,
+    add_pitches: bool = True,
 ) -> np.ndarray:
     """
     Given the stacked outputs from the CPM (size num_chords x num_pitches), and the default
@@ -906,12 +1038,15 @@ def decode_cpm_outputs(
         in order to replace a chord tone in a given chord.
     pitch_type : PitchType
         The pitch type used in the outputs.
+    add_pitches : bool
+        True to add additional default tones which are not in any pitch.
+        False otherwise.
 
     Returns
     -------
     chord_pitches : List[np.ndarray]
         A decoded CPM output. After thresholding and other heuristic logic, the pitches
-        present in each chord.
+        present in each chord, in a num_chords x num_rel_pitches array.
     """
 
     def get_neighbor_idxs(
@@ -1095,7 +1230,8 @@ def decode_cpm_outputs(
         valid_mask = np.array([len(n) > 0 for n in can_replace_neighbors])
 
         # Add back tones that actually can't be removed
-        chord_pitches[i, can_remove_idxs[~valid_mask]] = 1
+        if add_pitches:
+            chord_pitches[i, can_remove_idxs[~valid_mask]] = 1
 
         # Apply mask to index lists
         can_remove_idxs = can_remove_idxs[valid_mask]
@@ -1118,6 +1254,7 @@ def decode_cpm_outputs(
             # In the case that multiple neighbors are over threshold, we have to match them
             # In the case that only one neighbor is over threshold, we assign it to one tone
             for to_add in get_best_pitches(cpm_outputs[i], can_remove_idxs, can_replace_neighbors):
-                chord_pitches[i, to_add] = 1
+                if add_pitches or to_add not in can_remove_idxs:
+                    chord_pitches[i, to_add] = 1
 
     return chord_pitches
