@@ -969,6 +969,34 @@ def decode_cpm_note_based_outputs(
 
         return chord_pitches
 
+    def merge_window_pitches(
+        window_pitches: List[List[float]],
+        default: np.ndarray,
+        default_no_7th: np.ndarray,
+        triad_type: ChordType,
+    ) -> np.ndarray:
+        """
+        Merge the windowed chord pitches into a single chord_pitches array.
+
+        Parameters
+        ----------
+        window_pitches : List[List[float]]
+            One binary chord-pitches array per window in this chord. These will be
+            merged together.
+        default : np.ndarray
+            The default chord pitches array for this chord.
+        default_no_7th : np.ndarray
+            The default chord pitches array for this chord without 7ths.
+        triad_type : ChordType
+            The triad type of this chord.
+
+        Returns
+        -------
+        chord_pitches : np.ndarray
+            The chord pitches arrays from window_pitches, merged together.
+        """
+        # TODO
+
     chord_pitches = np.zeros(
         (len(cpm_note_based_outputs), NUM_RELATIVE_PITCHES[all_notes[0][-1].pitch_type][False])
     )
@@ -982,17 +1010,17 @@ def decode_cpm_note_based_outputs(
             triad_types,
         )
     ):
-        _ = [
-            get_window_chord_pitches(
-                cpm_note_based_output,
-                chord.root,
-                notes,
-                default,
-                default_no_7th,
-                triad_type,
-                get_windows(chord.onset, chord.offset, notes),
-            )
-        ]
+        window_pitches = get_window_chord_pitches(
+            cpm_note_based_output,
+            chord.root,
+            notes,
+            default,
+            default_no_7th,
+            triad_type,
+            get_windows(chord.onset, chord.offset, notes),
+        )
+
+        chord_pitches[i] = merge_window_pitches(window_pitches, default, default_no_7th, triad_type)
 
     return chord_pitches
 
