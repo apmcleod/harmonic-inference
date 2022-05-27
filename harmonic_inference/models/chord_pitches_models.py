@@ -1017,7 +1017,31 @@ def decode_cpm_note_based_outputs(
                 True if the two arrays can be merged (by a logical or). False if there
                 must be a chord split.
             """
-            # TODO
+            set1 = set(np.where(pitches1 == 1)[0])
+            set2 = set(np.where(pitches2 == 1)[0])
+
+            in_both = set1.intersection(set2)
+            in_1_not_2 = set1 - in_both
+            in_2_not_1 = set2 - in_both
+
+            if len(in_both) == len(set1):
+                # Pitches match perfectly
+                return True
+
+            # Check every extra pitch for problems
+            for left, right in itertools.permutations([in_1_not_2, in_2_not_1]):
+
+                for extra_pitch in left:
+                    if default[extra_pitch] == 1:
+                        # Extra pitch is default
+                        pass
+
+                    else:
+                        # Extra pitch is non-default
+                        pass
+
+            # No problems found: can merge!
+            return True
 
         merged_chord_pitches = [(window_pitches[0], 1)]
 
