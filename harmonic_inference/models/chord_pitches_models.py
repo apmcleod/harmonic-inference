@@ -1019,7 +1019,7 @@ def decode_cpm_note_based_outputs(
             """
             # TODO
 
-        merged_chord_pitches = [window_pitches[0], 1]
+        merged_chord_pitches = [(window_pitches[0], 1)]
 
         for pitches in window_pitches[1:]:
             if can_merge(pitches, merged_chord_pitches[-1][0]):
@@ -1028,7 +1028,7 @@ def decode_cpm_note_based_outputs(
                 )
                 merged_chord_pitches[-1][1] += 1
             else:
-                merged_chord_pitches.append(pitches, merged_chord_pitches[-1][1] + 1)
+                merged_chord_pitches.append((pitches, merged_chord_pitches[-1][1] + 1))
 
         return merged_chord_pitches
 
