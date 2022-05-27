@@ -1029,15 +1029,24 @@ def decode_cpm_note_based_outputs(
                 return True
 
             # Check every extra pitch for problems
-            for left, right in itertools.permutations([in_1_not_2, in_2_not_1]):
-
-                for extra_pitch in left:
+            for (left_extra, left_all), (right_extra, right_all) in itertools.permutations(
+                [(in_1_not_2, set1), (in_2_not_1, set2)]
+            ):
+                for extra_pitch in left_extra:
                     if default[extra_pitch] == 1:
                         # Extra pitch is default
+                        # Find possible (non-default) suspensions of this pitch
+                        # Are they in right?
+                        # Does it suspend/replace this tone for sure (and not some other tone)?
+                        # If so, return False
                         pass
 
                     else:
                         # Extra pitch is non-default
+                        # Find what (default) tones this one might replace
+                        # If None, this pitch is fine (it is an added tone already)
+                        # Are all of them present in right?
+                        # If so, return False
                         pass
 
             # No problems found: can merge!
