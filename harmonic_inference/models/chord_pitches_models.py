@@ -974,7 +974,7 @@ def decode_cpm_note_based_outputs(
         default: np.ndarray,
         default_no_7th: np.ndarray,
         triad_type: ChordType,
-    ) -> np.ndarray:
+    ) -> List[Tuple[int, np.ndarray]]:
         """
         Merge the windowed chord pitches into a single chord_pitches array.
 
@@ -992,14 +992,47 @@ def decode_cpm_note_based_outputs(
 
         Returns
         -------
-        chord_pitches : np.ndarray
-            The chord pitches arrays from window_pitches, merged together.
+        chord_pitches : List[Tuple[int, np.ndarray]]
+            A List of the different chord pitches for this chord.
+            Each element of the returned list is a duple containing:
+                - The (exclusive) index to which this chord pitches array is valid.
+                - The chord pitches.
+            A chord which has no change in chord pitches during its duration
+            will return a single-element list, whose index is the length of window_pitches.
         """
-        # TODO
 
-    chord_pitches = np.zeros(
-        (len(cpm_note_based_outputs), NUM_RELATIVE_PITCHES[all_notes[0][-1].pitch_type][False])
-    )
+        def can_merge(pitches1: np.ndarray, pitches2: np.ndarray) -> bool:
+            """
+            Check if two chord pitches arrays can be merged or not.
+
+            Parameters
+            ----------
+            pitches1, pitches2 : np.ndarray
+                The two chord pitches arrays, to check for mergability. The ordering of
+                these two arrays does not matter.
+
+            Returns
+            -------
+            can_merge : bool
+                True if the two arrays can be merged (by a logical or). False if there
+                must be a chord split.
+            """
+            # TODO
+
+        merged_chord_pitches = [window_pitches[0], 1]
+
+        for pitches in window_pitches[1:]:
+            if can_merge(pitches, merged_chord_pitches[-1][0]):
+                merged_chord_pitches[-1][0] = np.clip(
+                    np.add(merged_chord_pitches[-1][0], pitches), 0, 1
+                )
+                merged_chord_pitches[-1][1] += 1
+            else:
+                merged_chord_pitches.append(pitches, merged_chord_pitches[-1][1] + 1)
+
+        return merged_chord_pitches
+
+    chord_pitches = [None] * len(cpm_note_based_outputs)
     for i, (cpm_note_based_output, notes, chord, default, default_no_7th, triad_type,) in enumerate(
         zip(
             cpm_note_based_outputs,
