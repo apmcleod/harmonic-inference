@@ -1001,6 +1001,13 @@ def decode_cpm_note_based_outputs(
             will return a single-element list, whose index is the length of window_pitches.
         """
 
+        M5_idx = CHORD_PITCHES[pitch_type][ChordType.MAJOR][2]
+        if pitch_type == PitchType.TPC:
+            M5_idx += chord_pitches.shape[1] // 2 - TPC_C
+        d3_idx = CHORD_PITCHES[pitch_type][ChordType.DIMINISHED][1]
+        if pitch_type == PitchType.TPC:
+            d3_idx += chord_pitches.shape[1] // 2 - TPC_C
+
         def can_merge(pitches1: np.ndarray, pitches2: np.ndarray) -> bool:
             """
             Check if two chord pitches arrays can be merged or not.
@@ -1035,8 +1042,21 @@ def decode_cpm_note_based_outputs(
                 for extra_pitch in left_extra:
                     if default[extra_pitch] == 1:
                         # Extra pitch is default
+
                         # Find possible (non-default) suspensions of this pitch
-                        # Are they in right?
+                        possible_neighbors = get_neighbor_idxs(
+                            extra_pitch,
+                            np.where(default == 1)[0],
+                            pitch_type,
+                            extra_pitch == M5_idx and triad_type == ChordType.MAJOR,
+                            extra_pitch == d3_idx and triad_type == ChordType.DIMINISHED,
+                        )
+
+                        # Are they in right_extra?
+                        possible_neighbors = [
+                            neighbor for neighbor in possible_neighbors if neighbor in right_extra
+                        ]
+
                         # Does it suspend/replace this tone for sure (and not some other tone)?
                         # If so, return False
                         pass
@@ -1091,6 +1111,76 @@ def decode_cpm_note_based_outputs(
     return chord_pitches
 
 
+def get_neighbor_idxs(
+    idx: int,
+    do_not_return: List[int],
+    pitch_type: PitchType,
+    is_M5: bool,
+    is_d3: bool,
+    minimum: int = 0,
+    maximum: int = 2 * MAX_CHORD_PITCH_INTERVAL_TPC,
+) -> np.ndarray:
+    """
+    Get the indexes for notes that could be a neighbor of the given note.
+
+    Parameters
+    ----------
+    idx : int
+        The index of the note whose neighbors we are looking for.
+    do_not_return : List[int]
+        A list of indexes not to include in the returned neighbor_idxs list.
+        This can include, for example, other already present chord tones.
+    pitch_type : PitchType
+        The pitch type being used for indexing.
+    is_M5 : bool
+        The chord from which the note comes is a major chord and the idx represents
+        its 5th. In that case, a flat version of the given idx is returned as a
+        potential neighbor, since (root, M3, d5) is not another chord type.
+    is_d3 : bool
+        The chord from which the note comes is a diminished chord and the idx
+        represents its 3rd. In that case, a flat version of the given idx is
+        returned as a potential neighbor, since (root, dd3, m5) is not another
+        chord type.
+    minimum : int
+        The smallest index of a neighbor note to return.
+    maximum : int
+        The largest index of a neighbor note to return. Note that the default
+        is the TPC default. If pitch_type is MIDI, 11 is used.
+
+    Returns
+    -------
+    neighbor_idxs : np.ndarray
+        The indexes of possible neighbor notes to the given note. For PitchType.MIDI,
+        this is 3 semitones in either direction (allowing for an augmented 2nd).
+        For PitchType.TPC, this is all altered versions of the given idx, and all
+        altered versions of a 2nd up and down.
+    """
+    if pitch_type == PitchType.MIDI:
+        neighbors = list(
+            np.arange(max(minimum, idx - 3), min(NUM_PITCHES[PitchType.MIDI], idx + 4))
+        )
+
+    else:
+        # Include a flat version of the given note if is_M5 or is_d3.
+        neighbors = [idx - 7] if (is_M5 or is_d3) and (minimum <= idx - 7 <= maximum) else []
+
+        # Include altered versions of a 2nd up
+        neighbor_up = idx + 2
+        neighbors.extend(
+            list(range(minimum + ((neighbor_up % 7) - (minimum % 7)) % 7, maximum + 1, 7))
+        )
+
+        # Include altered versions of a 2nd down
+        neighbor_down = idx - 2
+        neighbors.extend(
+            list(range(minimum + ((neighbor_down % 7) - (minimum % 7)) % 7, maximum + 1, 7))
+        )
+
+    neighbors_set = set(neighbors) - set(do_not_return) - set([idx])
+
+    return np.array(sorted(neighbors_set), dtype=int)
+
+
 def decode_cpm_outputs(
     cpm_outputs: np.ndarray,
     defaults: np.ndarray,
@@ -1142,74 +1232,6 @@ def decode_cpm_outputs(
         A decoded CPM output. After thresholding and other heuristic logic, the pitches
         present in each chord, in a num_chords x num_rel_pitches array.
     """
-
-    def get_neighbor_idxs(
-        idx: int,
-        do_not_return: List[int],
-        pitch_type: PitchType,
-        is_M5: bool,
-        is_d3: bool,
-        minimum: int = 0,
-        maximum: int = 2 * MAX_CHORD_PITCH_INTERVAL_TPC,
-    ) -> np.ndarray:
-        """
-        Get the indexes for notes that could be a neighbor of the given note.
-
-        Parameters
-        ----------
-        idx : int
-            The index of the note whose neighbors we are looking for.
-        do_not_return : List[int]
-            A list of indexes not to include in the returned neighbor_idxs list.
-            This can include, for example, other already present chord tones.
-        pitch_type : PitchType
-            The pitch type being used for indexing.
-        is_M5 : bool
-            The chord from which the note comes is a major chord and the idx represents
-            its 5th. In that case, a flat version of the given idx is returned as a
-            potential neighbor.
-        is_d3 : bool
-            The chord from which the note comes is a diminished chord and the idx
-            represents its 3rd. In that case, a flat version of the given idx is
-            returned as a potential neighbor.
-        minimum : int
-            The smallest index of a neighbor note to return.
-        maximum : int
-            The largest index of a neighbor note to return. Note that the default
-            is the TPC default. If pitch_type is MIDI, 11 is used.
-
-        Returns
-        -------
-        neighbor_idxs : np.ndarray
-            The indexes of possible neighbor notes to the given note. For PitchType.MIDI,
-            this is 3 semitones in either direction (allowing for an augmented 2nd).
-            For PitchType.TPC, this is all altered versions of the given idx, and all
-            altered versions of a 2nd up and down.
-        """
-        if pitch_type == PitchType.MIDI:
-            neighbors = list(
-                np.arange(max(minimum, idx - 3), min(NUM_PITCHES[PitchType.MIDI], idx + 4))
-            )
-
-        else:
-            # Include a flat version of the given note if is_M5 or is_d3.
-            neighbors = [idx - 7] if (is_M5 or is_d3) and (minimum <= idx - 7 <= maximum) else []
-
-            # Include altered versions of a 2nd up
-            neighbor_up = idx + 2
-            neighbors.extend(
-                list(range(minimum + ((neighbor_up % 7) - (minimum % 7)) % 7, maximum + 1, 7))
-            )
-
-            # Include altered versions of a 2nd down
-            neighbor_down = idx - 2
-            neighbors.extend(
-                list(range(minimum + ((neighbor_down % 7) - (minimum % 7)) % 7, maximum + 1, 7))
-            )
-
-        neighbors_set = set(neighbors) - set(do_not_return) - set([idx])
-
-        return np.array(sorted(neighbors_set), dtype=int)
 
     def get_best_pitches(
         cpm_output: np.ndarray,
