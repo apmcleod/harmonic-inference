@@ -1083,11 +1083,23 @@ def decode_cpm_note_based_outputs(
 
                     else:
                         # Extra pitch is non-default
+
                         # Find what (default) tones this one might replace
+                        possible_replacees = get_neighbor_idxs(
+                            extra_pitch,
+                            set(np.where(default == 0)[0]).union(left_all),
+                            pitch_type,
+                            False,
+                            False,
+                        )
+
                         # If None, this pitch is fine (it is an added tone already)
-                        # Are all of them present in right?
-                        # If so, return False
-                        pass
+                        if len(possible_replacees) == 0:
+                            continue
+
+                        # If not None, and all are already in right, return False
+                        if all([pitch in right_all for pitch in possible_replacees]):
+                            return False
 
             # No problems found: can merge!
             return True
