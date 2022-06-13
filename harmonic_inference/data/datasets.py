@@ -14,9 +14,7 @@ from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.key import get_key_change_vector_length
 from harmonic_inference.data.piece import (
     Piece,
-    ScorePiece,
     get_score_piece_from_data_frames,
-    get_score_piece_from_dict,
     get_score_piece_from_music_xml,
 )
 from harmonic_inference.data.vector_decoding import (
@@ -1594,15 +1592,6 @@ class ChordPitchesDataset(HarmonicDataset):
             self.target_pitch_type.append(pieces[0].get_chords()[0].pitch_type.value)
 
         for piece in pieces:
-            if merge_changes or merge_reduction is not None:
-                piece: ScorePiece = get_score_piece_from_dict(
-                    piece.name, piece.to_dict(), piece.measures_df
-                )
-                if merge_reduction is not None:
-                    for chord in piece.get_chords():
-                        chord.chord_type = merge_reduction[chord.chord_type]
-                piece.merge_chords(merge_changes)
-
             self.inputs.extend(piece.get_chord_note_inputs(window=window, for_chord_pitches=True))
             self.targets.extend(
                 np.array([chord.get_chord_pitches_target_vector() for chord in piece.get_chords()])

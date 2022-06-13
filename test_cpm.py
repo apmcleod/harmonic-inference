@@ -20,7 +20,7 @@ from harmonic_inference.data.data_types import (
     PitchType,
 )
 from harmonic_inference.data.datasets import ChordPitchesDataset
-from harmonic_inference.data.piece import Piece, get_score_piece_from_dict
+from harmonic_inference.data.piece import Piece, ScorePiece, get_score_piece_from_dict
 from harmonic_inference.models.chord_pitches_models import (
     ChordPitchesModel,
     NoteBasedChordPitchesModel,
@@ -35,6 +35,7 @@ from harmonic_inference.models.joint_model import (
 )
 from harmonic_inference.utils.data_utils import load_models_from_argparse, load_pieces
 from harmonic_inference.utils.harmonic_constants import MAX_CHORD_PITCH_INTERVAL_TPC
+from harmonic_inference.utils.harmonic_utils import get_chord_inversion_count
 
 
 def evaluate_cpm(
@@ -77,14 +78,19 @@ def evaluate_cpm(
         such chords in its post-processing step.
     """
     for piece in tqdm(pieces):
-        piece: Piece
-        dataset = ChordPitchesDataset(
-            [piece],
-            **cpm.get_dataset_kwargs(),
-            # TODO: Handle these two arguments
-            merge_changes=merge_changes,
-            merge_reduction=merge_reduction,
-        )
+        reduced_piece: ScorePiece = piece
+        if merge_changes or merge_reduction is not None:
+            reduced_piece = get_score_piece_from_dict(
+                reduced_piece.measures_df, reduced_piece.to_dict(), name=reduced_piece.name
+            )
+            if merge_reduction is not None:
+                for chord in reduced_piece.get_chords():
+                    chord.chord_type = merge_reduction[chord.chord_type]
+                    if chord.inversion >= get_chord_inversion_count(chord.chord_type):
+                        chord.inversion = 0
+            reduced_piece.merge_chords(merge_changes)
+
+        dataset = ChordPitchesDataset([reduced_piece], **cpm.get_dataset_kwargs())
         dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
 
         outputs = []
@@ -100,12 +106,12 @@ def evaluate_cpm(
         if isinstance(cpm, NoteBasedChordPitchesModel):
             chord_pitches = decode_cpm_note_based_outputs(
                 np.vstack(note_outputs),
-                piece.get_chord_note_inputs(window=dataset.window[0], notes_only=True),
-                piece.get_chords(),
+                reduced_piece.get_chord_note_inputs(window=dataset.window[0], notes_only=True),
+                reduced_piece.get_chords(),
                 np.vstack(
                     [
                         chord.get_chord_pitches_target_vector(default=True)
-                        for chord in piece.get_chords()
+                        for chord in reduced_piece.get_chords()
                     ]
                 ),
                 np.vstack(
@@ -113,10 +119,10 @@ def evaluate_cpm(
                         chord.get_chord_pitches_target_vector(
                             reduction=TRIAD_REDUCTION, default=True
                         )
-                        for chord in piece.get_chords()
+                        for chord in reduced_piece.get_chords()
                     ]
                 ),
-                [TRIAD_REDUCTION[chord.chord_type] for chord in piece.get_chords()],
+                [TRIAD_REDUCTION[chord.chord_type] for chord in reduced_piece.get_chords()],
                 cpm_chord_tone_threshold,
                 cpm_non_chord_tone_add_threshold,
                 cpm_non_chord_tone_replace_threshold,
@@ -126,24 +132,28 @@ def evaluate_cpm(
             chord_pitches = decode_cpm_outputs(
                 np.vstack(outputs),
                 np.vstack(
-                    [chord.get_chord_pitches_target_vector() for chord in piece.get_chords()]
+                    [
+                        chord.get_chord_pitches_target_vector()
+                        for chord in reduced_piece.get_chords()
+                    ]
                 ),
                 np.vstack(
                     [
                         chord.get_chord_pitches_target_vector(reduction=TRIAD_REDUCTION)
-                        for chord in piece.get_chords()
+                        for chord in reduced_piece.get_chords()
                     ]
                 ),
-                [TRIAD_REDUCTION[chord.chord_type] for chord in piece.get_chords()],
+                [TRIAD_REDUCTION[chord.chord_type] for chord in reduced_piece.get_chords()],
                 cpm_chord_tone_threshold,
                 cpm_non_chord_tone_add_threshold,
                 cpm_non_chord_tone_replace_threshold,
                 cpm.INPUT_PITCH,
             )
 
-        processed_piece = get_score_piece_from_dict(piece.measures_df, piece.to_dict(), piece.name)
+        processed_piece = get_score_piece_from_dict(
+            reduced_piece.measures_df, reduced_piece.to_dict(), name=reduced_piece.name
+        )
         for pitches, chord in zip(chord_pitches, processed_piece.get_chords()):
-
             if isinstance(pitches, list):
                 # Note-based (window-based) output. Need to do some special handling
                 abs_pitches = []
