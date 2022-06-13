@@ -356,8 +356,6 @@ if __name__ == "__main__":
 
     ARGS = parser.parse_args()
 
-    print(ARGS.merge_reduction)
-
     if ARGS.threads is not None:
         torch.set_num_threads(ARGS.threads)
 
@@ -375,6 +373,9 @@ if __name__ == "__main__":
         for key, average in eu.duration_weighted_pitch_average(ARGS.average).items():
             print(f"Average {key} = {average}")
         sys.exit(0)
+
+    logging.info("Merge reduction: %s", ARGS.merge_reduction)
+    logging.info("Merge changes: %s", ARGS.merge_changes)
 
     # Load models
     cpm = load_models_from_argparse(ARGS, model_type="cpm")["cpm"]
