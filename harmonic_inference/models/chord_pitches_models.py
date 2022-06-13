@@ -821,7 +821,7 @@ def decode_cpm_note_based_outputs(
     cpm_non_chord_tone_add_threshold: float,
     cpm_non_chord_tone_replace_threshold: float,
     pitch_type: PitchType,
-) -> np.ndarray:
+) -> List[List[List]]:
     """
     Given the stacked outputs from the CPM (size num_chords x num_pitches), and the default
     output for each corresponding chord, return a List containing the binary chord pitches
@@ -858,9 +858,13 @@ def decode_cpm_note_based_outputs(
 
     Returns
     -------
-    chord_pitches : List[np.ndarray]
-        A decoded CPM output. After thresholding and other heuristic logic, the pitches
-        present for each input note, in a num_chords x num_rel_pitches array.
+    chord_pitches : List[List[List[np.ndarray, int]]]
+        A decoded CPM output after thresholding and other heuristic logic.
+        For each chord:
+            A List of "duples" (as length-2 lists) including:
+                - A chord_pitches array (binary length num_rel_pitches).
+                - An (exclusive) index to which window (within that chord)
+                  the chord pitches array is valid.
     """
 
     def get_windows(
@@ -974,7 +978,7 @@ def decode_cpm_note_based_outputs(
         default: np.ndarray,
         default_no_7th: np.ndarray,
         triad_type: ChordType,
-    ) -> List[Tuple[int, np.ndarray]]:
+    ) -> List[List]:
         """
         Merge the windowed chord pitches into a single chord_pitches array.
 
@@ -992,11 +996,11 @@ def decode_cpm_note_based_outputs(
 
         Returns
         -------
-        chord_pitches : List[Tuple[int, np.ndarray]]
+        chord_pitches : List[List[np.ndarray, int]]
             A List of the different chord pitches for this chord.
             Each element of the returned list is a duple containing:
-                - The (exclusive) index to which this chord pitches array is valid.
                 - The chord pitches.
+                - The (exclusive) index to which this chord pitches array is valid.
             A chord which has no change in chord pitches during its duration
             will return a single-element list, whose index is the length of window_pitches.
         """
@@ -1140,6 +1144,21 @@ def decode_cpm_note_based_outputs(
         )
 
         chord_pitches[i] = merge_window_pitches(window_pitches, default, default_no_7th, triad_type)
+        num_windows = len(chord_pitches[i])
+        # Add back extra non-present chord tones, etc.
+        for window_idx, full_window_pitches in enumerate(
+            decode_cpm_outputs(
+                np.vstack([chord_pitches[i][j][0] for j in range(num_windows)]),
+                np.tile(default, (num_windows, 1)),
+                np.tile(default_no_7th, (num_windows, 1)),
+                [triad_type] * num_windows,
+                cpm_chord_tone_threshold,
+                cpm_non_chord_tone_add_threshold,
+                cpm_non_chord_tone_replace_threshold,
+                pitch_type,
+            )
+        ):
+            chord_pitches[i][window_idx][0] = full_window_pitches
 
     return chord_pitches
 

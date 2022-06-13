@@ -141,16 +141,36 @@ def evaluate_cpm(
                 cpm.INPUT_PITCH,
             )
 
-        # TODO: For note-based, may need to split some chords here
         processed_piece = get_score_piece_from_dict(piece.measures_df, piece.to_dict(), piece.name)
         for pitches, chord in zip(chord_pitches, processed_piece.get_chords()):
-            # Convert binary pitches array into root-relative indices
-            pitch_indices = np.where(pitches)[0]
-            if cpm.INPUT_PITCH == PitchType.TPC:
-                pitch_indices -= MAX_CHORD_PITCH_INTERVAL_TPC
 
-            # Convert root-relative indices into absolute pitches
-            abs_pitches = set([chord.root + pitch for pitch in pitch_indices])
+            if isinstance(pitches, list):
+                # Note-based (window-based) output. Need to do some special handling
+                abs_pitches = []
+
+                for window_pitches, window_index in pitches:
+                    # Convert binary pitches array into root-relative indices
+                    pitch_indices = np.where(window_pitches)[0]
+                    if cpm.INPUT_PITCH == PitchType.TPC:
+                        pitch_indices -= MAX_CHORD_PITCH_INTERVAL_TPC
+
+                    # Convert root-relative indices into absolute pitches
+                    abs_pitches.append(
+                        [set([chord.root + pitch for pitch in pitch_indices]), window_index]
+                    )
+
+                # Remove list if only one window
+                if len(abs_pitches) == 1:
+                    abs_pitches = abs_pitches[0][0]
+
+            else:
+                # Convert binary pitches array into root-relative indices
+                pitch_indices = np.where(pitches)[0]
+                if cpm.INPUT_PITCH == PitchType.TPC:
+                    pitch_indices -= MAX_CHORD_PITCH_INTERVAL_TPC
+
+                # Convert root-relative indices into absolute pitches
+                abs_pitches = set([chord.root + pitch for pitch in pitch_indices])
 
             chord.chord_pitches = abs_pitches
 
