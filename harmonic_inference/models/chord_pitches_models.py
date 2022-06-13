@@ -970,7 +970,7 @@ def decode_cpm_note_based_outputs(
         return chord_pitches
 
     def merge_window_pitches(
-        window_pitches: List[List[float]],
+        window_pitches: np.ndarray,
         default: np.ndarray,
         default_no_7th: np.ndarray,
         triad_type: ChordType,
@@ -980,7 +980,7 @@ def decode_cpm_note_based_outputs(
 
         Parameters
         ----------
-        window_pitches : List[List[float]]
+        window_pitches : np.ndarray
             One binary chord-pitches array per window in this chord. These will be
             merged together.
         default : np.ndarray
@@ -1003,10 +1003,10 @@ def decode_cpm_note_based_outputs(
 
         M5_idx = CHORD_PITCHES[pitch_type][ChordType.MAJOR][2]
         if pitch_type == PitchType.TPC:
-            M5_idx += chord_pitches.shape[1] // 2 - TPC_C
+            M5_idx += window_pitches.shape[1] // 2 - TPC_C
         d3_idx = CHORD_PITCHES[pitch_type][ChordType.DIMINISHED][1]
         if pitch_type == PitchType.TPC:
-            d3_idx += chord_pitches.shape[1] // 2 - TPC_C
+            d3_idx += window_pitches.shape[1] // 2 - TPC_C
 
         def can_merge(pitches1: np.ndarray, pitches2: np.ndarray) -> bool:
             """
@@ -1031,8 +1031,8 @@ def decode_cpm_note_based_outputs(
             in_1_not_2 = set1 - in_both
             in_2_not_1 = set2 - in_both
 
-            if len(in_both) == len(set1):
-                # Pitches match perfectly
+            if len(in_1_not_2) == 0 or len(in_2_not_1) == 0:
+                # One is a subset of the other. Merging is fine.
                 return True
 
             # Check every extra pitch for problems
@@ -1052,14 +1052,34 @@ def decode_cpm_note_based_outputs(
                             extra_pitch == d3_idx and triad_type == ChordType.DIMINISHED,
                         )
 
-                        # Are they in right_extra?
+                        # Are the suspensions in right_extra?
                         possible_neighbors = [
                             neighbor for neighbor in possible_neighbors if neighbor in right_extra
                         ]
 
-                        # Does it suspend/replace this tone for sure (and not some other tone)?
+                        # Does the neighbor suspend/replace extra_pitch (and not some other tone)?
                         # If so, return False
-                        pass
+                        for neighbor_pitch in possible_neighbors:
+                            # Pitches the neighbor_pitch might be replacing
+                            possible_replacees = list(
+                                set(
+                                    get_neighbor_idxs(
+                                        neighbor_pitch,
+                                        np.where(default == 0)[0],
+                                        pitch_type,
+                                        False,
+                                        False,
+                                    )
+                                )
+                                - right_all
+                            )
+
+                            if (
+                                len(possible_replacees) == 1
+                                and possible_replacees[0] == extra_pitch
+                            ):
+                                # neighbor_pitch definitely replaces extra_pitch
+                                return False
 
                     else:
                         # Extra pitch is non-default
@@ -1072,7 +1092,8 @@ def decode_cpm_note_based_outputs(
             # No problems found: can merge!
             return True
 
-        merged_chord_pitches = [(window_pitches[0], 1)]
+        # List of [chord_pitches, end_index] entries
+        merged_chord_pitches = [[window_pitches[0], 1]]
 
         for pitches in window_pitches[1:]:
             if can_merge(pitches, merged_chord_pitches[-1][0]):
@@ -1081,7 +1102,7 @@ def decode_cpm_note_based_outputs(
                 )
                 merged_chord_pitches[-1][1] += 1
             else:
-                merged_chord_pitches.append((pitches, merged_chord_pitches[-1][1] + 1))
+                merged_chord_pitches.append([pitches, merged_chord_pitches[-1][1] + 1])
 
         return merged_chord_pitches
 
