@@ -123,11 +123,14 @@ class Chord:
         self.beat_duration = beat_duration
         self.pitch_type = pitch_type
         self.suspension = suspension
-        self.chord_pitches = set(
-            get_default_chord_pitches(root, chord_type, pitch_type)
-            if chord_pitches is None
-            else chord_pitches
-        )
+        if isinstance(chord_pitches, list):
+            self.chord_pitches = chord_pitches
+        else:
+            self.chord_pitches = set(
+                get_default_chord_pitches(root, chord_type, pitch_type)
+                if chord_pitches is None
+                else chord_pitches
+            )
 
         self.params = inspect.getfullargspec(Chord.__init__).args[1:]
 

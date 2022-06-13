@@ -174,6 +174,8 @@ def evaluate_cpm(
 
             chord.chord_pitches = abs_pitches
 
+        processed_piece.split_chord_pitches_chords()
+
         # Create results dfs
         results_annotation_df = eu.get_results_annotation_df(
             processed_piece,

@@ -19,6 +19,38 @@ from harmonic_inference.data.key import Key
 from harmonic_inference.data.note import Note
 
 
+def get_windows(
+    onset: Fraction, offset: Fraction, notes: List[Note]
+) -> List[Tuple[Fraction, Fraction]]:
+    """
+    Get the windows of all unique note slices within a window.
+
+    Parameters
+    ----------
+    onset : Fraction
+        The initial onset position of the window.
+    offset : Fraction
+        The offset position of the window.
+    notes : List[Note]
+        A list of Notes (and Nones) that might occur during the window.
+
+    Returns
+    -------
+    windows : List[Tuple[Fraction, Fraction]]
+        A List of all slice windows, represented as Tuples of (onset, offset).
+    """
+    times = set([onset, offset])
+    for note in notes:
+        if note is not None:
+            if onset < note.onset < offset:
+                times.add(note.onset)
+            if onset < note.offset < offset:
+                times.add(note.offset)
+
+    times = sorted(times)
+    return [(start, end) for start, end in zip(times[:-1], times[1:])]
+
+
 def get_reduction_mask(inputs: List[Union[Chord, Key]], kwargs: Dict = None) -> List[bool]:
     """
     Return a boolean mask that will remove repeated inputs when applied to the given inputs list
@@ -275,6 +307,17 @@ class Piece:
         """
         raise NotImplementedError
 
+    def set_chord_change_indices(self, chord_change_indices: List[int]):
+        """
+        Set this Piece's chord change indices to the given value.
+
+        Parameters
+        ----------
+        chord_change_indices : List[int]
+            The new chord_change_indices.
+        """
+        raise NotImplementedError
+
     def get_chord_ranges(self) -> List[Tuple[int, int]]:
         """
         Get a List of the indexes (into the input list) that contain inputs for each chord.
@@ -283,6 +326,17 @@ class Piece:
         -------
         ranges : List[Tuple[int, int]]
             The indexes (into the input list) that contain inputs for each chord.
+        """
+        raise NotImplementedError
+
+    def set_chord_ranges(self, chord_ranges: List[Tuple[int, int]]):
+        """
+        Set this Piece's chord ranges to the given value.
+
+        Parameters
+        ----------
+        chord_ranges : List[Tuple[int, int]]
+            The new chord ranges for this Piece.
         """
         raise NotImplementedError
 
@@ -295,6 +349,17 @@ class Piece:
         chords : List[Chord]
             The chords present in this piece. The ith chord occurs for the inputs between
             chord_change_index i (inclusive) and i+1 (exclusive).
+        """
+        raise NotImplementedError
+
+    def set_chords(self, chords: List[Chord]):
+        """
+        Set this Piece's chords to the given list.
+
+        Parameters
+        ----------
+        chords : List[Chord]
+            The new chords list.
         """
         raise NotImplementedError
 
@@ -414,6 +479,18 @@ class Piece:
 
         return [chord_changes[i] for i in self.get_key_change_indices()]
 
+    def insert_chord(self, position: Fraction):
+        """
+        Update the key_indexes list by inserting a chord at the given position.
+        Any key_change index after the given position should be incremented.
+
+        Parameters
+        ----------
+        position : Fraction
+            The (metrical) position at which a chord is being inserted.
+        """
+        raise NotImplementedError
+
     def get_keys(self) -> List[Key]:
         """
         Get a List of the keys in this piece.
@@ -496,6 +573,60 @@ class ScorePiece(Piece):
         self.chord_ranges = np.array(chord_ranges) if chord_ranges is not None else None
         self.key_changes = np.array(key_changes) if key_changes is not None else None
 
+    def split_chord_pitches_chords(self) -> None:
+        """
+        Split every Chord in this Piece into multiple Chords, if its chord_pitches field
+        is a List of [pitches, window_idx] duples (from note-based-CPM output), instead
+        of a simple set.
+
+        Also, update chord_change_indexes tracking array.
+        """
+        new_chords = []
+
+        for chord in self.get_chords():
+            if isinstance(chord.chord_pitches, set):
+                new_chords.append(chord)
+                continue
+
+            windows = get_windows(chord.onset, chord.offset, self.get_inputs())
+            chord_dict = chord.to_dict()
+            chord_dict["offset"] = chord.onset
+            for chord_pitches, window_end_idx in chord.chord_pitches:
+                chord_dict["chord_pitches"] = chord_pitches
+                chord_dict["onset"] = chord_dict["offset"]
+                chord_dict["onset_level"] = ru.get_metrical_level(
+                    chord_dict["onset"][1], self.measures_df.loc[chord_dict["onset"][0]]
+                )
+                chord_dict["offset"] = windows[window_end_idx - 1][-1]
+                chord_dict["offset_level"] = ru.get_metrical_level(
+                    chord_dict["offset"][1], self.measures_df.loc[chord_dict["offset"][0]]
+                )
+
+                new_chords.append(Chord(**chord_dict))
+
+            for i in range(len(chord.chord_pitches) - 1):
+                self.insert_chord(chord.onset)
+
+        self.set_chords(new_chords)
+
+        # The index of the notes where there is a chord change
+        notes = self.get_inputs()
+        chord_changes = np.zeros(len(new_chords), dtype=int)
+        note_index = 0
+        for chord_index, chord in enumerate(new_chords):
+            while note_index + 1 < len(notes) and notes[note_index].onset < chord.onset:
+                note_index += 1
+            chord_changes[chord_index] = note_index
+
+        # The note input ranges for each chord
+        chord_ranges = [
+            (get_range_start(chord.onset, notes), end)
+            for chord, end in zip(self.get_chords(), list(chord_changes[1:]) + [len(notes)])
+        ]
+
+        self.set_chord_change_indices(chord_changes)
+        self.set_chord_ranges(np.array(chord_ranges))
+
     def get_duration_cache(self):
         if self.duration_cache is None:
             fake_last_note = Note(
@@ -534,6 +665,15 @@ class ScorePiece(Piece):
 
     def get_chords(self) -> List[Chord]:
         return self.chords
+
+    def set_chord_change_indices(self, chord_change_indices: List[int]):
+        self.chord_change_indices = chord_change_indices
+
+    def set_chord_ranges(self, chord_ranges: List[Tuple[int, int]]):
+        self.chord_ranges = chord_ranges
+
+    def set_chords(self, chords: List[Chord]):
+        self.chords = chords
 
     def get_chord_note_inputs(
         self,
@@ -611,6 +751,18 @@ class ScorePiece(Piece):
 
     def get_keys(self) -> List[Key]:
         return self.keys
+
+    def insert_chord(self, position: Fraction):
+        self.key_changes = np.array(
+            [
+                (
+                    key_change_idx
+                    if self.get_chords()[key_change_idx].onset <= position
+                    else key_change_idx + 1
+                )
+                for key_change_idx in self.key_changes
+            ]
+        )
 
     def to_dict(self) -> Dict[str, List]:
         """

@@ -22,6 +22,7 @@ from harmonic_inference.data.chord import (
 from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.datasets import ChordPitchesDataset
 from harmonic_inference.data.note import Note
+from harmonic_inference.data.piece import get_windows
 from harmonic_inference.data.vector_decoding import get_relative_pitch_index
 from harmonic_inference.utils.harmonic_constants import (
     CHORD_PITCHES,
@@ -866,37 +867,6 @@ def decode_cpm_note_based_outputs(
                 - An (exclusive) index to which window (within that chord)
                   the chord pitches array is valid.
     """
-
-    def get_windows(
-        onset: Fraction, offset: Fraction, notes: List[Note]
-    ) -> List[Tuple[Fraction, Fraction]]:
-        """
-        Get the windows of all unique note slices in this chord.
-
-        Parameters
-        ----------
-        onset : Fraction
-            The initial onset position of the chord.
-        offset : Fraction
-            The offset position of the chord.
-        notes : List[Note]
-            A list of Notes (and Nones) that might occur during the chord.
-
-        Returns
-        -------
-        windows : List[Tuple[Fraction, Fraction]]
-            A List of all slice windows, represented as Tuples of (onset, offset).
-        """
-        times = set([onset, offset])
-        for note in notes:
-            if note is not None:
-                if onset < note.onset < offset:
-                    times.add(note.onset)
-                if onset < note.offset < offset:
-                    times.add(note.offset)
-
-        times = sorted(times)
-        return [(start, end) for start, end in zip(times[:-1], times[1:])]
 
     def get_window_chord_pitches(
         cpm_note_based_output: np.ndarray,
