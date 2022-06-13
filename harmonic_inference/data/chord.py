@@ -579,6 +579,7 @@ class Chord:
         self.offset = next_chord.offset
         self.offset_level = next_chord.offset_level
         self.duration += next_chord.duration
+        self.chord_pitches = self.chord_pitches.union(next_chord.chord_pitches)
 
     def to_dict(self) -> Dict:
         """

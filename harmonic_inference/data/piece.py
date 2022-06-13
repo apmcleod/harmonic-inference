@@ -611,24 +611,7 @@ class ScorePiece(Piece):
                 self.insert_chord(chord.onset)
 
         self.set_chords(new_chords)
-
-        # The index of the notes where there is a chord change
-        notes = self.get_inputs()
-        chord_changes = np.zeros(len(new_chords), dtype=int)
-        note_index = 0
-        for chord_index, chord in enumerate(new_chords):
-            while note_index + 1 < len(notes) and notes[note_index].onset < chord.onset:
-                note_index += 1
-            chord_changes[chord_index] = note_index
-
-        # The note input ranges for each chord
-        chord_ranges = [
-            (get_range_start(chord.onset, notes), end)
-            for chord, end in zip(self.get_chords(), list(chord_changes[1:]) + [len(notes)])
-        ]
-
-        self.set_chord_change_indices(chord_changes)
-        self.set_chord_ranges(np.array(chord_ranges))
+        self.update_chord_changes_and_ranges()
 
     def get_duration_cache(self):
         if self.duration_cache is None:
@@ -660,6 +643,33 @@ class ScorePiece(Piece):
     def get_inputs(self) -> List[Note]:
         return self.notes
 
+    def merge_chords(self, merge_changes: bool):
+        """
+        Merge consecutive identical chords together.
+
+        Parameters
+        ----------
+        merge_changes : bool
+            Merge together chords which differ only by changes.
+        """
+        non_repeated_mask = get_reduction_mask(
+            self.get_chords(),
+            kwargs={
+                "use_inversion": True,
+                "use_suspension": not merge_changes,
+                "use_chord_pitches": not merge_changes,
+            },
+        )
+        new_chords = []
+        for chord, mask in zip(self.get_chords(), non_repeated_mask):
+            if mask:
+                new_chords.append(chord)
+            else:
+                new_chords[-1].merge_with(chord)
+                self.delete_chord_at_index(len(new_chords))
+
+        self.update_chord_changes_and_ranges()
+
     def get_chord_change_indices(self) -> List[int]:
         return self.chord_changes
 
@@ -677,6 +687,28 @@ class ScorePiece(Piece):
 
     def set_chords(self, chords: List[Chord]):
         self.chords = chords
+
+    def update_chord_changes_and_ranges(self):
+        """
+        Update chord ranges and changes based on the current chords list.
+        """
+        # The index of the notes where there is a chord change
+        notes = self.get_inputs()
+        chord_changes = np.zeros(len(self.get_chords()), dtype=int)
+        note_index = 0
+        for chord_index, chord in enumerate(self.get_chords()):
+            while note_index + 1 < len(notes) and notes[note_index].onset < chord.onset:
+                note_index += 1
+            chord_changes[chord_index] = note_index
+
+        # The note input ranges for each chord
+        chord_ranges = [
+            (get_range_start(chord.onset, notes), end)
+            for chord, end in zip(self.get_chords(), list(chord_changes[1:]) + [len(notes)])
+        ]
+
+        self.set_chord_change_indices(chord_changes)
+        self.set_chord_ranges(np.array(chord_ranges))
 
     def get_chord_note_inputs(
         self,
@@ -763,6 +795,22 @@ class ScorePiece(Piece):
                     if self.get_chords()[key_change_idx].onset <= position
                     else key_change_idx + 1
                 )
+                for key_change_idx in self.key_changes
+            ]
+        )
+
+    def delete_chord_at_index(self, index: int):
+        """
+        Delete the chord at the given index.
+
+        Parameters
+        ----------
+        index : int
+            The index of the chord to delete.
+        """
+        self.key_changes = np.array(
+            [
+                (key_change_idx if key_change_idx <= index else key_change_idx - 1)
                 for key_change_idx in self.key_changes
             ]
         )
