@@ -912,9 +912,14 @@ def decode_cpm_note_based_outputs(
                 if note is None or note.onset >= end or note.offset <= start:
                     continue
 
-                relative_pitch = absolute_to_relative(
-                    note.pitch_class, chord_root, note.pitch_type, False, pad=True
-                )
+                try:
+                    relative_pitch = absolute_to_relative(
+                        note.pitch_class, chord_root, note.pitch_type, False, pad=True
+                    )
+                except ValueError:
+                    # Note is outside of range
+                    continue
+
                 if note.pitch_type == PitchType.TPC:
                     relative_pitch -= int(
                         (
