@@ -103,9 +103,18 @@ def evaluate_cpm(
             else:
                 outputs.extend(cpm.get_output(batch).numpy())
 
+        # Stack all outputs
+        lengths = np.array([len(n) for n in note_outputs])
+        if np.all(lengths == lengths[0]):
+            note_outputs_np = np.vstack(note_outputs)
+        else:
+            note_outputs_np = np.zeros((len(note_outputs), np.max(lengths)))
+            for i, note_output in enumerate(note_outputs):
+                note_outputs_np[i][: len(note_output)] = note_output
+
         if isinstance(cpm, NoteBasedChordPitchesModel):
             chord_pitches = decode_cpm_note_based_outputs(
-                np.vstack(note_outputs),
+                note_outputs_np,
                 reduced_piece.get_chord_note_inputs(window=dataset.window[0], notes_only=True),
                 reduced_piece.get_chords(),
                 np.vstack(
