@@ -479,15 +479,15 @@ class Piece:
 
         return [chord_changes[i] for i in self.get_key_change_indices()]
 
-    def insert_chord(self, position: Fraction):
+    def insert_chord(self, index: int):
         """
-        Update the key_indexes list by inserting a chord at the given position.
-        Any key_change index after the given position should be incremented.
+        Update the key_indexes list by inserting a chord at the given index.
+        Any key_change index after the given index should be incremented.
 
         Parameters
         ----------
-        position : Fraction
-            The (metrical) position at which a chord is being inserted.
+        index : int
+            The index (into chords) at which a chord is being inserted.
         """
         raise NotImplementedError
 
@@ -606,9 +606,8 @@ class ScorePiece(Piece):
                 )
 
                 new_chords.append(Chord(**chord_dict))
-
-            for _ in range(len(chord.chord_pitches) - 1):
-                self.insert_chord(chord.onset)
+                if chord_dict["onset"] != chord.onset:
+                    self.insert_chord(len(new_chords) - 1)
 
         self.set_chords(new_chords)
         self.update_chord_changes_and_ranges()
@@ -668,6 +667,7 @@ class ScorePiece(Piece):
                 new_chords[-1].merge_with(chord)
                 self.delete_chord_at_index(len(new_chords))
 
+        self.set_chords(new_chords)
         self.update_chord_changes_and_ranges()
 
     def get_chord_change_indices(self) -> List[int]:
@@ -787,14 +787,10 @@ class ScorePiece(Piece):
     def get_keys(self) -> List[Key]:
         return self.keys
 
-    def insert_chord(self, position: Fraction):
+    def insert_chord(self, index: int):
         self.key_changes = np.array(
             [
-                (
-                    key_change_idx
-                    if self.get_chords()[key_change_idx].onset <= position
-                    else key_change_idx + 1
-                )
+                (key_change_idx if key_change_idx < index else key_change_idx + 1)
                 for key_change_idx in self.key_changes
             ]
         )
