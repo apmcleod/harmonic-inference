@@ -981,6 +981,13 @@ def decode_cpm_note_based_outputs(
         d3_idx = CHORD_PITCHES[pitch_type][ChordType.DIMINISHED][1]
         if pitch_type == PitchType.TPC:
             d3_idx += window_pitches.shape[1] // 2 - TPC_C
+        dmM7_idxs = [
+            CHORD_PITCHES[pitch_type][ChordType.DIM7][-1],
+            CHORD_PITCHES[pitch_type][ChordType.MAJ_MIN7][-1],
+            CHORD_PITCHES[pitch_type][ChordType.MAJ_MAJ7][-1],
+        ]
+        if pitch_type == PitchType.TPC:
+            dmM7_idxs = [idx + window_pitches.shape[1] // 2 - TPC_C for idx in dmM7_idxs]
 
         def can_merge(pitches1: np.ndarray, pitches2: np.ndarray) -> bool:
             """
@@ -1020,7 +1027,7 @@ def decode_cpm_note_based_outputs(
                         # Find possible (non-default) suspensions of this pitch
                         possible_neighbors = get_neighbor_idxs(
                             extra_pitch,
-                            np.where(default == 1)[0],
+                            set(np.where(default == 1)[0]).union(set(dmM7_idxs)),
                             pitch_type,
                             extra_pitch == M5_idx and triad_type == ChordType.MAJOR,
                             extra_pitch == d3_idx and triad_type == ChordType.DIMINISHED,
@@ -1057,6 +1064,16 @@ def decode_cpm_note_based_outputs(
 
                     else:
                         # Extra pitch is non-default
+
+                        # Special handling to allow added 7ths on all triads
+                        if extra_pitch in dmM7_idxs and all(default == default_no_7th):
+
+                            if any([pitch in dmM7_idxs for pitch in right_extra]):
+                                # There's another 7th in right already, no merge
+                                return False
+
+                            # Otherwise, merging this pitch is fine.
+                            continue
 
                         # Find what (default) tones this one might replace
                         possible_replacees = get_neighbor_idxs(
