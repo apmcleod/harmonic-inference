@@ -595,11 +595,13 @@ class ScorePiece(Piece):
                 chord_dict["chord_pitches"] = chord_pitches
                 chord_dict["onset"] = chord_dict["offset"]
                 chord_dict["onset_level"] = ru.get_metrical_level(
-                    chord_dict["onset"][1], self.measures_df.loc[chord_dict["onset"][0]]
+                    chord_dict["onset"][1],
+                    self.measures_df.loc[self.measures_df["mc"] == chord_dict["onset"][0]].iloc[0],
                 )
                 chord_dict["offset"] = windows[window_end_idx - 1][-1]
                 chord_dict["offset_level"] = ru.get_metrical_level(
-                    chord_dict["offset"][1], self.measures_df.loc[chord_dict["offset"][0]]
+                    chord_dict["offset"][1],
+                    self.measures_df.loc[self.measures_df["mc"] == chord_dict["offset"][0]].iloc[0],
                 )
                 chord_dict["duration"] = ru.get_range_length(
                     chord_dict["onset"], chord_dict["offset"], self.measures_df
@@ -687,6 +689,10 @@ class ScorePiece(Piece):
 
     def set_chords(self, chords: List[Chord]):
         self.chords = chords
+
+        while self.key_changes[-1] >= len(self.chords):
+            self.keys = self.keys[:-1]
+            self.key_changes = self.key_changes[:-1]
 
     def update_chord_changes_and_ranges(self):
         """
