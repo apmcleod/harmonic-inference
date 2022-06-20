@@ -1335,6 +1335,7 @@ def decode_cpm_outputs(
     can_remove_tones = np.logical_and(
         defaults_no_7ths == 1, cpm_outputs <= cpm_chord_tone_threshold
     )
+    can_remove_tones[:, 13] = False  # Disallow root removal
     cannot_remove_tones = np.logical_and(defaults == 1, ~can_remove_tones)
     can_add_tones = np.logical_and(defaults == 0, cpm_outputs >= cpm_non_chord_tone_add_threshold)
     can_replace_tones = np.logical_and(
