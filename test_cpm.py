@@ -290,6 +290,7 @@ if __name__ == "__main__":
         "--merge-reduction",
         type=str,
         choices=["triad", "Mm"],
+        help="Merge input chords after reducing to their associated triad or 3rd type.",
     )
 
     parser.add_argument(

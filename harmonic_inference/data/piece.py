@@ -661,7 +661,7 @@ class ScorePiece(Piece):
                 "use_chord_pitches": not merge_changes,
             },
         )
-        new_chords = []
+        new_chords: List[Chord] = []
         for chord, mask in zip(self.get_chords(), non_repeated_mask):
             if mask:
                 new_chords.append(chord)

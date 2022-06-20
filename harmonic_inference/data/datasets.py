@@ -14,7 +14,9 @@ from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.key import get_key_change_vector_length
 from harmonic_inference.data.piece import (
     Piece,
+    ScorePiece,
     get_score_piece_from_data_frames,
+    get_score_piece_from_dict,
     get_score_piece_from_music_xml,
 )
 from harmonic_inference.data.vector_decoding import (
@@ -31,6 +33,7 @@ from harmonic_inference.utils.harmonic_constants import NUM_PITCHES
 from harmonic_inference.utils.harmonic_utils import (
     get_bass_note,
     get_chord_from_one_hot_index,
+    get_chord_inversion_count,
     get_chord_one_hot_index,
     get_default_chord_pitches,
     get_key_from_one_hot_index,
@@ -1568,12 +1571,20 @@ class ChordPitchesDataset(HarmonicDataset):
             extra notes on either side.
         merge_changes : bool
             Merge chords which differ only by their chord tone changes into single chords
-            as input. The targets will remain unchanged, so the CPM will ideally split
-            such chords in its post-processing step.
+            as input. The resulting targets will be the superset of all targets for the
+            merged chords. That is, any pitch contained within the target of any chord
+            will be present in the merged target. Likewise, for note-based targets,
+            any note within the merged chord that is on a pitch contained in any of
+            the original targets will have a target of 1. This merge operation is
+            performed at data creation time.
         merge_reduction : Dict[ChordType, ChordType]
             Merge chords which no longer differ after this chord type reduction together
-            as input. The targets will remain unchanged, so the CPM will ideally split
-            such chords in its post-processing step.
+            as input. The resulting targets will be the superset of all targets for the
+            merged chords. That is, any pitch contained within the target of any chord
+            will be present in the merged target. Likewise, for note-based targets,
+            any note within the merged chord that is on a pitch contained in any of
+            the original targets will have a target of 1. This merge operation is
+            performed at data creation time.
         """
         super().__init__(
             transform=transform,
@@ -1592,9 +1603,28 @@ class ChordPitchesDataset(HarmonicDataset):
             self.target_pitch_type.append(pieces[0].get_chords()[0].pitch_type.value)
 
         for piece in pieces:
-            self.inputs.extend(piece.get_chord_note_inputs(window=window, for_chord_pitches=True))
+            reduced_piece: ScorePiece = piece
+            if merge_changes or merge_reduction is not None:
+                reduced_piece = get_score_piece_from_dict(
+                    reduced_piece.measures_df, reduced_piece.to_dict(), name=reduced_piece.name
+                )
+                if merge_reduction is not None:
+                    for chord in reduced_piece.get_chords():
+                        chord.chord_type = merge_reduction[chord.chord_type]
+                        if chord.inversion >= get_chord_inversion_count(chord.chord_type):
+                            chord.inversion = 0
+                reduced_piece.merge_chords(merge_changes)
+
+            self.inputs.extend(
+                reduced_piece.get_chord_note_inputs(window=window, for_chord_pitches=True)
+            )
             self.targets.extend(
-                np.array([chord.get_chord_pitches_target_vector() for chord in piece.get_chords()])
+                np.array(
+                    [
+                        chord.get_chord_pitches_target_vector()
+                        for chord in reduced_piece.get_chords()
+                    ]
+                )
             )
             self.is_default.extend(
                 [
@@ -1602,7 +1632,7 @@ class ChordPitchesDataset(HarmonicDataset):
                         chord.chord_pitches
                         == get_default_chord_pitches(chord.root, chord.chord_type, chord.pitch_type)
                     )
-                    for chord in piece.get_chords()
+                    for chord in reduced_piece.get_chords()
                 ]
             )
 
@@ -1934,7 +1964,7 @@ def get_dataset_splits(
     splits: Iterable[float] = (0.8, 0.1, 0.1),
     seed: int = None,
     changes: bool = False,
-    cpm_window: int = 2,
+    cpm_kwargs: Dict = {},
 ) -> Tuple[List[List[HarmonicDataset]], List[List[int]], List[List[Piece]]]:
     """
     Get datasets representing splits of the data in the given DataFrames.
@@ -1958,9 +1988,13 @@ def get_dataset_splits(
     changes : bool
         False to merge otherwise identical chords together when they differ only by chord
         changes. True to treat them as separate chord symbols.
-    cpm_window : int
-        The window padding to use for the CPM. That is, how many additional notes on either
-        side of each chord should be given to the model.
+    cpm_kwargs : Dict
+        Arguments to pass to the CPM data creation function. These include:
+            - window: The window padding to use for the CPM. That is, how many additional
+                notes on either side of each chord should be given to the model.
+            - merge_changes: True to merge chords which differ only by their changes.
+            - merge_reduction: A dictionary representing a chord type reduction to
+                apply before trying to merge chords.
 
     Returns
     -------
@@ -1991,7 +2025,7 @@ def get_dataset_splits(
             continue
 
         for dataset_index, dataset_class in enumerate(datasets):
-            kwargs = {} if dataset_class != ChordPitchesDataset else {"window": cpm_window}
+            kwargs = {} if dataset_class != ChordPitchesDataset else cpm_kwargs
             dataset_splits[dataset_index][split_index] = dataset_class(pieces, **kwargs)
 
     return dataset_splits, split_ids, split_pieces

@@ -243,19 +243,21 @@ def get_relative_pitch_index(input_note: np.ndarray, pitch_type: PitchType) -> i
 
 def is_in_chord(input_note: np.ndarray, pitch_type: PitchType = None) -> bool:
     """
-    _summary_
+    Detect if the note corresponding with the input note vector is within
+    its associated chord.
 
     Parameters
     ----------
     input_note : np.ndarray
-        _description_
-    pitch_type : PitchType, optional
-        _description_, by default None
+        The input note vector.
+    pitch_type : PitchType
+        The pitch type of the input note vector. This can be inferred from the vector's
+        length if not given.
 
     Returns
     -------
-    bool
-        _description_
+    is_in_chord : bool
+        True if the given note lies within the associated chord. False otherwise.
     """
     if pitch_type is None:
         pitch_type = infer_chord_vector_pitch_type(len(input_note), False, for_chord_pitches=True)
