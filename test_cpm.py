@@ -136,6 +136,7 @@ def evaluate_cpm(
                 cpm_non_chord_tone_add_threshold,
                 cpm_non_chord_tone_replace_threshold,
                 cpm.INPUT_PITCH,
+                no_aug_and_dim=merge_reduction == MAJOR_MINOR_REDUCTION,
             )
         else:
             chord_pitches = decode_cpm_outputs(
@@ -157,6 +158,7 @@ def evaluate_cpm(
                 cpm_non_chord_tone_add_threshold,
                 cpm_non_chord_tone_replace_threshold,
                 cpm.INPUT_PITCH,
+                no_aug_and_dim=merge_reduction == MAJOR_MINOR_REDUCTION,
             )
 
         processed_piece = get_score_piece_from_dict(

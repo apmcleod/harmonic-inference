@@ -822,6 +822,7 @@ def decode_cpm_note_based_outputs(
     cpm_non_chord_tone_add_threshold: float,
     cpm_non_chord_tone_replace_threshold: float,
     pitch_type: PitchType,
+    no_aug_and_dim: bool = False,
 ) -> List[List[List]]:
     """
     Given the stacked outputs from the CPM (size num_chords x num_pitches), and the default
@@ -856,6 +857,10 @@ def decode_cpm_note_based_outputs(
         in order to replace a chord tone in a given chord.
     pitch_type : PitchType
         The pitch type used in the outputs.
+    no_aug_and_dim : bool
+        True if the input vocabulary doesn't include augmented and diminished chords
+        (and therefore we should allow them to be derived through changes).
+        False otherwise.
 
     Returns
     -------
@@ -944,6 +949,7 @@ def decode_cpm_note_based_outputs(
             cpm_non_chord_tone_replace_threshold,
             pitch_type,
             add_pitches=False,
+            no_aug_and_dim=no_aug_and_dim,
         )
 
         return chord_pitches
@@ -1034,7 +1040,11 @@ def decode_cpm_note_based_outputs(
                             extra_pitch,
                             set(np.where(default == 1)[0]).union(set(dmM7_idxs)),
                             pitch_type,
-                            extra_pitch == M5_idx and triad_type == ChordType.MAJOR,
+                            (
+                                not no_aug_and_dim
+                                and extra_pitch == M5_idx
+                                and triad_type == ChordType.MAJOR
+                            ),
                             extra_pitch == d3_idx and triad_type == ChordType.DIMINISHED,
                         )
 
@@ -1148,6 +1158,7 @@ def decode_cpm_note_based_outputs(
                 cpm_non_chord_tone_add_threshold,
                 cpm_non_chord_tone_replace_threshold,
                 pitch_type,
+                no_aug_and_dim=no_aug_and_dim,
             )
         ):
             chord_pitches[i][window_idx][0] = full_window_pitches
@@ -1235,6 +1246,7 @@ def decode_cpm_outputs(
     cpm_non_chord_tone_replace_threshold: float,
     pitch_type: PitchType,
     add_pitches: bool = True,
+    no_aug_and_dim: bool = False,
 ) -> np.ndarray:
     """
     Given the stacked outputs from the CPM (size num_chords x num_pitches), and the default
@@ -1268,6 +1280,10 @@ def decode_cpm_outputs(
         The pitch type used in the outputs.
     add_pitches : bool
         True to add additional default tones which are not in any pitch.
+        False otherwise.
+    no_aug_and_dim : bool
+        True if the input vocabulary doesn't include augmented and diminished chords
+        (and therefore we should allow them to be derived through changes).
         False otherwise.
 
     Returns
@@ -1378,7 +1394,7 @@ def decode_cpm_outputs(
                 idx,
                 default_idxs,
                 pitch_type,
-                is_M5=triad_type == ChordType.MAJOR and idx == M5_idx,
+                is_M5=not no_aug_and_dim and triad_type == ChordType.MAJOR and idx == M5_idx,
                 is_d3=triad_type == ChordType.DIMINISHED and idx == d3_idx,
             )
             for idx in can_remove_idxs
