@@ -1046,6 +1046,7 @@ def decode_cpm_note_based_outputs(
                                 and triad_type == ChordType.MAJOR
                             ),
                             extra_pitch == d3_idx and triad_type == ChordType.DIMINISHED,
+                            no_aug_and_dim,
                         )
 
                         # Are the suspensions in right_extra?
@@ -1065,6 +1066,7 @@ def decode_cpm_note_based_outputs(
                                         pitch_type,
                                         False,
                                         False,
+                                        no_aug_and_dim,
                                     )
                                 )
                                 - right_all
@@ -1097,6 +1099,7 @@ def decode_cpm_note_based_outputs(
                             pitch_type,
                             False,
                             False,
+                            no_aug_and_dim,
                         )
 
                         # If None, this pitch is fine (it is an added tone already)
@@ -1172,6 +1175,7 @@ def get_neighbor_idxs(
     pitch_type: PitchType,
     is_M5: bool,
     is_d3: bool,
+    no_aug_and_dim: bool,
     minimum: int = 0,
     maximum: int = 2 * MAX_CHORD_PITCH_INTERVAL_TPC,
 ) -> np.ndarray:
@@ -1196,6 +1200,12 @@ def get_neighbor_idxs(
         represents its 3rd. In that case, a flat version of the given idx is
         returned as a potential neighbor, since (root, dd3, m5) is not another
         chord type.
+    no_aug_and_dim : bool
+        Whether the input vocabulary includes diminished and augmented chords.
+        If this valud is True (the input does not contain those chords),
+        a flat and sharp version of the input pitch will be included in the
+        returned neighbors. Otherwise, a sharp version will never be returned,
+        and a flat version will only be returned if is_M5 or is_d3 is True.
     minimum : int
         The smallest index of a neighbor note to return.
     maximum : int
@@ -1218,6 +1228,11 @@ def get_neighbor_idxs(
     else:
         # Include a flat version of the given note if is_M5 or is_d3.
         neighbors = [idx - 7] if (is_M5 or is_d3) and (minimum <= idx - 7 <= maximum) else []
+        if no_aug_and_dim:
+            if minimum <= idx - 7 <= maximum:
+                neighbors.append(idx - 7)
+            if minimum <= idx + 7 <= maximum:
+                neighbors.append(idx + 7)
 
         # Include altered versions of a 2nd up
         neighbor_up = idx + 2
@@ -1394,8 +1409,9 @@ def decode_cpm_outputs(
                 idx,
                 default_idxs,
                 pitch_type,
-                is_M5=not no_aug_and_dim and triad_type == ChordType.MAJOR and idx == M5_idx,
-                is_d3=triad_type == ChordType.DIMINISHED and idx == d3_idx,
+                not no_aug_and_dim and triad_type == ChordType.MAJOR and idx == M5_idx,
+                triad_type == ChordType.DIMINISHED and idx == d3_idx,
+                no_aug_and_dim,
             )
             for idx in can_remove_idxs
         ]
