@@ -404,8 +404,8 @@ if __name__ == "__main__":
 
     data_type = "test" if ARGS.test else "valid"
 
-    # Load data for ctm to get file_ids
-    h5_path = Path(ARGS.h5_dir / f"ChordTransitionDataset_{data_type}_seed_{ARGS.seed}.h5")
+    # Load data for cpm to get file_ids
+    h5_path = Path(ARGS.h5_dir / f"ChordPitchesDataset_{data_type}_seed_{ARGS.seed}.h5")
     if h5_path.exists():
         with h5py.File(h5_path, "r") as h5_file:
             if "file_ids" not in h5_file:
