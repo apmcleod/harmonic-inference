@@ -100,7 +100,7 @@ class HarmonicDataset(Dataset):
 
     def finalize_data(
         self,
-        data: Dict[str, np.array],
+        data: Dict[str, np.ndarray],
         item,
         transposition: int = None,
     ) -> Dict:
@@ -111,7 +111,7 @@ class HarmonicDataset(Dataset):
 
         Parameters
         ----------
-        data : Dict[str, np.array]
+        data : Dict[str, np.ndarray]
             The data dictionary.
         item : int
             The index (or other indexer) to load the correct hidden state.
@@ -158,13 +158,13 @@ class HarmonicDataset(Dataset):
             A transposition to be applied to the data, if any.
         """
 
-    def set_hidden_states(self, hidden_states: np.array):
+    def set_hidden_states(self, hidden_states: np.ndarray):
         """
         Load hidden states into this Dataset object.
 
         Parameters
         ----------
-        hidden_states : np.array
+        hidden_states : np.ndarray
             The hidden states to load into this Dataset.
         """
         self.hidden_states = hidden_states
@@ -1808,23 +1808,23 @@ def h5_to_dataset(
     return dataset
 
 
-def pad_array(array: List[np.array]) -> Tuple[np.array, np.array]:
+def pad_array(array: List[np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
     """
     Pad the given list, whose elements must only match in dimensions past the first, into a
     numpy nd-array of equal dimensions.
 
     Parameters
     ----------
-    array : List[np.array]
+    array : List[np.ndarray]
         A list of numpy ndarrays. The shape of each ndarray must match in every dimension except
         the first.
 
     Returns
     -------
-    padded_array : np.array
+    padded_array : np.ndarray
         The given list, packed into a numpy nd-array. Since the first dimension of each given
         nested numpy array need not be equal, each is padded with zeros to match the longest.
-    array_lengths : np.array
+    array_lengths : np.ndarray
         The size of the first dimension of each nested numpy nd-array before padding. Using this,
         the original array[i] can be gotten with padded_array[i, :array_lengths[i]].
     """
