@@ -812,6 +812,225 @@ class NoteBasedChordPitchesModel(ChordPitchesModel):
         return torch.sigmoid(output)
 
 
+def can_merge(
+    pitches1: np.ndarray,
+    pitches2: np.ndarray,
+    default: np.ndarray,
+    default_no_7th: np.ndarray,
+    triad_type: ChordType,
+    pitch_type: PitchType,
+    no_aug_and_dim: bool,
+) -> bool:
+    """
+    Check if two chord pitches arrays can be merged or not.
+
+    Parameters
+    ----------
+    pitches1, pitches2 : np.ndarray
+        The two chord pitches arrays, to check for mergability. The ordering of
+        these two arrays does not matter.
+    default : np.ndarray
+        The default chord pitches vector for this chord.
+    default_no_7th : np.ndarray
+        The default chord pitches vector for this chord, without any 7th.
+    triad_type : ChordType
+        The triad type of this chord.
+    pitch_type : PitchType
+        The pitch type being used.
+    no_aug_and_dim : bool
+        True if the given chord vocabulary doesn't include aug or dim triads.
+        False otherwise.
+
+    Returns
+    -------
+    can_merge : bool
+        True if the two arrays can be merged (by a logical or). False if there
+        must be a chord split.
+    """
+    set1 = set(np.where(pitches1 == 1)[0])
+    set2 = set(np.where(pitches2 == 1)[0])
+
+    in_both = set1.intersection(set2)
+    in_1_not_2 = set1 - in_both
+    in_2_not_1 = set2 - in_both
+
+    if len(in_1_not_2) == 0 or len(in_2_not_1) == 0:
+        # One is a subset of the other. Merging is fine.
+        return True
+
+    M5_idx = CHORD_PITCHES[pitch_type][ChordType.MAJOR][2]
+    if pitch_type == PitchType.TPC:
+        M5_idx += len(default) // 2 - TPC_C
+    d3_idx = CHORD_PITCHES[pitch_type][ChordType.DIMINISHED][1]
+    if pitch_type == PitchType.TPC:
+        d3_idx += len(default) // 2 - TPC_C
+    dmM7_idxs = [
+        CHORD_PITCHES[pitch_type][ChordType.DIM7][-1],
+        CHORD_PITCHES[pitch_type][ChordType.MAJ_MIN7][-1],
+        CHORD_PITCHES[pitch_type][ChordType.MAJ_MAJ7][-1],
+    ]
+    if pitch_type == PitchType.TPC:
+        dmM7_idxs = [idx + len(default) // 2 - TPC_C for idx in dmM7_idxs]
+
+    # Check every extra pitch for problems
+    for (left_extra, left_all), (right_extra, right_all) in itertools.permutations(
+        [(in_1_not_2, set1), (in_2_not_1, set2)]
+    ):
+        for extra_pitch in left_extra:
+            if default[extra_pitch] == 1:
+                # Extra pitch is default
+
+                # Find possible (non-default) suspensions of this pitch
+                possible_neighbors = get_neighbor_idxs(
+                    extra_pitch,
+                    set(np.where(default == 1)[0]).union(set(dmM7_idxs)),
+                    pitch_type,
+                    (
+                        not no_aug_and_dim
+                        and extra_pitch == M5_idx
+                        and triad_type == ChordType.MAJOR
+                    ),
+                    extra_pitch == d3_idx and triad_type == ChordType.DIMINISHED,
+                    no_aug_and_dim,
+                )
+
+                # Are the suspensions in right_extra?
+                possible_neighbors = [
+                    neighbor for neighbor in possible_neighbors if neighbor in right_extra
+                ]
+
+                # Does the neighbor suspend/replace extra_pitch (and not some other tone)?
+                # If so, return False
+                for neighbor_pitch in possible_neighbors:
+                    # Pitches the neighbor_pitch might be replacing
+                    possible_replacees = list(
+                        set(
+                            get_neighbor_idxs(
+                                neighbor_pitch,
+                                np.where(default == 0)[0],
+                                pitch_type,
+                                False,
+                                False,
+                                no_aug_and_dim,
+                            )
+                        )
+                        - right_all
+                    )
+
+                    if len(possible_replacees) == 1 and possible_replacees[0] == extra_pitch:
+                        # neighbor_pitch definitely replaces extra_pitch
+                        return False
+
+            else:
+                # Extra pitch is non-default
+
+                # Special handling to allow added 7ths on all triads
+                if extra_pitch in dmM7_idxs and all(default == default_no_7th):
+
+                    if any([pitch in dmM7_idxs for pitch in right_extra]):
+                        # There's another 7th in right already, no merge
+                        return False
+
+                    # Otherwise, merging this pitch is fine.
+                    continue
+
+                # Find what (default) tones this one might replace
+                possible_replacees = get_neighbor_idxs(
+                    extra_pitch,
+                    set(np.where(default == 0)[0]).union(left_all),
+                    pitch_type,
+                    False,
+                    False,
+                    no_aug_and_dim,
+                )
+
+                # If None, this pitch is fine (it is an added tone already)
+                if len(possible_replacees) == 0:
+                    continue
+
+                # If not None, and all are already in right, return False
+                if all([pitch in right_all for pitch in possible_replacees]):
+                    return False
+
+    # No problems found: can merge!
+    return True
+
+
+def merge_window_pitches(
+    window_pitches: np.ndarray,
+    default: np.ndarray,
+    default_no_7th: np.ndarray,
+    triad_type: ChordType,
+    pitch_type: PitchType,
+    no_aug_and_dim: bool = False,
+) -> List[List]:
+    """
+    Merge the windowed chord pitches into a single chord_pitches array.
+
+    Parameters
+    ----------
+    window_pitches : np.ndarray
+        One binary chord-pitches array per window in this chord. These will be
+        merged together.
+    default : np.ndarray
+        The default chord pitches array for this chord.
+    default_no_7th : np.ndarray
+        The default chord pitches array for this chord without 7ths.
+    triad_type : ChordType
+        The triad type of this chord.
+    pitch_type : PitchType
+        The pitch type used for this chord.
+    no_aug_and_dim : bool
+        True if the chord vocabulary uses no aug or dim triads. False otherwise.
+
+    Returns
+    -------
+    chord_pitches : List[List[np.ndarray, int]]
+        A List of the different chord pitches for this chord.
+        Each element of the returned list is a duple containing:
+            - The chord pitches.
+            - The (exclusive) index to which this chord pitches array is valid.
+        A chord which has no change in chord pitches during its duration
+        will return a single-element list, whose index is the length of window_pitches.
+    """
+
+    M5_idx = CHORD_PITCHES[pitch_type][ChordType.MAJOR][2]
+    if pitch_type == PitchType.TPC:
+        M5_idx += window_pitches.shape[1] // 2 - TPC_C
+    d3_idx = CHORD_PITCHES[pitch_type][ChordType.DIMINISHED][1]
+    if pitch_type == PitchType.TPC:
+        d3_idx += window_pitches.shape[1] // 2 - TPC_C
+    dmM7_idxs = [
+        CHORD_PITCHES[pitch_type][ChordType.DIM7][-1],
+        CHORD_PITCHES[pitch_type][ChordType.MAJ_MIN7][-1],
+        CHORD_PITCHES[pitch_type][ChordType.MAJ_MAJ7][-1],
+    ]
+    if pitch_type == PitchType.TPC:
+        dmM7_idxs = [idx + window_pitches.shape[1] // 2 - TPC_C for idx in dmM7_idxs]
+
+    # List of [chord_pitches, end_index] entries
+    merged_chord_pitches = [[window_pitches[0], 1]]
+
+    for pitches in window_pitches[1:]:
+        if can_merge(
+            pitches,
+            merged_chord_pitches[-1][0],
+            default,
+            default_no_7th,
+            triad_type,
+            pitch_type,
+            no_aug_and_dim=no_aug_and_dim,
+        ):
+            merged_chord_pitches[-1][0] = np.clip(
+                np.add(merged_chord_pitches[-1][0], pitches), 0, 1
+            )
+            merged_chord_pitches[-1][1] += 1
+        else:
+            merged_chord_pitches.append([pitches, merged_chord_pitches[-1][1] + 1])
+
+    return merged_chord_pitches
+
+
 def decode_cpm_note_based_outputs(
     cpm_note_based_outputs: np.ndarray,
     all_notes: List[List[Note]],
@@ -955,179 +1174,6 @@ def decode_cpm_note_based_outputs(
 
         return chord_pitches
 
-    def merge_window_pitches(
-        window_pitches: np.ndarray,
-        default: np.ndarray,
-        default_no_7th: np.ndarray,
-        triad_type: ChordType,
-    ) -> List[List]:
-        """
-        Merge the windowed chord pitches into a single chord_pitches array.
-
-        Parameters
-        ----------
-        window_pitches : np.ndarray
-            One binary chord-pitches array per window in this chord. These will be
-            merged together.
-        default : np.ndarray
-            The default chord pitches array for this chord.
-        default_no_7th : np.ndarray
-            The default chord pitches array for this chord without 7ths.
-        triad_type : ChordType
-            The triad type of this chord.
-
-        Returns
-        -------
-        chord_pitches : List[List[np.ndarray, int]]
-            A List of the different chord pitches for this chord.
-            Each element of the returned list is a duple containing:
-                - The chord pitches.
-                - The (exclusive) index to which this chord pitches array is valid.
-            A chord which has no change in chord pitches during its duration
-            will return a single-element list, whose index is the length of window_pitches.
-        """
-
-        M5_idx = CHORD_PITCHES[pitch_type][ChordType.MAJOR][2]
-        if pitch_type == PitchType.TPC:
-            M5_idx += window_pitches.shape[1] // 2 - TPC_C
-        d3_idx = CHORD_PITCHES[pitch_type][ChordType.DIMINISHED][1]
-        if pitch_type == PitchType.TPC:
-            d3_idx += window_pitches.shape[1] // 2 - TPC_C
-        dmM7_idxs = [
-            CHORD_PITCHES[pitch_type][ChordType.DIM7][-1],
-            CHORD_PITCHES[pitch_type][ChordType.MAJ_MIN7][-1],
-            CHORD_PITCHES[pitch_type][ChordType.MAJ_MAJ7][-1],
-        ]
-        if pitch_type == PitchType.TPC:
-            dmM7_idxs = [idx + window_pitches.shape[1] // 2 - TPC_C for idx in dmM7_idxs]
-
-        def can_merge(pitches1: np.ndarray, pitches2: np.ndarray) -> bool:
-            """
-            Check if two chord pitches arrays can be merged or not.
-
-            Parameters
-            ----------
-            pitches1, pitches2 : np.ndarray
-                The two chord pitches arrays, to check for mergability. The ordering of
-                these two arrays does not matter.
-
-            Returns
-            -------
-            can_merge : bool
-                True if the two arrays can be merged (by a logical or). False if there
-                must be a chord split.
-            """
-            set1 = set(np.where(pitches1 == 1)[0])
-            set2 = set(np.where(pitches2 == 1)[0])
-
-            in_both = set1.intersection(set2)
-            in_1_not_2 = set1 - in_both
-            in_2_not_1 = set2 - in_both
-
-            if len(in_1_not_2) == 0 or len(in_2_not_1) == 0:
-                # One is a subset of the other. Merging is fine.
-                return True
-
-            # Check every extra pitch for problems
-            for (left_extra, left_all), (right_extra, right_all) in itertools.permutations(
-                [(in_1_not_2, set1), (in_2_not_1, set2)]
-            ):
-                for extra_pitch in left_extra:
-                    if default[extra_pitch] == 1:
-                        # Extra pitch is default
-
-                        # Find possible (non-default) suspensions of this pitch
-                        possible_neighbors = get_neighbor_idxs(
-                            extra_pitch,
-                            set(np.where(default == 1)[0]).union(set(dmM7_idxs)),
-                            pitch_type,
-                            (
-                                not no_aug_and_dim
-                                and extra_pitch == M5_idx
-                                and triad_type == ChordType.MAJOR
-                            ),
-                            extra_pitch == d3_idx and triad_type == ChordType.DIMINISHED,
-                            no_aug_and_dim,
-                        )
-
-                        # Are the suspensions in right_extra?
-                        possible_neighbors = [
-                            neighbor for neighbor in possible_neighbors if neighbor in right_extra
-                        ]
-
-                        # Does the neighbor suspend/replace extra_pitch (and not some other tone)?
-                        # If so, return False
-                        for neighbor_pitch in possible_neighbors:
-                            # Pitches the neighbor_pitch might be replacing
-                            possible_replacees = list(
-                                set(
-                                    get_neighbor_idxs(
-                                        neighbor_pitch,
-                                        np.where(default == 0)[0],
-                                        pitch_type,
-                                        False,
-                                        False,
-                                        no_aug_and_dim,
-                                    )
-                                )
-                                - right_all
-                            )
-
-                            if (
-                                len(possible_replacees) == 1
-                                and possible_replacees[0] == extra_pitch
-                            ):
-                                # neighbor_pitch definitely replaces extra_pitch
-                                return False
-
-                    else:
-                        # Extra pitch is non-default
-
-                        # Special handling to allow added 7ths on all triads
-                        if extra_pitch in dmM7_idxs and all(default == default_no_7th):
-
-                            if any([pitch in dmM7_idxs for pitch in right_extra]):
-                                # There's another 7th in right already, no merge
-                                return False
-
-                            # Otherwise, merging this pitch is fine.
-                            continue
-
-                        # Find what (default) tones this one might replace
-                        possible_replacees = get_neighbor_idxs(
-                            extra_pitch,
-                            set(np.where(default == 0)[0]).union(left_all),
-                            pitch_type,
-                            False,
-                            False,
-                            no_aug_and_dim,
-                        )
-
-                        # If None, this pitch is fine (it is an added tone already)
-                        if len(possible_replacees) == 0:
-                            continue
-
-                        # If not None, and all are already in right, return False
-                        if all([pitch in right_all for pitch in possible_replacees]):
-                            return False
-
-            # No problems found: can merge!
-            return True
-
-        # List of [chord_pitches, end_index] entries
-        merged_chord_pitches = [[window_pitches[0], 1]]
-
-        for pitches in window_pitches[1:]:
-            if can_merge(pitches, merged_chord_pitches[-1][0]):
-                merged_chord_pitches[-1][0] = np.clip(
-                    np.add(merged_chord_pitches[-1][0], pitches), 0, 1
-                )
-                merged_chord_pitches[-1][1] += 1
-            else:
-                merged_chord_pitches.append([pitches, merged_chord_pitches[-1][1] + 1])
-
-        return merged_chord_pitches
-
     chord_pitches = [None] * len(cpm_note_based_outputs)
     for i, (cpm_note_based_output, notes, chord, default, default_no_7th, triad_type,) in enumerate(
         zip(
@@ -1149,7 +1195,14 @@ def decode_cpm_note_based_outputs(
             get_windows(chord.onset, chord.offset, notes),
         )
 
-        chord_pitches[i] = merge_window_pitches(window_pitches, default, default_no_7th, triad_type)
+        chord_pitches[i] = merge_window_pitches(
+            window_pitches,
+            default,
+            default_no_7th,
+            triad_type,
+            pitch_type,
+            no_aug_and_dim=no_aug_and_dim,
+        )
         num_windows = len(chord_pitches[i])
         # Add back extra non-present chord tones, etc.
         for window_idx, full_window_pitches in enumerate(
