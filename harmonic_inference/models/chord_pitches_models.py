@@ -1515,6 +1515,7 @@ def get_rule_based_cpm_outputs(
     pitch_type: PitchType,
     no_7ths: bool = False,
     no_aug_and_dim: bool = False,
+    suspensions: bool = False,
 ) -> List[List[List]]:
     """
     Get chord_pitches arrays from the given lists of notes and chords from the rule-based
@@ -1528,6 +1529,12 @@ def get_rule_based_cpm_outputs(
         - Allow for bb3 if [(Dim triad) or (no_aug_or_dim and Min triad)] and no b3 in window.
         - Allow for b5 if Maj triad (and no 5 or #5 in window).
       - Otherwise, all tones are default.
+
+    Additional rules if suspensions is True:
+      - If no 5th:
+        - If a 6th is present, add it.
+      - If no 3rd:
+        - If a 4th is present, add it.
 
     Parameters
     ----------
@@ -1548,6 +1555,8 @@ def get_rule_based_cpm_outputs(
         True if the input vocabulary doesn't include augmented and diminished chords
         (and therefore we should allow them to be derived through changes).
         False otherwise.
+    suspensions : bool
+        If True, add the additional suspension rules described above.
 
     Returns
     -------
@@ -1581,11 +1590,6 @@ def get_rule_based_cpm_outputs(
         zip(defaults, all_notes, chords, triad_types)
     ):
         windows = get_windows(chord.onset, chord.offset, notes)
-
-        if not no_7ths and not no_aug_and_dim:
-            # Just return default for each chord
-            chord_pitches[i] = [[default, len(windows)]]
-            continue
 
         # Generate window pitches for each window
         window_pitches = np.zeros((len(windows), len(default)))
@@ -1652,6 +1656,30 @@ def get_rule_based_cpm_outputs(
                 # bb3 in dim triad if no m3 yet
                 if m3_idx not in pitches and (m3_idx - 7) in pitches:
                     window_pitches[window_idx][m3_idx - 7] = 1
+
+            # Check for suspended 5th or 3rd
+            if suspensions:
+                # Suspended 5th:
+                if (
+                    p5_idx not in pitches
+                    and (p5_idx + 7) not in pitches
+                    and (p5_idx - 7) not in pitches
+                ):
+                    mM6_idxs = set([p5_idx + 2, p5_idx - 5])
+                    all_6ths = pitches.intersection(mM6_idxs)
+                    if len(all_6ths) == 1:
+                        window_pitches[window_idx][list(all_6ths)[0]] = 1
+
+                # Suspended 3rd:
+                if (
+                    m3_idx not in pitches
+                    and (m3_idx + 7) not in pitches
+                    and (m3_idx - 7) not in pitches
+                ):
+                    pda4_idxs = set([p5_idx - 2, p5_idx + 5, p5_idx - 9])
+                    all_4ths = pitches.intersection(pda4_idxs)
+                    if len(all_4ths) == 1:
+                        window_pitches[window_idx][list(all_4ths)[0]] = 1
 
         chord_pitches[i] = merge_window_pitches(
             window_pitches,

@@ -49,6 +49,7 @@ def evaluate_cpm(
     merge_changes: bool = False,
     merge_reduction: Dict[ChordType, ChordType] = None,
     rule_based: bool = False,
+    suspensions: bool = False,
 ) -> None:
     """
     _summary_
@@ -80,6 +81,8 @@ def evaluate_cpm(
         such chords in its post-processing step.
     rule_based : bool
         Generate the rule-based output rather than running any CPM.
+    suspensions : bool
+        Look for 6 and 4 suspensions in the rule-based system.
     """
     for piece in tqdm(pieces):
         reduced_piece: ScorePiece = piece
@@ -131,6 +134,7 @@ def evaluate_cpm(
                 cpm.INPUT_PITCH,
                 no_7ths=merge_reduction is not None,
                 no_aug_and_dim=merge_reduction == MAJOR_MINOR_REDUCTION,
+                suspensions=suspensions,
             )
 
         elif isinstance(cpm, NoteBasedChordPitchesModel):
@@ -287,6 +291,12 @@ if __name__ == "__main__":
         "--rule-based",
         action="store_true",
         help="Generate the rule-based output.",
+    )
+
+    parser.add_argument(
+        "--sus",
+        action="store_true",
+        help="If using the --rule-based CPM, also look for 6 and 4 suspensions.",
     )
 
     parser.add_argument(
@@ -467,4 +477,5 @@ if __name__ == "__main__":
             else None
         ),
         rule_based=ARGS.rule_based,
+        suspensions=ARGS.sus,
     )
