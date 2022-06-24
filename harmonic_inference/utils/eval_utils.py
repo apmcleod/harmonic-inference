@@ -33,6 +33,7 @@ def log_results_df_eval(results_df: pd.DataFrame):
     chord_acc_triad = evaluate_features(results_df, ["triad", "root", "inversion"])
     chord_acc_triad_no_inv = evaluate_features(results_df, ["triad", "root"])
     chord_acc_root_only = evaluate_features(results_df, ["root"])
+    chord_acc_pitches_only = evaluate_features(results_df, ["pitches"])
 
     pitch_acc_default = evaluate_features(
         results_df,
@@ -68,6 +69,7 @@ def log_results_df_eval(results_df: pd.DataFrame):
     logging.info("Chord accuracy, triads = %s", chord_acc_triad)
     logging.info("Chord accuracy, triad, no inversions = %s", chord_acc_triad_no_inv)
     logging.info("Chord accuracy, root only = %s", chord_acc_root_only)
+    logging.info("Chord accuracy, pitches only = %s", chord_acc_pitches_only)
 
     logging.info(
         "Chord pitch accuracy on correct chord root+type, GT default only = %s",
