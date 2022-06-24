@@ -1,5 +1,6 @@
 """Models that generate probability distributions over the pitches present in a given chord."""
 import itertools
+import logging
 from abc import ABC, abstractmethod
 from fractions import Fraction
 from typing import Any, Dict, List, Tuple, Union
@@ -1449,5 +1450,80 @@ def decode_cpm_outputs(
             for to_add in get_best_pitches(cpm_outputs[i], can_remove_idxs, can_replace_neighbors):
                 if add_pitches or to_add not in can_remove_idxs:
                     chord_pitches[i, to_add] = 1
+
+    return chord_pitches
+
+
+def get_rule_based_cpm_outputs(
+    all_notes: List[List[Note]],
+    chords: List[Chord],
+    defaults: np.ndarray,
+    triad_types: List[ChordType],
+    pitch_type: PitchType,
+    no_7ths: bool = False,
+    no_aug_and_dim: bool = False,
+) -> List[List[List]]:
+    """
+    Get chord_pitches arrays from the given lists of notes and chords from the rule-based
+    system. The rules are:
+      - If no_7ths:
+        - Any window containing one (and only one) 7th is considered to contain that 7th.
+      - If no_aug_or_dim:
+        - Any Maj window containing a #5 with no 5 will include that 5.
+        - Any Min window containing a b5 with no 5 will include that 5.
+      - Otherwise, all tones are default.
+
+    Parameters
+    ----------
+    all_notes : List[List[Note]]
+        A List of the notes in each chord's window.
+    chords : List[Chord]
+        The chords in for the piece.
+    defaults : List[np.ndarray]
+        A binary array for each chord, encoding the default output, if there were no
+        suspensions or alterations.
+    triad_types : List[ChordType]
+        A list of the triad reduced type of each chord.
+    pitch_type : PitchType
+        The pitch type used in the outputs.
+    no_7ths : bool
+        True if the input vocabulary doesn't include 7th chords. False otherwise.
+    no_aug_and_dim : bool
+        True if the input vocabulary doesn't include augmented and diminished chords
+        (and therefore we should allow them to be derived through changes).
+        False otherwise.
+
+    Returns
+    -------
+    chord_pitches : List[List[List[np.ndarray, int]]]
+        The rule-based output after its heuristic logic.
+        For each chord:
+            A List of "duples" (as length-2 lists) including:
+                - A chord_pitches array (binary length num_rel_pitches).
+                - An (exclusive) index to which window (within that chord)
+                  the chord pitches array is valid.
+    """
+    if pitch_type == PitchType.MIDI:
+        raise ValueError("The Rule-Based CPM is only well-defined with TPCs (not MIDI pitch).")
+
+    if no_aug_and_dim and not no_7ths:
+        logging.warning("no_aug_and_dim is True but no_7ths is False. Setting no_7ths to True.")
+        no_7ths = True
+
+    chord_pitches = []
+
+    for default, notes, chord, triad_type in zip(defaults, all_notes, chords, triad_types):
+        windows = get_windows(chord.onset, chord.offset, notes)
+
+        if not no_7ths and not no_aug_and_dim:
+            # Just return default for each chord
+            chord_pitches.append([[default, len(windows)]])
+            continue
+
+        if not no_aug_and_dim:
+            # No 7ths
+            pass
+
+        # No aug and dim
 
     return chord_pitches
