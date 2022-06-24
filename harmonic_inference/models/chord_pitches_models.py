@@ -1524,6 +1524,9 @@ def get_rule_based_cpm_outputs(
       - If no_aug_or_dim:
         - Any Maj window containing a #5 with no 5 will include that 5.
         - Any Min window containing a b5 with no 5 will include that 5.
+      - Special handling for aug 6 chords:
+        - Allow for bb3 if [(Dim triad) or (no_aug_or_dim and Min triad)] and no b3 in window.
+        - Allow for b5 if Maj triad (and no 5 or #5 in window).
       - Otherwise, all tones are default.
 
     Parameters
@@ -1563,20 +1566,116 @@ def get_rule_based_cpm_outputs(
         logging.warning("no_aug_and_dim is True but no_7ths is False. Setting no_7ths to True.")
         no_7ths = True
 
-    chord_pitches = []
+    dmM7_idxs = [
+        CHORD_PITCHES[pitch_type][ChordType.DIM7][-1],
+        CHORD_PITCHES[pitch_type][ChordType.MAJ_MIN7][-1],
+        CHORD_PITCHES[pitch_type][ChordType.MAJ_MAJ7][-1],
+    ]
+    dmM7_idxs = [idx + len(defaults[0]) // 2 - TPC_C for idx in dmM7_idxs]
+    p5_idx = CHORD_PITCHES[pitch_type][ChordType.MAJOR][-1] + len(defaults[0]) // 2 - TPC_C
+    m3_idx = CHORD_PITCHES[pitch_type][ChordType.MINOR][1] + len(defaults[0]) // 2 - TPC_C
 
-    for default, notes, chord, triad_type in zip(defaults, all_notes, chords, triad_types):
+    chord_pitches = [None] * len(chords)
+
+    for i, (default, notes, chord, triad_type) in enumerate(
+        zip(defaults, all_notes, chords, triad_types)
+    ):
         windows = get_windows(chord.onset, chord.offset, notes)
 
         if not no_7ths and not no_aug_and_dim:
             # Just return default for each chord
-            chord_pitches.append([[default, len(windows)]])
+            chord_pitches[i] = [[default, len(windows)]]
             continue
 
-        if not no_aug_and_dim:
-            # No 7ths
-            pass
+        # Generate window pitches for each window
+        window_pitches = np.zeros((len(windows), len(default)))
+        for window_idx, (start, end) in enumerate(windows):
 
-        # No aug and dim
+            # Get the set of present pitches in this window
+            pitches = set()
+            for note in notes:
+                if note is None or note.onset >= end or note.offset <= start:
+                    continue
+
+                try:
+                    relative_pitch = absolute_to_relative(
+                        note.pitch_class, chord.root, pitch_type, False, pad=True
+                    )
+                except ValueError:
+                    # Note is outside of range
+                    continue
+
+                relative_pitch -= int(
+                    (
+                        NUM_RELATIVE_PITCHES[PitchType.TPC][True]
+                        - 2 * MAX_CHORD_PITCH_INTERVAL_TPC
+                        - 1
+                    )
+                    / 2
+                )
+
+                if 0 <= relative_pitch < len(default):
+                    pitches.add(relative_pitch)
+
+            # Add all present default pitches
+            for pitch in pitches:
+                if default[pitch] == 1:
+                    window_pitches[window_idx][pitch] = 1
+
+            if no_7ths:
+                # If there is only a single 7th, add it
+                all_7ths = pitches.intersection(set(dmM7_idxs))
+                if len(all_7ths) == 1:
+                    window_pitches[window_idx][list(all_7ths)[0]] = 1
+
+            if no_aug_and_dim:
+                # If Major, check for #5 without 5
+                if triad_type == ChordType.MAJOR:
+                    if p5_idx not in pitches and (p5_idx + 7) in pitches:
+                        window_pitches[window_idx][p5_idx + 7] = 1
+
+                # If Minor, check for b5 without 5
+                elif triad_type == ChordType.MINOR:
+                    if p5_idx not in pitches and (p5_idx - 7) in pitches:
+                        window_pitches[window_idx][p5_idx - 7] = 1
+
+            # Check for aug 6ths
+            if triad_type == ChordType.MAJOR:
+                # b5 in major triad if no 5 or #5 yet
+                if p5_idx not in pitches and (p5_idx + 7) not in pitches:
+                    if (p5_idx - 7) in pitches:
+                        window_pitches[window_idx][p5_idx - 7] = 1
+
+            if triad_type == ChordType.DIMINISHED or (
+                triad_type == ChordType.MINOR and no_aug_and_dim
+            ):
+                # bb3 in dim triad if no m3 yet
+                if m3_idx not in pitches and (m3_idx - 7) in pitches:
+                    window_pitches[window_idx][m3_idx - 7] = 1
+
+        chord_pitches[i] = merge_window_pitches(
+            window_pitches,
+            default,
+            default,  # Ok because if there are 7ths, we won't get here
+            triad_type,
+            pitch_type,
+            no_aug_and_dim=no_aug_and_dim,
+        )
+        num_windows = len(chord_pitches[i])
+        # Add back extra non-present chord tones, etc.
+        for window_idx, full_window_pitches in enumerate(
+            decode_cpm_outputs(
+                np.vstack([chord_pitches[i][j][0] for j in range(num_windows)]),
+                np.tile(default, (num_windows, 1)),
+                np.tile(default, (num_windows, 1)),
+                [triad_type] * num_windows,
+                0.5,
+                0.5,
+                0.5,
+                pitch_type,
+                no_aug_and_dim=no_aug_and_dim,
+            )
+        ):
+            chord_pitches[i][window_idx][0] = full_window_pitches
 
     return chord_pitches

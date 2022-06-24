@@ -26,6 +26,7 @@ from harmonic_inference.models.chord_pitches_models import (
     NoteBasedChordPitchesModel,
     decode_cpm_note_based_outputs,
     decode_cpm_outputs,
+    get_rule_based_cpm_outputs,
 )
 from harmonic_inference.models.joint_model import (
     CPM_CHORD_TONE_THRESHOLD_DEFAULT,
@@ -47,6 +48,7 @@ def evaluate_cpm(
     cpm_non_chord_tone_replace_threshold: float = CPM_NON_CHORD_TONE_REPLACE_THRESHOLD_DEFAULT,
     merge_changes: bool = False,
     merge_reduction: Dict[ChordType, ChordType] = None,
+    rule_based: bool = False,
 ) -> None:
     """
     _summary_
@@ -76,6 +78,8 @@ def evaluate_cpm(
         Merge chords which no longer differ after this chord type reduction together
         as input. The targets will remain unchanged, so the CPM will ideally split
         such chords in its post-processing step.
+    rule_based : bool
+        Generate the rule-based output rather than running any CPM.
     """
     for piece in tqdm(pieces):
         reduced_piece: ScorePiece = piece
@@ -93,26 +97,43 @@ def evaluate_cpm(
         dataset = ChordPitchesDataset([reduced_piece], **cpm.get_dataset_kwargs())
         dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
 
-        outputs = []
-        note_outputs = []
-        for batch in dl:
-            if isinstance(cpm, NoteBasedChordPitchesModel):
-                output, note_output = cpm.get_output(batch, return_notes=True)
-                outputs.extend(output.numpy())
-                note_outputs.extend(note_output.numpy())
+        if not rule_based:
+            outputs = []
+            note_outputs = []
+            for batch in dl:
+                if isinstance(cpm, NoteBasedChordPitchesModel):
+                    output, note_output = cpm.get_output(batch, return_notes=True)
+                    outputs.extend(output.numpy())
+                    note_outputs.extend(note_output.numpy())
+                else:
+                    outputs.extend(cpm.get_output(batch).numpy())
+
+            # Stack all outputs
+            lengths = np.array([len(n) for n in note_outputs])
+            if np.all(lengths == lengths[0]):
+                note_outputs_np = np.vstack(note_outputs)
             else:
-                outputs.extend(cpm.get_output(batch).numpy())
+                note_outputs_np = np.zeros((len(note_outputs), np.max(lengths)))
+                for i, note_output in enumerate(note_outputs):
+                    note_outputs_np[i][: len(note_output)] = note_output
 
-        # Stack all outputs
-        lengths = np.array([len(n) for n in note_outputs])
-        if np.all(lengths == lengths[0]):
-            note_outputs_np = np.vstack(note_outputs)
-        else:
-            note_outputs_np = np.zeros((len(note_outputs), np.max(lengths)))
-            for i, note_output in enumerate(note_outputs):
-                note_outputs_np[i][: len(note_output)] = note_output
+        if rule_based:
+            chord_pitches = get_rule_based_cpm_outputs(
+                reduced_piece.get_chord_note_inputs(window=dataset.window[0], notes_only=True),
+                reduced_piece.get_chords(),
+                np.vstack(
+                    [
+                        chord.get_chord_pitches_target_vector(default=True)
+                        for chord in reduced_piece.get_chords()
+                    ]
+                ),
+                [TRIAD_REDUCTION[chord.chord_type] for chord in reduced_piece.get_chords()],
+                cpm.INPUT_PITCH,
+                no_7ths=merge_reduction is not None,
+                no_aug_and_dim=merge_reduction == MAJOR_MINOR_REDUCTION,
+            )
 
-        if isinstance(cpm, NoteBasedChordPitchesModel):
+        elif isinstance(cpm, NoteBasedChordPitchesModel):
             chord_pitches = decode_cpm_note_based_outputs(
                 note_outputs_np,
                 reduced_piece.get_chord_note_inputs(window=dataset.window[0], notes_only=True),
@@ -138,6 +159,7 @@ def evaluate_cpm(
                 cpm.INPUT_PITCH,
                 no_aug_and_dim=merge_reduction == MAJOR_MINOR_REDUCTION,
             )
+
         else:
             chord_pitches = decode_cpm_outputs(
                 np.vstack(outputs),
@@ -259,6 +281,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Evaluate a cpm on some data.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
+    parser.add_argument(
+        "--rule-based",
+        action="store_true",
+        help="Generate the rule-based output.",
     )
 
     parser.add_argument(
@@ -438,4 +466,5 @@ if __name__ == "__main__":
             if ARGS.merge_reduction == "Mm"
             else None
         ),
+        rule_based=ARGS.rule_based,
     )
