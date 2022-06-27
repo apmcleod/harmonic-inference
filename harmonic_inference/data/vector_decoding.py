@@ -25,6 +25,7 @@ from harmonic_inference.utils.harmonic_constants import (
 from harmonic_inference.utils.harmonic_utils import (
     absolute_to_relative,
     get_chord_from_one_hot_index,
+    get_chord_inversion_count,
     get_chord_one_hot_index,
     get_pitch_string,
 )
@@ -514,6 +515,10 @@ def reduce_chord_one_hots(
             # However, it is expected to be [0, ...]
             # This absolute to relative call with key=0 converts this correctly.
             root = absolute_to_relative(root, 0, pitch_type, False, pad=pad)
+
+        # Some reduction may mess this up
+        if inversion >= get_chord_inversion_count(chord_type):
+            inversion = 0
 
         new_one_hot = get_chord_one_hot_index(
             chord_type,
