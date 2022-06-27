@@ -942,7 +942,7 @@ class State:
                 chord_pitches=None if len(chord_pitches) == 0 else chord_pitches,
             )
 
-        return ScorePiece(
+        piece = ScorePiece(
             piece.measures_df,
             piece.get_inputs(),
             chords,
@@ -952,6 +952,10 @@ class State:
             key_changes,
             piece.name,
         )
+
+        piece.split_chord_pitches_chords()
+
+        return piece
 
     def get_hash(self) -> Union[Tuple[Tuple[int, int]], int]:
         """

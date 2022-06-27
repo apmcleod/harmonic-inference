@@ -1604,10 +1604,23 @@ class HarmonicInferenceModel:
         current_state = state
         for pitches, chord in zip(reversed(chord_pitches), reversed(piece.get_chords())):
             if isinstance(pitches, List):
-                # Note-based output: Might need to split some states.
+                # Note-based output: Need to do some special handling
+                abs_pitches = []
 
-                # TODO
-                pass
+                for window_pitches, window_index in pitches:
+                    # Convert binary pitches array into root-relative indices
+                    pitch_indices = np.where(window_pitches)[0]
+                    if self.chord_pitches_model.INPUT_PITCH == PitchType.TPC:
+                        pitch_indices -= hc.MAX_CHORD_PITCH_INTERVAL_TPC
+
+                    # Convert root-relative indices into absolute pitches
+                    abs_pitches.append(
+                        [set([chord.root + pitch for pitch in pitch_indices]), window_index]
+                    )
+
+                # Remove list if only one window
+                if len(abs_pitches) == 1:
+                    abs_pitches = abs_pitches[0][0]
 
             else:
                 # Chord-Pitches output: can be written directly to states
@@ -1618,10 +1631,10 @@ class HarmonicInferenceModel:
                     pitch_indices -= hc.MAX_CHORD_PITCH_INTERVAL_TPC
 
                 # Convert root-relative indices into absolute pitches
-                abs_pitches = [chord.root + pitch for pitch in pitch_indices]
+                abs_pitches = set([chord.root + pitch for pitch in pitch_indices])
 
-                current_state.chord_pitches = abs_pitches
-                current_state = current_state.prev_state
+            current_state.chord_pitches = abs_pitches
+            current_state = current_state.prev_state
 
 
 class DebugLogger:
