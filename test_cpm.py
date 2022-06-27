@@ -18,6 +18,7 @@ from harmonic_inference.data.data_types import (
     PitchType,
 )
 from harmonic_inference.data.piece import Piece
+from harmonic_inference.models.chord_classifier_models import ChordClassifierModel
 from harmonic_inference.models.chord_pitches_models import (
     ChordPitchesModel,
     get_chord_pitches_in_piece,
@@ -42,6 +43,7 @@ def evaluate_cpm(
     merge_reduction: Dict[ChordType, ChordType] = None,
     rule_based: bool = False,
     suspensions: bool = False,
+    ccm: ChordClassifierModel = None,
 ) -> None:
     """
     Evaluate a CPM on a List of Pieces.
@@ -75,8 +77,16 @@ def evaluate_cpm(
         Generate the rule-based output rather than running any CPM.
     suspensions : bool
         Look for 6 and 4 suspensions in the rule-based system.
+    ccm : ChordClassificationModel
+        If given, a CCM to run on the input Piece first, and then use its outputs as input
+        to the given CPM.
     """
     for piece in tqdm(pieces):
+        if ccm is not None:
+            # Process the piece using the given ccm
+            # TODO
+            pass
+
         processed_piece = get_chord_pitches_in_piece(
             cpm,
             piece,
