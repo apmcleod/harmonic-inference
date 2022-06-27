@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Dict, List, Union
 
 import h5py
+import numpy as np
 import torch
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import harmonic_inference.utils.eval_utils as eu
@@ -17,7 +19,8 @@ from harmonic_inference.data.data_types import (
     ChordType,
     PitchType,
 )
-from harmonic_inference.data.piece import Piece
+from harmonic_inference.data.datasets import ChordClassificationDataset
+from harmonic_inference.data.piece import Piece, get_score_piece_from_dict
 from harmonic_inference.models.chord_classifier_models import ChordClassifierModel
 from harmonic_inference.models.chord_pitches_models import (
     ChordPitchesModel,
@@ -30,6 +33,7 @@ from harmonic_inference.models.joint_model import (
     add_joint_model_args,
 )
 from harmonic_inference.utils.data_utils import load_models_from_argparse, load_pieces
+from harmonic_inference.utils.harmonic_utils import get_chord_from_one_hot_index
 
 
 def evaluate_cpm(
@@ -77,19 +81,51 @@ def evaluate_cpm(
         Generate the rule-based output rather than running any CPM.
     suspensions : bool
         Look for 6 and 4 suspensions in the rule-based system.
-    ccm : ChordClassificationModel
+    ccm : ChordClassifierModel
         If given, a CCM to run on the input Piece first, and then use its outputs as input
         to the given CPM.
     """
     for piece in tqdm(pieces):
         if ccm is not None:
             # Process the piece using the given ccm
-            # TODO
-            pass
+
+            # Ensure no transposition happens at test time
+            ds_kwargs = ccm.get_dataset_kwargs()
+            ds_kwargs.update({"transposition_range": [0, 0]})
+
+            ccm_dataset = ChordClassificationDataset([piece], dummy_targets=True, **ds_kwargs)
+            ccm_loader = DataLoader(
+                ccm_dataset,
+                batch_size=ChordClassificationDataset.valid_batch_size,
+                shuffle=False,
+            )
+
+            # Get classifications
+            classifications = []
+            for batch in tqdm(ccm_loader, desc="Classifying chords"):
+                classifications.extend([output.numpy() for output in ccm.get_output(batch)])
+
+            one_hots = np.argmax(np.vstack(classifications), axis=-1)
+
+            # Copy CCM classifications into copy of Piece
+            ccm_piece = get_score_piece_from_dict(
+                piece.measures_df, piece.to_dict(), name=piece.name
+            )
+
+            chord_labels = get_chord_from_one_hot_index(
+                slice(None),
+                ccm.OUTPUT_PITCH,
+                ccm.use_inversions,
+                relative=False,
+                reduction=ccm.reduction,
+            )
+
+            for chord, one_hot in zip(ccm_piece.get_chords(), one_hots):
+                chord.root, chord.chord_type, chord.inversion = chord_labels[one_hot]
 
         processed_piece = get_chord_pitches_in_piece(
             cpm,
-            piece,
+            ccm_piece if ccm is not None else piece,
             cpm_chord_tone_threshold=cpm_chord_tone_threshold,
             cpm_non_chord_tone_add_threshold=cpm_non_chord_tone_add_threshold,
             cpm_non_chord_tone_replace_threshold=cpm_non_chord_tone_replace_threshold,
