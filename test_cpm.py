@@ -260,23 +260,35 @@ if __name__ == "__main__":
         help="The directory containing checkpoints for each type of model.",
     )
 
-    DEFAULT_PATH = os.path.join(
-        "`--checkpoint`", "cpm", "lightning_logs", "version_*", "checkpoints", "*.ckpt"
-    )
-    parser.add_argument(
-        "--cpm",
-        type=str,
-        default=DEFAULT_PATH,
-        help="A checkpoint file to load the cpm from.",
-    )
+    for model in ["cpm", "ccm"]:
+
+        DEFAULT_PATH = os.path.join(
+            "`--checkpoint`", model, "lightning_logs", "version_*", "checkpoints", "*.ckpt"
+        )
+        parser.add_argument(
+            f"--{model}",
+            type=str,
+            default=DEFAULT_PATH,
+            help=f"A checkpoint file to load the {model} from.",
+        )
+
+        parser.add_argument(
+            f"--{model}-version",
+            type=int,
+            default=None,
+            help=(
+                f"Specify a version number to load the model from. If given, --{model} is ignored"
+                " and the cpm will be loaded from "
+                + DEFAULT_PATH.replace("_*", f"_`--{model}-version`")
+            ),
+        )
 
     parser.add_argument(
-        "--cpm-version",
-        type=int,
-        default=None,
+        "--use-ccm",
+        action="store_true",
         help=(
-            "Specify a version number to load the model from. If given, --cpm is ignored"
-            " and the cpm will be loaded from " + DEFAULT_PATH.replace("_*", "_`--cpm-version`")
+            "Load and use a CCM to generate inputs, rather than using GT inputs. "
+            "If not given, all CCM-based checkpoint arguments are ignored."
         ),
     )
 
@@ -351,6 +363,8 @@ if __name__ == "__main__":
 
     # Load models
     cpm = load_models_from_argparse(ARGS, model_type="cpm")["cpm"]
+    if ARGS.use_ccm:
+        ccm = load_models_from_argparse(ARGS, model_type="ccm")["ccm"]
 
     data_type = "test" if ARGS.test else "valid"
 
@@ -390,4 +404,5 @@ if __name__ == "__main__":
         ),
         rule_based=ARGS.rule_based,
         suspensions=ARGS.sus,
+        ccm=ccm if ARGS.use_ccm else None,
     )
