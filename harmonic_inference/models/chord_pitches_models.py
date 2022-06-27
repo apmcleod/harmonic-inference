@@ -1714,21 +1714,19 @@ def get_rule_based_cpm_outputs(
     return chord_pitches
 
 
-def get_chord_pitches_in_piece(
+def get_chord_pitches(
     cpm: ChordPitchesModel,
-    piece: Piece,
+    reduced_piece: Piece,
     cpm_chord_tone_threshold: float,
     cpm_non_chord_tone_add_threshold: float,
     cpm_non_chord_tone_replace_threshold: float,
-    merge_changes: bool = False,
     merge_reduction: Dict[ChordType, ChordType] = None,
     rule_based: bool = False,
     suspensions: bool = False,
-) -> Piece:
+) -> Union[np.ndarray, List[List[List]]]:
     """
-    Run a CPM on an input Piece, and return a new Piece containing the outputs, where
-    chords have been reduced, processed, split, merged, and assigned their resulting
-    chord_pitches arrays.
+    Run a CPM on an input Piece (which has already been reduced via mergeing changes
+    and a merge reduction), and return the resulting chord_pitches list.
 
     Parameters
     ----------
@@ -1745,10 +1743,6 @@ def get_chord_pitches_in_piece(
     cpm_non_chord_tone_replace_threshold : float
         The threshold above which a default non-chord tone must reach in the CPM output
         in order to replace a chord tone in a given chord.
-    merge_changes : bool
-        Merge chords which differ only by their chord tone changes into single chords
-        as input. The targets will remain unchanged, so the CPM will ideally split
-        such chords in its post-processing step.
     merge_reduction : Dict[ChordType, ChordType]
         Merge chords which no longer differ after this chord type reduction together
         as input. The targets will remain unchanged, so the CPM will ideally split
@@ -1760,22 +1754,14 @@ def get_chord_pitches_in_piece(
 
     Returns
     -------
-    processed_piece : Piece
-        A copy of the input Piece, but with reductions applied, as well as the CPM outputs
-        applied and assigned (and chords merged and split as applicable).
+    chord_pitches : Union[np.ndarray, List[List[List]]]
+        Either a single chord_pitches array per input chord, OR:
+        For each chord:
+            A List of "duples" (as length-2 lists) including:
+                - A chord_pitches array (binary length num_rel_pitches).
+                - An (exclusive) index to which window (within that chord)
+                  the chord pitches array is valid.
     """
-    reduced_piece: ScorePiece = piece
-    if merge_changes or merge_reduction is not None:
-        reduced_piece = get_score_piece_from_dict(
-            reduced_piece.measures_df, reduced_piece.to_dict(), name=reduced_piece.name
-        )
-        if merge_reduction is not None:
-            for chord in reduced_piece.get_chords():
-                chord.chord_type = merge_reduction[chord.chord_type]
-                if chord.inversion >= get_chord_inversion_count(chord.chord_type):
-                    chord.inversion = 0
-        reduced_piece.merge_chords(merge_changes)
-
     dataset = ChordPitchesDataset([reduced_piece], **cpm.get_dataset_kwargs())
     dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
 
@@ -1860,6 +1846,82 @@ def get_chord_pitches_in_piece(
             cpm.INPUT_PITCH,
             no_aug_and_dim=merge_reduction == MAJOR_MINOR_REDUCTION,
         )
+
+    return chord_pitches
+
+
+def get_chord_pitches_in_piece(
+    cpm: ChordPitchesModel,
+    piece: Piece,
+    cpm_chord_tone_threshold: float,
+    cpm_non_chord_tone_add_threshold: float,
+    cpm_non_chord_tone_replace_threshold: float,
+    merge_changes: bool = False,
+    merge_reduction: Dict[ChordType, ChordType] = None,
+    rule_based: bool = False,
+    suspensions: bool = False,
+) -> Piece:
+    """
+    Run a CPM on an input Piece, and return a new Piece containing the outputs, where
+    chords have been reduced, processed, split, merged, and assigned their resulting
+    chord_pitches arrays.
+
+    Parameters
+    ----------
+    cpm : ChordPitchesModel
+        The CPM to evaluate.
+    piece : Piece
+        The Piece to run the CPM on.
+    cpm_chord_tone_threshold : float
+        The threshold above which a default chord tone must reach in the CPM output
+        in order to be considered present in a given chord.
+    cpm_non_chord_tone_add_threshold : float
+        The threshold above which a default non-chord tone must reach in the CPM output
+        in order to be an added tone in a given chord.
+    cpm_non_chord_tone_replace_threshold : float
+        The threshold above which a default non-chord tone must reach in the CPM output
+        in order to replace a chord tone in a given chord.
+    merge_changes : bool
+        Merge chords which differ only by their chord tone changes into single chords
+        as input. The targets will remain unchanged, so the CPM will ideally split
+        such chords in its post-processing step.
+    merge_reduction : Dict[ChordType, ChordType]
+        Merge chords which no longer differ after this chord type reduction together
+        as input. The targets will remain unchanged, so the CPM will ideally split
+        such chords in its post-processing step.
+    rule_based : bool
+        Generate the rule-based output rather than running any CPM.
+    suspensions : bool
+        Look for 6 and 4 suspensions in the rule-based system.
+
+    Returns
+    -------
+    processed_piece : Piece
+        A copy of the input Piece, but with reductions applied, as well as the CPM outputs
+        applied and assigned (and chords merged and split as applicable).
+    """
+    reduced_piece: ScorePiece = piece
+    if merge_changes or merge_reduction is not None:
+        reduced_piece = get_score_piece_from_dict(
+            reduced_piece.measures_df, reduced_piece.to_dict(), name=reduced_piece.name
+        )
+        if merge_reduction is not None:
+            for chord in reduced_piece.get_chords():
+                chord.chord_type = merge_reduction[chord.chord_type]
+                if chord.inversion >= get_chord_inversion_count(chord.chord_type):
+                    chord.inversion = 0
+        reduced_piece.merge_chords(merge_changes)
+
+    chord_pitches = get_chord_pitches(
+        cpm,
+        reduced_piece,
+        cpm_chord_tone_threshold,
+        cpm_non_chord_tone_add_threshold,
+        cpm_non_chord_tone_replace_threshold,
+        merge_reduction=merge_reduction,
+        rule_based=rule_based,
+        suspensions=suspensions,
+    )
 
     processed_piece = get_score_piece_from_dict(
         reduced_piece.measures_df, reduced_piece.to_dict(), name=reduced_piece.name

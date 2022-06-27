@@ -26,7 +26,7 @@ import harmonic_inference.models.key_transition_models as ktm
 import harmonic_inference.utils.harmonic_constants as hc
 import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.data.chord import get_chord_vector_length
-from harmonic_inference.data.data_types import TRIAD_REDUCTION, KeyMode, PitchType
+from harmonic_inference.data.data_types import KeyMode, PitchType
 from harmonic_inference.data.piece import Piece, get_range_start
 from harmonic_inference.utils.beam_search_utils import Beam, HashedBeam, State
 
@@ -1566,7 +1566,7 @@ class HarmonicInferenceModel:
             current_state.key = key
             current_state = current_state.prev_state
 
-    def cpm_post_processing(self, state: State) -> None:
+    def cpm_post_processing(self, state: State) -> State:
         """
         Run the CPM post-processing step, and update the state in place with its outputs
         (pitch presence vectors for each chord).
@@ -1575,6 +1575,12 @@ class HarmonicInferenceModel:
         ----------
         state : State
             The most likely state as output by the beam search.
+
+        Returns
+        -------
+        new_state : State
+            The new final state of the decoding process. In case the last chord is split
+            by the CPM (in which case, a new state will be added to the end and then returned).
         """
         piece = state.get_score_piece(
             self.current_piece,
@@ -1587,43 +1593,35 @@ class HarmonicInferenceModel:
             self.LABELS,
         )
 
-        kwargs = self.chord_pitches_model.get_dataset_kwargs()
-
-        dataset = ds.ChordPitchesDataset([piece], **kwargs)
-        dl = DataLoader(dataset, batch_size=dataset.valid_batch_size)
-
-        outputs = []
-        for batch in dl:
-            outputs.extend(self.chord_pitches_model.get_output(batch).numpy())
-
-        chord_pitches = cpm.decode_cpm_outputs(
-            np.vstack(outputs),
-            np.vstack([chord.get_chord_pitches_target_vector() for chord in piece.get_chords()]),
-            np.vstack(
-                [
-                    chord.get_chord_pitches_target_vector(reduction=TRIAD_REDUCTION)
-                    for chord in piece.get_chords()
-                ]
-            ),
-            [TRIAD_REDUCTION[chord.chord_type] for chord in piece.get_chords()],
+        chord_pitches = cpm.get_chord_pitches(
+            self.chord_pitches_model,
+            piece,
             self.cpm_chord_tone_threshold,
             self.cpm_non_chord_tone_add_threshold,
             self.cpm_non_chord_tone_replace_threshold,
-            self.CHORD_OUTPUT_TYPE,
         )
 
         current_state = state
         for pitches, chord in zip(reversed(chord_pitches), reversed(piece.get_chords())):
-            # Convert binary pitches array into root-relative indices
-            pitch_indices = np.where(pitches)[0]
-            if self.chord_pitches_model.OUTPUT_PITCH == PitchType.TPC:
-                pitch_indices -= hc.MAX_CHORD_PITCH_INTERVAL_TPC
+            if isinstance(pitches, List):
+                # Note-based output: Might need to split some states.
 
-            # Convert root-relative indices into absolute pitches
-            abs_pitches = [chord.root + pitch for pitch in pitch_indices]
+                # TODO
+                pass
 
-            current_state.chord_pitches = abs_pitches
-            current_state = current_state.prev_state
+            else:
+                # Chord-Pitches output: can be written directly to states
+
+                # Convert binary pitches array into root-relative indices
+                pitch_indices = np.where(pitches)[0]
+                if self.chord_pitches_model.OUTPUT_PITCH == PitchType.TPC:
+                    pitch_indices -= hc.MAX_CHORD_PITCH_INTERVAL_TPC
+
+                # Convert root-relative indices into absolute pitches
+                abs_pitches = [chord.root + pitch for pitch in pitch_indices]
+
+                current_state.chord_pitches = abs_pitches
+                current_state = current_state.prev_state
 
 
 class DebugLogger:
