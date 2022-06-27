@@ -30,11 +30,6 @@ from harmonic_inference.data.datasets import ChordPitchesDataset
 from harmonic_inference.data.note import Note
 from harmonic_inference.data.piece import Piece, ScorePiece, get_score_piece_from_dict, get_windows
 from harmonic_inference.data.vector_decoding import get_relative_pitch_index
-from harmonic_inference.models.joint_model import (
-    CPM_CHORD_TONE_THRESHOLD_DEFAULT,
-    CPM_NON_CHORD_TONE_ADD_THRESHOLD_DEFAULT,
-    CPM_NON_CHORD_TONE_REPLACE_THRESHOLD_DEFAULT,
-)
 from harmonic_inference.utils.harmonic_constants import (
     CHORD_PITCHES,
     MAX_CHORD_PITCH_INTERVAL_TPC,
@@ -1722,9 +1717,9 @@ def get_rule_based_cpm_outputs(
 def get_chord_pitches_in_piece(
     cpm: ChordPitchesModel,
     piece: Piece,
-    cpm_chord_tone_threshold: float = CPM_CHORD_TONE_THRESHOLD_DEFAULT,
-    cpm_non_chord_tone_add_threshold: float = CPM_NON_CHORD_TONE_ADD_THRESHOLD_DEFAULT,
-    cpm_non_chord_tone_replace_threshold: float = CPM_NON_CHORD_TONE_REPLACE_THRESHOLD_DEFAULT,
+    cpm_chord_tone_threshold: float,
+    cpm_non_chord_tone_add_threshold: float,
+    cpm_non_chord_tone_replace_threshold: float,
     merge_changes: bool = False,
     merge_reduction: Dict[ChordType, ChordType] = None,
     rule_based: bool = False,
