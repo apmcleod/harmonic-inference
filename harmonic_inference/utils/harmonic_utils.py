@@ -359,6 +359,12 @@ def get_chord_one_hot_index(
     """
     if reduction is None:
         reduction = NO_REDUCTION
+    else:
+        # Correct inversion to root on reduction
+        if reduction[chord_type] != chord_type and inversion >= get_chord_inversion_count(
+            reduction[chord_type]
+        ):
+            inversion = 0
 
     chord_types = sorted(set(reduction.values()))
     chord_type = reduction[chord_type]
