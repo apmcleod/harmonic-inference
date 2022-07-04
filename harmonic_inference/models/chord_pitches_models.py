@@ -885,41 +885,68 @@ def can_merge(
             if default[extra_pitch] == 1:
                 # Extra pitch is default
 
-                # Find possible (non-default) suspensions of this pitch
-                possible_neighbors = get_neighbor_idxs(
-                    extra_pitch,
-                    set(np.where(default == 1)[0]).union(set(dmM7_idxs)),
-                    pitch_type,
-                    (
-                        not no_aug_and_dim
-                        and extra_pitch == M5_idx
-                        and triad_type == ChordType.MAJOR
-                    ),
-                    extra_pitch == d3_idx and triad_type == ChordType.DIMINISHED,
-                    no_aug_and_dim,
-                )
-
-                # Are the suspensions in right_extra?
-                possible_neighbors = [
-                    neighbor for neighbor in possible_neighbors if neighbor in right_extra
-                ]
+                # Find possible (non-default) suspensions of this pitch that are in right_extra
+                possible_neighbors = set(
+                    get_neighbor_idxs(
+                        extra_pitch,
+                        set(np.where(default == 1)[0]).union(set(dmM7_idxs)),
+                        pitch_type,
+                        (
+                            not no_aug_and_dim
+                            and extra_pitch == M5_idx
+                            and triad_type == ChordType.MAJOR
+                        ),
+                        extra_pitch == d3_idx and triad_type == ChordType.DIMINISHED,
+                        no_aug_and_dim,
+                    )
+                ).intersection(right_extra)
 
                 # Does the neighbor suspend/replace extra_pitch (and not some other tone)?
                 # If so, return False
                 for neighbor_pitch in possible_neighbors:
-                    # Pitches the neighbor_pitch might be replacing
+                    # Default pitches that are missing on the right side (and are not this pitch)
+                    right_missing_default = (
+                        set(np.where(default == 1)[0])
+                        - right_all
+                        # Important because we don't want to exclude this pitch, since
+                        # that's the one we're looking for
+                        - set([extra_pitch])
+                    )
+                    # Of those, pitches which have an existing suspension already
+                    right_accounted_for_default = set(
+                        [
+                            pitch
+                            for pitch in right_missing_default
+                            if len(
+                                set(
+                                    get_neighbor_idxs(
+                                        pitch,
+                                        set(np.where(default == 1)[0]).union(dmM7_idxs),
+                                        pitch_type,
+                                        False,
+                                        False,
+                                        no_aug_and_dim,
+                                    )
+                                ).intersection(right_all)
+                            )
+                            != 0
+                        ]
+                    )
+
+                    # Look for possible default replacees of this non-default neighbor replacer
                     possible_replacees = list(
                         set(
                             get_neighbor_idxs(
                                 neighbor_pitch,
-                                np.where(default == 0)[0],
+                                set(np.where(default == 0)[0])
+                                .union(right_all)
+                                .union(right_accounted_for_default),
                                 pitch_type,
                                 False,
                                 False,
                                 no_aug_and_dim,
                             )
                         )
-                        - right_all
                     )
 
                     if len(possible_replacees) == 1 and possible_replacees[0] == extra_pitch:
