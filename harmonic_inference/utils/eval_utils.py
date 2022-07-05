@@ -1196,7 +1196,7 @@ def write_labels_to_score(
 
     # Write annotations to score
     parse.add_detached_annotations("MS3", "labels")
-    parse.attach_labels(staff=2, voice=1, check_for_clashes=False)
+    parse.attach_labels(staff=-1, voice=1, check_for_clashes=False)
 
     # Write score out to file
     parse.store_mscx(root_dir=labels_dir, suffix="_inferred", overwrite=True)
