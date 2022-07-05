@@ -930,6 +930,19 @@ def get_chord_pitches_string(
     pitch_ints = []
     accidentals = []
 
+    # Check for accidentally-altered tones (same step, different accidental)
+    for step in range(8):
+        if step in added_pitch_ints and step in removed_pitch_ints:
+            print(step)
+            added_idx = added_pitch_ints.index(step)
+            pitch_ints.append(added_pitch_ints[added_idx])
+            accidentals.append(added_accidentals[added_idx])
+            additional_marks.append("")
+
+            del added_accidentals[added_idx]
+            del added_pitch_ints[added_idx]
+            del removed_pitch_ints[removed_pitch_ints.index(step)]
+
     # Check for specific common replacements
     for added, removed, if_sharp, if_natural, if_flat in [
         (6, 7, "", "^", "^"),
