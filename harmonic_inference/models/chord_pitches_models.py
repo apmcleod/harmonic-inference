@@ -1327,10 +1327,11 @@ def get_neighbor_idxs(
         )
 
         # Include altered versions of a 2nd down
-        neighbor_down = idx - 2
-        neighbors.extend(
-            list(range(minimum + ((neighbor_down % 7) - (minimum % 7)) % 7, maximum + 1, 7))
-        )
+        if idx != 13:  # Don't allow a 7 to replace a root
+            neighbor_down = idx - 2
+            neighbors.extend(
+                list(range(minimum + ((neighbor_down % 7) - (minimum % 7)) % 7, maximum + 1, 7))
+            )
 
     neighbors_set = set(neighbors) - set(do_not_return) - set([idx])
 
@@ -1452,7 +1453,6 @@ def decode_cpm_outputs(
     can_remove_tones = np.logical_and(
         defaults_no_7ths == 1, cpm_outputs <= cpm_chord_tone_threshold
     )
-    can_remove_tones[:, 13] = False  # Disallow root removal
     cannot_remove_tones = np.logical_and(defaults == 1, ~can_remove_tones)
     can_add_tones = np.logical_and(defaults == 0, cpm_outputs >= cpm_non_chord_tone_add_threshold)
     can_replace_tones = np.logical_and(
