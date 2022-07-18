@@ -772,7 +772,7 @@ def get_labels_df(piece: Piece, tpc_c: int = hc.TPC_C) -> pd.DataFrame:
 
 
 def get_annotation_df(
-    estimated: Union[State, Piece],
+    estimated: Piece,
     gt_piece: Piece,
     root_type: PitchType,
     tonic_type: PitchType,
@@ -785,7 +785,7 @@ def get_annotation_df(
 
     Parameters
     ----------
-    estimated : Union[State, Piece]
+    estimated : Piece
         The estimated harmony annotations.
     gt_piece : Piece
         The piece which was used as input when creating the given state.
@@ -808,12 +808,8 @@ def get_annotation_df(
     """
     labels_list = []
 
-    estimated_chord_labels, estimated_chord_pitches, estimated_key_labels = (
-        get_labels_from_state(estimated, len(gt_piece.get_inputs()), use_chord_pitches)
-        if isinstance(estimated, State)
-        else get_labels_from_piece(
-            estimated, root_type, tonic_type, use_inversions, reduction, use_chord_pitches
-        )
+    estimated_chord_labels, estimated_chord_pitches, estimated_key_labels = get_labels_from_piece(
+        estimated, root_type, tonic_type, use_inversions, reduction, use_chord_pitches
     )
 
     chord_label_list = hu.get_chord_label_list(
@@ -888,53 +884,6 @@ def get_annotation_df(
     return pd.DataFrame(labels_list)
 
 
-def get_labels_from_state(
-    state: State,
-    num_inputs: int,
-    use_chord_pitches: bool,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Get Lists of chord, pitches, and key labels from a State object. Each list will
-    contain one label per piece input (the total length of which is given by num_inputs).
-
-    Parameters
-    ----------
-    state : State
-        The state chain whose labels we will return.
-    num_inputs : int
-        The number of inputs for the associated piece. Each returned array will be this length.
-    use_chord_pitches : bool
-        True to calculate chord pitches. False otherwise.
-
-    Returns
-    -------
-    chord_labels : np.ndarray
-        An array of chord one-hot indexes, one per piece input.
-    chord_pitches : np.ndarray
-        An array of sets of chord pitches for each chord. This will be an array of Nones
-        if use_chord_pitches is False.
-    key_labels : np.ndarray
-        An array of key one-hot indexes, one per piece input.
-    """
-    # Chord info
-    chords, changes, chord_pitches = state.get_chords()
-    state_chord_labels = np.zeros(num_inputs, dtype=int)
-    state_chord_pitches = np.full(num_inputs, None, dtype=object)
-    for chord, pitches, start, end in zip(chords, chord_pitches, changes[:-1], changes[1:]):
-        state_chord_labels[start:end] = chord
-        if use_chord_pitches:
-            for i in range(start, end):
-                state_chord_pitches[i] = pitches
-
-    # Key info
-    keys, changes = state.get_keys()
-    state_key_labels = np.zeros(num_inputs, dtype=int)
-    for key, start, end in zip(keys, changes[:-1], changes[1:]):
-        state_key_labels[start:end] = key
-
-    return state_chord_labels, state_chord_pitches, state_key_labels
-
-
 def get_labels_from_piece(
     piece: Piece,
     root_type: PitchType,
@@ -985,7 +934,7 @@ def get_labels_from_piece(
 
 
 def get_results_annotation_df(
-    estimated: Union[State, Piece],
+    estimated: Piece,
     gt_piece: Piece,
     root_type: PitchType,
     tonic_type: PitchType,
@@ -1000,8 +949,8 @@ def get_results_annotation_df(
 
     Parameters
     ----------
-    estimated : Union[State, Piece]
-        A state or piece, containing the estimated harmonic structure.
+    estimated : Piece
+        A piece, containing the estimated harmonic structure.
     gt_piece : Piece
         The piece, containing the ground truth harmonic structure.
     root_type : PitchType
@@ -1027,12 +976,8 @@ def get_results_annotation_df(
         gt_piece, root_type, tonic_type, use_inversions, reduction, use_chord_pitches
     )
 
-    estimated_chord_labels, estimated_chord_pitches, estimated_key_labels = (
-        get_labels_from_state(estimated, len(gt_piece.get_inputs()), use_chord_pitches)
-        if isinstance(estimated, State)
-        else get_labels_from_piece(
-            estimated, root_type, tonic_type, use_inversions, reduction, use_chord_pitches
-        )
+    estimated_chord_labels, estimated_chord_pitches, estimated_key_labels = get_labels_from_piece(
+        estimated, root_type, tonic_type, use_inversions, reduction, use_chord_pitches
     )
 
     chord_label_list = hu.get_chord_label_list(

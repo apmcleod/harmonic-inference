@@ -236,7 +236,7 @@ def evaluate(
                 ]
             )
 
-        state = model.get_harmony(piece, **forces_dict)
+        state, estimated_piece = model.get_harmony(piece, **forces_dict)
 
         if state is None:
             logging.info("Returned None")
@@ -244,7 +244,7 @@ def evaluate(
 
         # Create results dfs
         results_annotation_df = eu.get_results_annotation_df(
-            state,
+            estimated_piece,
             piece,
             model.CHORD_OUTPUT_TYPE,
             model.KEY_OUTPUT_TYPE,
@@ -255,7 +255,7 @@ def evaluate(
 
         results_df = eu.get_results_df(
             piece,
-            state,
+            estimated_piece,
             model.CHORD_OUTPUT_TYPE,
             model.KEY_OUTPUT_TYPE,
             PitchType.TPC,
@@ -266,7 +266,7 @@ def evaluate(
 
         results_midi_df = eu.get_results_df(
             piece,
-            state,
+            estimated_piece,
             model.CHORD_OUTPUT_TYPE,
             model.KEY_OUTPUT_TYPE,
             PitchType.MIDI,

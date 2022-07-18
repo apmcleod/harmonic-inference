@@ -80,16 +80,6 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False, cpm_
     """
     if not cpm_only:
         parser.add_argument(
-            "--changes",
-            action="store_true",
-            help=(
-                "Consider alterations of a chord as different chord symbols entirely."
-                "If so, consecutive identical chords will not be merged during the search "
-                "process."
-            ),
-        )
-
-        parser.add_argument(
             "--min-chord-change-prob",
             default=MIN_CHORD_CHANGE_PROB_DEFAULT,
             type=float,
@@ -252,7 +242,6 @@ class HarmonicInferenceModel:
     def __init__(
         self,
         models: Dict,
-        changes: bool = False,
         min_chord_change_prob: float = MIN_CHORD_CHANGE_PROB_DEFAULT,
         max_no_chord_change_prob: float = MAX_NO_CHORD_CHANGE_PROB_DEFAULT,
         max_chord_length: Fraction = MAX_CHORD_LENGTH_DEFAULT,
@@ -286,10 +275,6 @@ class HarmonicInferenceModel:
                 'icm': An InitialChordModel
                 'kppm': A KeyPostProcessorModel
                 'cpm': A ChordPitchesModel
-        changes : bool
-            True to consider consecutive chords that differ only by alterations
-            entirely different chord symbols. If True, such chords will not be merged
-            during the search process.
         min_chord_change_prob : float
             The minimum probability (from the CTM) on which a chord change can occur.
         max_no_chord_change_prob : float
@@ -346,7 +331,6 @@ class HarmonicInferenceModel:
             logging.info("    %s = %s", arg_name, locals()[arg_name])
 
         # Post-processing and other flags
-        self.changes = changes
         self.no_kppm = no_kppm
         self.no_cpm = no_cpm
 
@@ -660,7 +644,7 @@ class HarmonicInferenceModel:
         forced_key_non_changes: Set[int] = None,
         forced_chords: Dict[Tuple[int, int], int] = None,
         forced_keys: Dict[Tuple[int, int], int] = None,
-    ) -> State:
+    ) -> Tuple[State, Piece]:
         """
         Run the model on a piece and output its harmony.
 
@@ -701,6 +685,9 @@ class HarmonicInferenceModel:
         -------
         state : State
             The top estimated state.
+
+        piece : Piece
+            The estimated ScorePiece.
         """
         self.load_piece(piece)
 
@@ -773,9 +760,20 @@ class HarmonicInferenceModel:
             logging.info("Performing CPM post-processing")
             self.cpm_post_processing(state)
 
+        piece = state.get_score_piece(
+            self.current_piece,
+            self.CHORD_OUTPUT_TYPE,
+            self.KEY_OUTPUT_TYPE,
+            self.duration_cache,
+            self.onset_cache,
+            self.onset_level_cache,
+            self.beat_duration_cache,
+            self.LABELS,
+        )
+
         self.current_piece = None
 
-        return state
+        return state, piece
 
     def get_chord_change_probs(self) -> List[float]:
         """
@@ -1137,7 +1135,7 @@ class HarmonicInferenceModel:
 
                 # Branch
                 for chord_id in chord_priors_argsort[:max_index]:
-                    if chord_id == state.chord and not self.changes:
+                    if chord_id == state.chord:
                         # Same chord as last range: rejoin a split range
                         new_state = state.rejoin(
                             range_end,
@@ -2365,7 +2363,6 @@ def from_args(models: Dict, ARGS: Namespace, cpm_only: bool = False) -> Harmonic
         )
     return HarmonicInferenceModel(
         models,
-        changes=ARGS.changes,
         min_chord_change_prob=ARGS.min_chord_change_prob,
         max_no_chord_change_prob=ARGS.max_no_chord_change_prob,
         max_chord_length=ARGS.max_chord_length,
