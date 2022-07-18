@@ -9,17 +9,13 @@ from pathlib import Path
 from typing import Dict, List, Set, Union
 
 import h5py
+import numpy as np
 import torch
 from tqdm import tqdm
 
 import harmonic_inference.utils.eval_utils as eu
 from annotate import set_default_args
-from harmonic_inference.data.data_types import (
-    ALL_ONE_TYPE_REDUCTION,
-    NO_REDUCTION,
-    TRIAD_REDUCTION,
-    PitchType,
-)
+from harmonic_inference.data.data_types import PitchType
 from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import (
     MODEL_CLASSES,
@@ -187,6 +183,7 @@ def evaluate(
     pieces: List[Piece],
     output_tsv_dir: Union[Path, str] = None,
     forces_path: Union[Path, str] = None,
+    force_segs: bool = False,
 ):
     """
     Get estimated chords and keys on the given pieces using the given model.
@@ -202,6 +199,8 @@ def evaluate(
         a sub-directory according to its name field. If None, label TSVs are not generated.
     forces_path : Union[Path, str]
         The path to a json file containing forced labels, changes, or non-changes.
+    force_segs : bool
+        Force the model to use the ground truth segmentations.
     """
     if output_tsv_dir is not None:
         output_tsv_dir = Path(output_tsv_dir)
@@ -209,6 +208,7 @@ def evaluate(
     all_forces_dict = {} if forces_path is None else load_forces_from_json(forces_path)
 
     for piece in tqdm(pieces, desc="Getting harmony for pieces"):
+        piece: Piece
         if piece.name is not None:
             logging.info("Running piece %s", piece.name)
 
@@ -224,140 +224,86 @@ def evaluate(
         if forces_dict is None:
             forces_dict = all_forces_dict["default"] if "default" in all_forces_dict else {}
 
-        state = model.get_harmony(piece, **forces_dict)
+        if force_segs:
+            forces_dict["forced_chord_changes"] = set(
+                [i for i in range(len(piece.get_inputs())) if i in piece.get_chord_change_indices()]
+            )
+            forces_dict["forced_chord_non_changes"] = set(
+                [
+                    i
+                    for i in range(len(piece.get_inputs()))
+                    if i not in piece.get_chord_change_indices()
+                ]
+            )
+
+        state, estimated_piece = model.get_harmony(piece, **forces_dict)
 
         if state is None:
             logging.info("Returned None")
             continue
 
+        # Create results dfs
+        results_annotation_df = eu.get_results_annotation_df(
+            estimated_piece,
+            piece,
+            model.CHORD_OUTPUT_TYPE,
+            model.KEY_OUTPUT_TYPE,
+            model.chord_classifier.use_inversions,
+            model.chord_classifier.reduction,
+            use_chord_pitches=True,
+        )
+
+        results_df = eu.get_results_df(
+            piece,
+            estimated_piece,
+            model.CHORD_OUTPUT_TYPE,
+            model.KEY_OUTPUT_TYPE,
+            PitchType.TPC,
+            PitchType.TPC,
+            True,
+            None,
+        )
+
+        results_midi_df = eu.get_results_df(
+            piece,
+            estimated_piece,
+            model.CHORD_OUTPUT_TYPE,
+            model.KEY_OUTPUT_TYPE,
+            PitchType.MIDI,
+            PitchType.MIDI,
+            True,
+            None,
+        )
+
+        # Perform evaluations
         if piece.get_chords() is None:
             logging.info("Cannot compute accuracy. Ground truth unknown.")
         else:
-            chord_acc_full = eu.evaluate_chords(
-                piece,
-                state,
-                model.CHORD_OUTPUT_TYPE,
-                use_inversion=True,
-                reduction=NO_REDUCTION,
-            )
-            chord_acc_no_inv = eu.evaluate_chords(
-                piece,
-                state,
-                model.CHORD_OUTPUT_TYPE,
-                use_inversion=False,
-                reduction=NO_REDUCTION,
-            )
-            chord_acc_triad = eu.evaluate_chords(
-                piece,
-                state,
-                model.CHORD_OUTPUT_TYPE,
-                use_inversion=True,
-                reduction=TRIAD_REDUCTION,
-            )
-            chord_acc_triad_no_inv = eu.evaluate_chords(
-                piece,
-                state,
-                model.CHORD_OUTPUT_TYPE,
-                use_inversion=False,
-                reduction=TRIAD_REDUCTION,
-            )
-            chord_acc_root_only = eu.evaluate_chords(
-                piece,
-                state,
-                model.CHORD_OUTPUT_TYPE,
-                use_inversion=False,
-                reduction=ALL_ONE_TYPE_REDUCTION,
-            )
-
-            logging.info("Chord accuracy = %s", chord_acc_full)
-            logging.info("Chord accuracy, no inversions = %s", chord_acc_no_inv)
-            logging.info("Chord accuracy, triads = %s", chord_acc_triad)
-            logging.info("Chord accuracy, triad, no inversions = %s", chord_acc_triad_no_inv)
-            logging.info("Chord accuracy, root only = %s", chord_acc_root_only)
-
-            key_acc_full = eu.evaluate_keys(piece, state, model.KEY_OUTPUT_TYPE, tonic_only=False)
-            key_acc_tonic = eu.evaluate_keys(piece, state, model.KEY_OUTPUT_TYPE, tonic_only=True)
-
-            logging.info("Key accuracy = %s", key_acc_full)
-            logging.info("Key accuracy, tonic only = %s", key_acc_tonic)
-
-            full_acc = eu.evaluate_chords_and_keys_jointly(
-                piece,
-                state,
-                root_type=model.CHORD_OUTPUT_TYPE,
-                tonic_type=model.KEY_OUTPUT_TYPE,
-                use_inversion=True,
-                chord_reduction=NO_REDUCTION,
-                tonic_only=False,
-            )
-            logging.info("Full accuracy = %s", full_acc)
+            eu.log_results_df_eval(results_df)
 
         if logging.getLogger().isEnabledFor(logging.DEBUG):
             eu.log_state(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)
-
-        labels_df = eu.get_label_df(
-            state,
-            piece,
-            model.CHORD_OUTPUT_TYPE,
-            model.KEY_OUTPUT_TYPE,
-        )
-
-        # Write outputs tsv
-        results_df = eu.get_results_df(
-            piece,
-            state,
-            model.CHORD_OUTPUT_TYPE,
-            model.KEY_OUTPUT_TYPE,
-            PitchType.TPC,
-            PitchType.TPC,
-        )
-
-        # Write MIDI outputs for SPS chord-eval testing
-        results_midi_df = eu.get_results_df(
-            piece,
-            state,
-            model.CHORD_OUTPUT_TYPE,
-            model.KEY_OUTPUT_TYPE,
-            PitchType.MIDI,
-            PitchType.MIDI,
-        )
 
         if piece.name is not None and output_tsv_dir is not None:
             piece_name = Path(piece.name.split(" ")[-1])
             output_tsv_path = output_tsv_dir / piece_name
 
-            try:
-                output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
-                results_tsv_path = output_tsv_path.parent / (
-                    output_tsv_path.name[:-4] + "_results.tsv"
-                )
-                results_df.to_csv(results_tsv_path, sep="\t")
-                logging.info("Results TSV written out to %s", results_tsv_path)
-            except Exception:
-                logging.exception("Error writing to csv %s", results_tsv_path)
-                logging.debug(results_df)
-
-            try:
-                output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
-                results_tsv_path = output_tsv_path.parent / (
-                    output_tsv_path.name[:-4] + "_results_midi.tsv"
-                )
-                results_midi_df.to_csv(results_tsv_path, sep="\t")
-                logging.info("MIDI results TSV written out to %s", results_tsv_path)
-            except Exception:
-                logging.exception("Error writing to csv %s", results_tsv_path)
-                logging.debug(results_midi_df)
-
-            try:
-                output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
-                labels_df.to_csv(output_tsv_path, sep="\t")
-                logging.info("Labels TSV written out to %s", output_tsv_path)
-            except Exception:
-                logging.exception("Error writing to csv %s", output_tsv_path)
-                logging.debug(labels_df)
+            for suffix, name, df in (
+                ["_results.tsv", "Results", results_df],
+                ["_results_midi.tsv", "MIDI results", results_midi_df],
+                [".tsv", "Results annotation", results_annotation_df],
+            ):
+                try:
+                    output_tsv_path.parent.mkdir(parents=True, exist_ok=True)
+                    tsv_path = output_tsv_path.parent / (output_tsv_path.name[:-4] + suffix)
+                    df.to_csv(tsv_path, sep="\t")
+                    logging.info("%s TSV written out to %s", name, tsv_path)
+                except Exception:
+                    logging.exception("Error writing to csv %s", tsv_path)
+                    logging.debug(results_df)
 
         else:
-            logging.debug(labels_df)
+            logging.debug(results_annotation_df)
 
 
 if __name__ == "__main__":
@@ -529,6 +475,12 @@ if __name__ == "__main__":
         help="The number of pytorch cpu threads to create.",
     )
 
+    parser.add_argument(
+        "--force-segs",
+        action="store_true",
+        help="Force the model to use ground truth segmentations.",
+    )
+
     add_joint_model_args(parser)
 
     ARGS = parser.parse_args()
@@ -581,9 +533,13 @@ if __name__ == "__main__":
         specific_id=ARGS.id,
     )
 
+    if ARGS.force_segs:
+        ARGS.max_chord_length = np.inf
+
     evaluate(
         from_args(models, ARGS),
         pieces,
         output_tsv_dir=ARGS.output,
         forces_path=ARGS.forces_json,
+        force_segs=ARGS.force_segs,
     )

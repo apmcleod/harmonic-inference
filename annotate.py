@@ -167,6 +167,9 @@ def annotate(
                 piece,
                 model.CHORD_OUTPUT_TYPE,
                 model.KEY_OUTPUT_TYPE,
+                model.chord_classifier.use_inversions,
+                model.chord_classifier.reduction,
+                use_chord_pitches=True,
             )
 
             if piece.name is not None and output_tsv_dir is not None:

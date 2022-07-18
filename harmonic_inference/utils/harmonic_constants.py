@@ -212,10 +212,23 @@ MIN_RELATIVE_TPC = -14  # Inclusive
 MAX_RELATIVE_TPC = 15  # Exclusive
 # Extra space to add because chord is sometimes relative to different key
 RELATIVE_TPC_EXTRA = 5
+NUM_RELATIVE_PITCHES = {
+    PitchType.TPC: {
+        True: MAX_RELATIVE_TPC - MIN_RELATIVE_TPC + 2 * RELATIVE_TPC_EXTRA,
+        False: MAX_RELATIVE_TPC - MIN_RELATIVE_TPC,
+    },
+    PitchType.MIDI: {
+        True: NUM_PITCHES[PitchType.MIDI],
+        False: NUM_PITCHES[PitchType.MIDI],
+    },
+}
 
 # Key change relative pitches
 MIN_KEY_CHANGE_INTERVAL_TPC = -14  # Inclusive
 MAX_KEY_CHANGE_INTERVAL_TPC = 15  # Exclusive
+
+# Chord pitch vector
+MAX_CHORD_PITCH_INTERVAL_TPC = 13
 
 # Diatonic chords
 DIATONIC_CHORDS = {

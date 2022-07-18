@@ -10,8 +10,12 @@ import pandas as pd
 
 from harmonic_inference.data.corpus_constants import MEASURE_OFFSET, NOTE_ONSET_BEAT
 from harmonic_inference.data.data_types import PitchType
-from harmonic_inference.utils.harmonic_constants import NUM_PITCHES, TPC_C
-from harmonic_inference.utils.harmonic_utils import get_pitch_from_string, get_pitch_string
+from harmonic_inference.utils.harmonic_constants import NUM_PITCHES, NUM_RELATIVE_PITCHES, TPC_C
+from harmonic_inference.utils.harmonic_utils import (
+    absolute_to_relative,
+    get_pitch_from_string,
+    get_pitch_string,
+)
 from harmonic_inference.utils.rhythmic_utils import (
     get_metrical_level,
     get_metrical_level_lengths,
@@ -149,6 +153,7 @@ class Note:
         note_onset: Fraction = None,
         dur_from_prev: Union[float, Fraction] = None,
         dur_to_next: Union[float, Fraction] = None,
+        relative_to_pitch: int = None,
     ) -> np.array:
         """
         Get the vectorized representation of this note given a chord.
@@ -203,6 +208,9 @@ class Note:
         dur_to_next : Union[float, Fraction]
             The duration from this note's onset to the next note's onset.
 
+        relative_to_pitch : int
+            Express the note's pitch class relative to this pitch class, instead of absolute.
+
         Returns
         -------
         vector : np.array
@@ -211,8 +219,30 @@ class Note:
         vectors = []
 
         # Pitch as one-hot
-        pitch = np.zeros(NUM_PITCHES[self.pitch_type], dtype=np.float16)
-        pitch[self.pitch_class] = 1
+        num_pitches = (
+            NUM_PITCHES[self.pitch_type]
+            if relative_to_pitch is None
+            else NUM_RELATIVE_PITCHES[self.pitch_type][True]
+        )
+        pitch = np.zeros(num_pitches, dtype=np.float16)
+        try:
+            pitch_class = (
+                self.pitch_class
+                if relative_to_pitch is None
+                else absolute_to_relative(
+                    self.pitch_class, relative_to_pitch, self.pitch_type, False, pad=True
+                )
+            )
+            pitch[pitch_class] = 1
+        except ValueError:
+            logging.warning(
+                (
+                    "Note %s relative to pitch %s out of range. Not including pitch class in "
+                    "vector."
+                ),
+                self,
+                relative_to_pitch,
+            )
         vectors.append(pitch)
 
         # Octave as one-hot
@@ -290,8 +320,15 @@ class Note:
         vectors.append(relative_octave)
 
         # Normalized pitch height
-        norm_pitch_height = [midi_note_number / 127]
-        vectors.append(norm_pitch_height)
+        norm_pitch_height = midi_note_number / 127
+        if relative_to_pitch is not None:
+            norm_pitch_height -= (
+                get_pitch_from_string(
+                    get_pitch_string(relative_to_pitch, self.pitch_type), PitchType.MIDI
+                )
+                / 127
+            )
+        vectors.append([norm_pitch_height])
 
         # Relative to surrounding notes
         if min_pitch is not None and max_pitch is not None:
@@ -537,7 +574,7 @@ class Note:
         )
 
 
-def get_note_vector_length(pitch_type: PitchType) -> int:
+def get_note_vector_length(pitch_type: PitchType, for_chord_pitches: bool = False) -> int:
     """
     Get the length of a note vector.
 
@@ -545,6 +582,9 @@ def get_note_vector_length(pitch_type: PitchType) -> int:
     ----------
     pitch_type : PitchType
         The pitch type of the note.
+    for_chord_pitches : bool
+        True to return the length of the note segment of a chord pitches vector. False
+        to return the length of a standard note vector.
 
     Returns
     -------
@@ -561,8 +601,12 @@ def get_note_vector_length(pitch_type: PitchType) -> int:
     # 1 normalized pitch height relative to window
     extra = 20
 
+    num_pitches = (
+        NUM_RELATIVE_PITCHES[pitch_type][True] if for_chord_pitches else NUM_PITCHES[pitch_type]
+    )
+
     return (
-        NUM_PITCHES[pitch_type]  # Pitch class
+        num_pitches  # Pitch class
         + num_octaves  # Absolute octave
         + num_octaves  # Relative octave (above lowest note in chord window)
         + extra

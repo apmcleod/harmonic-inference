@@ -14,10 +14,14 @@ from harmonic_inference.data.data_types import ChordType, PitchType
 from harmonic_inference.data.key import get_key_change_vector_length
 from harmonic_inference.data.piece import (
     Piece,
+    ScorePiece,
     get_score_piece_from_data_frames,
+    get_score_piece_from_dict,
     get_score_piece_from_music_xml,
 )
 from harmonic_inference.data.vector_decoding import (
+    is_chord_tone,
+    is_in_chord,
     reduce_chord_one_hots,
     reduce_chord_types,
     remove_chord_inversions,
@@ -29,7 +33,9 @@ from harmonic_inference.utils.harmonic_constants import NUM_PITCHES
 from harmonic_inference.utils.harmonic_utils import (
     get_bass_note,
     get_chord_from_one_hot_index,
+    get_chord_inversion_count,
     get_chord_one_hot_index,
+    get_default_chord_pitches,
     get_key_from_one_hot_index,
     get_key_one_hot_index,
     get_vector_from_chord_type,
@@ -94,7 +100,7 @@ class HarmonicDataset(Dataset):
 
     def finalize_data(
         self,
-        data: Dict[str, np.array],
+        data: Dict[str, np.ndarray],
         item,
         transposition: int = None,
     ) -> Dict:
@@ -105,7 +111,7 @@ class HarmonicDataset(Dataset):
 
         Parameters
         ----------
-        data : Dict[str, np.array]
+        data : Dict[str, np.ndarray]
             The data dictionary.
         item : int
             The index (or other indexer) to load the correct hidden state.
@@ -152,13 +158,13 @@ class HarmonicDataset(Dataset):
             A transposition to be applied to the data, if any.
         """
 
-    def set_hidden_states(self, hidden_states: np.array):
+    def set_hidden_states(self, hidden_states: np.ndarray):
         """
         Load hidden states into this Dataset object.
 
         Parameters
         ----------
-        hidden_states : np.array
+        hidden_states : np.ndarray
             The hidden states to load into this Dataset.
         """
         self.hidden_states = hidden_states
@@ -201,14 +207,24 @@ class HarmonicDataset(Dataset):
             with h5py.File(self.h5_path, "r") as h5_file:
                 data = {
                     key: h5_file[key][item]
-                    for key in ["inputs", "targets", "input_lengths", "target_lengths"]
+                    for key in [
+                        "inputs",
+                        "targets",
+                        "input_lengths",
+                        "target_lengths",
+                        "note_based_targets",
+                    ]
                     if key in h5_file
                 }
-            if (
-                hasattr(self, "scheduled_sampling_data")
-                and self.scheduled_sampling_data is not None
-            ):
-                data["scheduled_sampling_data"] = self.scheduled_sampling_data[item]
+                if (
+                    "scheduled_sampling_data" in h5_file
+                    and h5_file["scheduled_sampling_data"] is not None
+                ):
+                    data["scheduled_sampling_data"] = h5_file["scheduled_sampling_data"][item]
+
+                for key in ["is_default"]:
+                    if key in h5_file:
+                        data[key] = h5_file[key][item]
 
         else:
             data = {"inputs": self.inputs[item]}
@@ -217,6 +233,9 @@ class HarmonicDataset(Dataset):
                 and self.scheduled_sampling_data is not None
             ):
                 data["scheduled_sampling_data"] = self.scheduled_sampling_data[item]
+            for key in ["is_default", "note_based_targets"]:
+                if hasattr(self, key):
+                    data[key] = getattr(self, key)[item]
 
             # During inference, we have no targets
             if self.targets is not None:
@@ -229,10 +248,8 @@ class HarmonicDataset(Dataset):
                 padded_input[: len(data["inputs"])] = data["inputs"]
                 data["inputs"] = padded_input
                 data["input_lengths"] = self.input_lengths[item]
-                if (
-                    hasattr(self, "scheduled_sampling_data")
-                    and self.scheduled_sampling_data is not None
-                ):
+
+                if "scheduled_sampling_data" in data:
                     padded_sched = np.zeros(
                         ([self.max_input_length] + list(data["inputs"][0].shape))
                     )
@@ -240,6 +257,13 @@ class HarmonicDataset(Dataset):
                         "scheduled_sampling_data"
                     ]
                     data["scheduled_sampling_data"] = padded_sched
+
+                if "note_based_targets" in data:
+                    padded_note_targets = np.full(self.max_input_length, -1)
+                    padded_note_targets[: len(data["note_based_targets"])] = data[
+                        "note_based_targets"
+                    ]
+                    data["note_based_targets"] = padded_note_targets
 
             if self.target_lengths is not None:
                 if self.max_target_length is None:
@@ -334,6 +358,59 @@ class HarmonicDataset(Dataset):
         if file_ids is not None:
             h5_file.create_dataset("file_ids", data=np.array(file_ids), compression="gzip")
         h5_file.close()
+
+    def read_from_h5_file(self, h5_path: Union[str, Path]):
+        """
+        Read in the dataset from an h5 file.
+
+        Parameters
+        ----------
+        h5_path : Union[str, Path]
+            The path to the h5 file.
+        """
+        with h5py.File(h5_path, "r") as h5_file:
+            assert "inputs" in h5_file, f"{h5_file} must have a dataset called inputs"
+            assert "targets" in h5_file, f"{h5_file} must have a dataset called targets"
+            self.h5_path = h5_path
+            self.padded = False
+            self.in_ram = False
+            chunk_size = self.chunk_size
+
+            # This data is small and can be assumed to fit in RAM in any case
+            for key in ["piece_lengths", "key_change_replacements", "target_pitch_type"]:
+                if key in h5_file:
+                    setattr(self, key, np.array(h5_file[key]))
+
+            try:
+                for data in ["input", "target"]:
+                    if f"{data}_lengths" in h5_file:
+                        lengths = np.array(h5_file[f"{data}_lengths"])
+                        data_list = []
+
+                        for chunk_start in tqdm(
+                            range(0, len(lengths), chunk_size),
+                            desc=f"Loading {data} chunks from {h5_path}",
+                        ):
+                            chunk = h5_file[f"{data}s"][chunk_start : chunk_start + chunk_size]
+                            chunk_lengths = lengths[chunk_start : chunk_start + chunk_size]
+                            data_list.extend(
+                                [
+                                    np.array(item[:length], dtype=np.float16)
+                                    for item, length in zip(chunk, chunk_lengths)
+                                ]
+                            )
+
+                        setattr(self, f"{data}_lengths", lengths)
+                        setattr(self, f"{data}s", data_list)
+
+                    else:
+                        setattr(self, f"{data}s", np.array(h5_file[f"{data}s"], dtype=np.float16))
+
+                self.in_ram = True
+
+            except MemoryError:
+                logging.exception("Dataset too large to fit into RAM. Reading from h5 file.")
+                self.padded = True
 
 
 class ChordTransitionDataset(HarmonicDataset):
@@ -465,7 +542,12 @@ class ChordClassificationDataset(HarmonicDataset):
             be masked to 0. Essentially, if given, each input vector is multiplied
             by this mask.
         """
-        super().__init__(transform=transform, pad_targets=False, input_mask=input_mask)
+        super().__init__(
+            transform=transform,
+            pad_targets=False,
+            pad_inputs=False,
+            input_mask=input_mask,
+        )
         self.target_pitch_type = []
 
         if ranges is None:
@@ -502,6 +584,8 @@ class ChordClassificationDataset(HarmonicDataset):
         self.use_inversions = use_inversions
         self.transposition_range = tuple(transposition_range)
         self.num_transpositions = self.transposition_range[1] - self.transposition_range[0] + 1
+
+        self.pad_inputs = False
 
     def __len__(self):
         return super().__len__() * self.num_transpositions
@@ -626,6 +710,108 @@ class ChordClassificationDataset(HarmonicDataset):
                 ),
             }
             return
+
+    def to_h5(self, h5_path: Union[str, Path], file_ids: Iterable[int] = None):
+        """
+        Write this CC Dataset out to an h5 file, containing its inputs and targets.
+        If the dataset is already being read from an h5py file, this simply copies that
+        file (self.h5_path) over to the given location and updates self.h5_path.
+
+        The CC version is coded differently, because a padded version of the input
+        is too large to fit in memory, so a stacked version is used instead.
+
+        Parameters
+        ----------
+        h5_path : Union[str, Path]
+            The filename of the h5 file to write to.
+        file_ids : Iterable[int]
+            The file_ids of the pieces in this dataset. Will be added to the h5 file as `file_ids`
+            if given.
+        """
+        if isinstance(h5_path, str):
+            h5_path = Path(h5_path)
+
+        if not h5_path.parent.exists():
+            h5_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if not self.padded:
+            self.pad()
+
+        if self.h5_path:
+            try:
+                shutil.copy(self.h5_path, h5_path)
+                self.h5_path = h5_path
+            except OSError:
+                logging.exception("Error copying existing h5 file %s to %s", self.h5_path, h5_path)
+            return
+
+        h5_file = h5py.File(h5_path, "w")
+
+        keys = [
+            "targets",
+            "input_lengths",
+            "target_pitch_type",
+        ]
+        for key in keys:
+            if hasattr(self, key) and getattr(self, key) is not None:
+                h5_file.create_dataset(key, data=np.array(getattr(self, key)), compression="gzip")
+
+        h5_file.create_dataset("inputs", data=np.vstack(self.inputs), compression="gzip")
+
+        if file_ids is not None:
+            h5_file.create_dataset("file_ids", data=np.array(file_ids), compression="gzip")
+        h5_file.close()
+
+    def read_from_h5_file(self, h5_path: Union[str, Path]):
+        """
+        Read in the dataset from an h5 file. The CCM is done separately because
+        its input data is stacked in the h5 file, rather than padded, since the
+        padded version does not fit in memory.
+
+        Parameters
+        ----------
+        h5_path : Union[str, Path]
+            The path to the h5 file.
+        """
+        with h5py.File(h5_path, "r") as h5_file:
+            assert "inputs" in h5_file, f"{h5_file} must have a dataset called inputs"
+            assert "targets" in h5_file, f"{h5_file} must have a dataset called targets"
+            self.h5_path = h5_path
+            self.padded = False
+            self.in_ram = False
+
+            # This data is small and can be assumed to fit in RAM in any case
+            self.target_pitch_type = np.array(h5_file["target_pitch_type"])
+
+            try:
+                self.targets = np.array(h5_file["targets"])
+
+                # Read inputs chord by chord
+                self.input_lengths = np.array(h5_file["input_lengths"])
+                self.inputs = []
+
+                start_idxs = [0] + list(np.cumsum(self.input_lengths))
+                chunk_size = 5000
+
+                for chunk_id in tqdm(
+                    range((len(self.input_lengths) - 1) // chunk_size + 1),
+                    desc=f"Loading input data chunks from {h5_path}",
+                ):
+                    chunk_start_idxs = start_idxs[
+                        chunk_id * chunk_size : (chunk_id + 1) * chunk_size + 1
+                    ]
+
+                    chunk_data = h5_file["inputs"][chunk_start_idxs[0] : chunk_start_idxs[-1]]
+                    base_idx = chunk_start_idxs[0]
+
+                    for start_idx, end_idx in zip(chunk_start_idxs, chunk_start_idxs[1:]):
+                        self.inputs.append(chunk_data[start_idx - base_idx : end_idx - base_idx])
+
+                self.in_ram = True
+
+            except MemoryError:
+                logging.exception("Dataset too large to fit into RAM. Reading from h5 file.")
+                self.padded = True
 
 
 class ChordSequenceDataset(HarmonicDataset):
@@ -1291,13 +1477,22 @@ class KeyPostProcessorDataset(HarmonicDataset):
                         chord_vector, transposition
                     )
 
+                if "scheduled_sampling_data" in data:
+                    for chord_index, chord_vector in enumerate(
+                        data["scheduled_sampling_data"][: data["input_lengths"]]
+                    ):
+                        data["scheduled_sampling_data"][chord_index] = transpose_chord_vector(
+                            chord_vector, transposition
+                        )
+
         except ValueError:
             # Something transposed out of the valid pitch range
             data["targets"] = np.full_like(data["targets"], -100)
             data["input_lengths"] = -1
             data["target_lengths"] = -1
             data["inputs"] *= 0
-            return
+            if "scheduled_sampling_data" in data:
+                data["scheduled_sampling_data"] *= 0
 
     @staticmethod
     def get_scheduled_sampling_path(h5_dir_path: Union[Path, str], seed: int, split: str) -> Path:
@@ -1319,6 +1514,262 @@ class KeyPostProcessorDataset(HarmonicDataset):
             The path to the desired h5 dataset.
         """
         return Path(Path(h5_dir_path) / f"ccm_{split}_sched_samp_seed_{seed}.h5")
+
+
+class ChordPitchesDataset(HarmonicDataset):
+    """
+    A dataset representing the pitches present for each chord.
+
+    The inputs are one list per chord.
+    Each input list is a list of a note vectors, each appended with information about the chord.
+    Specifically, the note vectors are represented relative to the chord root, the chord root
+    is ignored, and the bass note is represented relative to the root.
+
+    The targets are a multi-hot vector representing the chord's pitches, relative to the root.
+    This is usually the same for chords of the same type, but also included suspensions and
+    other altered or added tones.
+    """
+
+    train_batch_size = 128
+    valid_batch_size = 256
+
+    def __init__(
+        self,
+        pieces: List[Piece],
+        transform: Callable = None,
+        reduction: Dict[ChordType, ChordType] = None,
+        use_inversions: bool = True,
+        input_mask: List[int] = None,
+        window: int = 2,
+        merge_changes: bool = False,
+        merge_reduction: Dict[ChordType, ChordType] = None,
+    ):
+        """
+        Create a chord pitches dataset from the given pieces.
+
+        Parameters
+        ----------
+        pieces : List[Piece]
+            The pieces to get the data from.
+        transform : Callable
+            A function to transform numpy arrays returned by __getitem__ by default.
+        reduction : Dict[ChordType, ChordType]
+            A chord type reduction to apply to the input chords when returning data with
+            __getitem__. This is not applied when the data is loaded, but only when it is
+            returned. So it is safe to change this after initialization.
+        use_inversions : bool
+            True to use input inversions when returning data with __getitem__. False to reduce
+            all input chords to root position. This is not applied when the data is loaded, but
+            only when it is returned. So it is safe to change this after initialization.
+        input_mask : List[int]
+            A binary input mask which is 1 in every location where each input vector
+            should be left unchanged, and 0 elsewhere where the input vectors should
+            be masked to 0. Essentially, if given, each input vector is multiplied
+            by this mask.
+        window : int
+            The window to use in data creation. Each chord's input will contain this many
+            extra notes on either side.
+        merge_changes : bool
+            Merge chords which differ only by their chord tone changes into single chords
+            as input. The resulting targets will be the superset of all targets for the
+            merged chords. That is, any pitch contained within the target of any chord
+            will be present in the merged target. Likewise, for note-based targets,
+            any note within the merged chord that is on a pitch contained in any of
+            the original targets will have a target of 1. This merge operation is
+            performed at data creation time.
+        merge_reduction : Dict[ChordType, ChordType]
+            Merge chords which no longer differ after this chord type reduction together
+            as input. The resulting targets will be the superset of all targets for the
+            merged chords. That is, any pitch contained within the target of any chord
+            will be present in the merged target. Likewise, for note-based targets,
+            any note within the merged chord that is on a pitch contained in any of
+            the original targets will have a target of 1. This merge operation is
+            performed at data creation time.
+        """
+        super().__init__(
+            transform=transform,
+            input_mask=input_mask,
+            pad_inputs=False,
+            pad_targets=False,
+        )
+        self.inputs = []
+        self.targets = []
+        self.is_default = []
+        self.target_pitch_type = []
+        self.note_based_targets = []
+        self.window = [window]
+
+        if len(pieces) > 0 and len(pieces[0].get_chords()) > 0:
+            self.target_pitch_type.append(pieces[0].get_chords()[0].pitch_type.value)
+
+        for piece in pieces:
+            reduced_piece: ScorePiece = piece
+            if merge_changes or merge_reduction is not None:
+                reduced_piece = get_score_piece_from_dict(
+                    reduced_piece.measures_df, reduced_piece.to_dict(), name=reduced_piece.name
+                )
+                if merge_reduction is not None:
+                    for chord in reduced_piece.get_chords():
+                        chord.chord_type = merge_reduction[chord.chord_type]
+                        if chord.inversion >= get_chord_inversion_count(chord.chord_type):
+                            chord.inversion = 0
+                reduced_piece.merge_chords(merge_changes)
+
+            self.inputs.extend(
+                reduced_piece.get_chord_note_inputs(window=window, for_chord_pitches=True)
+            )
+            self.targets.extend(
+                np.array(
+                    [
+                        chord.get_chord_pitches_target_vector()
+                        for chord in reduced_piece.get_chords()
+                    ]
+                )
+            )
+            self.is_default.extend(
+                [
+                    (
+                        chord.chord_pitches
+                        == get_default_chord_pitches(chord.root, chord.chord_type, chord.pitch_type)
+                    )
+                    for chord in reduced_piece.get_chords()
+                ]
+            )
+
+        for inputs, target in zip(self.inputs, self.targets):
+            this_note_based_targets = [-1] * len(inputs)
+
+            for i, note in enumerate(inputs[window:-window]):
+                if not is_in_chord(note):
+                    continue
+                this_note_based_targets[i + window] = int(
+                    is_chord_tone(note, target, pitch_type=pieces[0].get_chords()[0].pitch_type)
+                )
+
+            self.note_based_targets.append(this_note_based_targets)
+
+        self.input_lengths = np.array([len(inputs) for inputs in self.inputs])
+
+        self.reduction = reduction
+        self.use_inversions = use_inversions
+
+    def reduce(self, data: Dict, transposition: int = None):
+        reduce_chord_types(data["inputs"], self.reduction, pad=False, for_chord_pitches=True)
+        if not self.use_inversions:
+            remove_chord_inversions(data["inputs"], pad=False, for_chord_pitches=True)
+
+    def to_h5(self, h5_path: Union[str, Path], file_ids: Iterable[int] = None):
+        """
+        Write this CP Dataset out to an h5 file, containing its inputs and targets.
+        If the dataset is already being read from an h5py file, this simply copies that
+        file (self.h5_path) over to the given location and updates self.h5_path.
+
+        The CP version is coded differently, because a padded version of the input
+        is too large to fit in memory, so a stacked version is used instead.
+
+        Parameters
+        ----------
+        h5_path : Union[str, Path]
+            The filename of the h5 file to write to.
+        file_ids : Iterable[int]
+            The file_ids of the pieces in this dataset. Will be added to the h5 file as `file_ids`
+            if given.
+        """
+        if isinstance(h5_path, str):
+            h5_path = Path(h5_path)
+
+        if not h5_path.parent.exists():
+            h5_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if not self.padded:
+            self.pad()
+
+        if self.h5_path:
+            try:
+                shutil.copy(self.h5_path, h5_path)
+                self.h5_path = h5_path
+            except OSError:
+                logging.exception("Error copying existing h5 file %s to %s", self.h5_path, h5_path)
+            return
+
+        h5_file = h5py.File(h5_path, "w")
+
+        keys = [
+            "targets",
+            "is_default",
+            "input_lengths",
+            "target_pitch_type",
+            "window",
+        ]
+        for key in keys:
+            if hasattr(self, key) and getattr(self, key) is not None:
+                h5_file.create_dataset(key, data=np.array(getattr(self, key)), compression="gzip")
+
+        h5_file.create_dataset("inputs", data=np.vstack(self.inputs), compression="gzip")
+        h5_file.create_dataset(
+            "note_based_targets", data=np.concatenate(self.note_based_targets), compression="gzip"
+        )
+
+        if file_ids is not None:
+            h5_file.create_dataset("file_ids", data=np.array(file_ids), compression="gzip")
+        h5_file.close()
+
+    def read_from_h5_file(self, h5_path: Union[str, Path]):
+        """
+        Read in the dataset from an h5 file. The CPM is done separately because
+        its input data is stacked in the h5 file, rather than padded, since the
+        padded version does not fit in memory.
+
+        Parameters
+        ----------
+        h5_path : Union[str, Path]
+            The path to the h5 file.
+        """
+        with h5py.File(h5_path, "r") as h5_file:
+            assert "inputs" in h5_file, f"{h5_file} must have a dataset called inputs"
+            assert "targets" in h5_file, f"{h5_file} must have a dataset called targets"
+            self.h5_path = h5_path
+            self.padded = False
+            self.in_ram = False
+
+            # This data is small and can be assumed to fit in RAM in any case
+            self.target_pitch_type = np.array(h5_file["target_pitch_type"])
+            self.window = np.array(h5_file["window"] if "window" in h5_file else [2])
+
+            try:
+                self.targets = np.array(h5_file["targets"])
+                self.is_default = np.array(h5_file["is_default"])
+
+                # Read inputs and note-based targets chord by chord
+                self.input_lengths = np.array(h5_file["input_lengths"])
+                self.inputs = []
+                self.note_based_targets = []
+
+                start_idxs = [0] + list(np.cumsum(self.input_lengths))
+                chunk_size = 5000
+
+                for chunk_id in tqdm(
+                    range((len(self.input_lengths) - 1) // chunk_size + 1),
+                    desc=f"Loading input data chunks from {h5_path}",
+                ):
+                    chunk_start_idxs = start_idxs[
+                        chunk_id * chunk_size : (chunk_id + 1) * chunk_size + 1
+                    ]
+
+                    for key, array in zip(
+                        ["inputs", "note_based_targets"], [self.inputs, self.note_based_targets]
+                    ):
+                        chunk_data = h5_file[key][chunk_start_idxs[0] : chunk_start_idxs[-1]]
+                        base_idx = chunk_start_idxs[0]
+
+                        for start_idx, end_idx in zip(chunk_start_idxs, chunk_start_idxs[1:]):
+                            array.append(chunk_data[start_idx - base_idx : end_idx - base_idx])
+
+                self.in_ram = True
+
+            except MemoryError:
+                logging.exception("Dataset too large to fit into RAM. Reading from h5 file.")
+                self.padded = True
 
 
 def h5_to_dataset(
@@ -1352,71 +1803,28 @@ def h5_to_dataset(
         dataset_kwargs = {}
 
     dataset = dataset_class([], transform=transform, **dataset_kwargs)
-
-    with h5py.File(h5_path, "r") as h5_file:
-        assert "inputs" in h5_file, f"{h5_file} must have a dataset called inputs"
-        assert "targets" in h5_file, f"{h5_file} must have a dataset called targets"
-        dataset.h5_path = h5_path
-        dataset.padded = False
-        dataset.in_ram = False
-        chunk_size = dataset.chunk_size
-
-        # This data is small and can be assumed to fit in RAM in any case
-        for key in ["piece_lengths", "key_change_replacements", "target_pitch_type"]:
-            if key in h5_file:
-                setattr(dataset, key, np.array(h5_file[key]))
-
-        try:
-            for data in ["input", "target"]:
-                if f"{data}_lengths" in h5_file:
-                    lengths = np.array(h5_file[f"{data}_lengths"])
-                    data_list = []
-
-                    for chunk_start in tqdm(
-                        range(0, len(lengths), chunk_size),
-                        desc=f"Loading {data} chunks from {h5_path}",
-                    ):
-                        chunk = h5_file[f"{data}s"][chunk_start : chunk_start + chunk_size]
-                        chunk_lengths = lengths[chunk_start : chunk_start + chunk_size]
-                        data_list.extend(
-                            [
-                                np.array(item[:length], dtype=np.float16)
-                                for item, length in zip(chunk, chunk_lengths)
-                            ]
-                        )
-
-                    setattr(dataset, f"{data}_lengths", lengths)
-                    setattr(dataset, f"{data}s", data_list)
-
-                else:
-                    setattr(dataset, f"{data}s", np.array(h5_file[f"{data}s"], dtype=np.float16))
-
-            dataset.in_ram = True
-
-        except MemoryError:
-            logging.exception("Dataset too large to fit into RAM. Reading from h5 file.")
-            dataset.padded = True
+    dataset.read_from_h5_file(h5_path)
 
     return dataset
 
 
-def pad_array(array: List[np.array]) -> Tuple[np.array, np.array]:
+def pad_array(array: List[np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
     """
     Pad the given list, whose elements must only match in dimensions past the first, into a
     numpy nd-array of equal dimensions.
 
     Parameters
     ----------
-    array : List[np.array]
+    array : List[np.ndarray]
         A list of numpy ndarrays. The shape of each ndarray must match in every dimension except
         the first.
 
     Returns
     -------
-    padded_array : np.array
+    padded_array : np.ndarray
         The given list, packed into a numpy nd-array. Since the first dimension of each given
         nested numpy array need not be equal, each is padded with zeros to match the longest.
-    array_lengths : np.array
+    array_lengths : np.ndarray
         The size of the first dimension of each nested numpy nd-array before padding. Using this,
         the original array[i] can be gotten with padded_array[i, :array_lengths[i]].
     """
@@ -1439,6 +1847,7 @@ def get_split_file_ids_and_pieces(
     xml_and_csv_paths: Dict[str, List[Union[str, Path]]] = None,
     splits: Iterable[float] = (0.8, 0.1, 0.1),
     seed: int = None,
+    changes: bool = False,
 ) -> Tuple[Iterable[Iterable[int]], Iterable[Piece]]:
     """
     Get the file_ids that should go in each split of a split dataset.
@@ -1455,6 +1864,9 @@ def get_split_file_ids_and_pieces(
         This will be normalized to sum to 1.
     seed : int
         A numpy random seed, if given.
+    changes : bool
+        False to merge otherwise identical chords together when they differ only by chord
+        changes. True to treat them as separate chord symbols.
 
     Returns
     -------
@@ -1494,7 +1906,10 @@ def get_split_file_ids_and_pieces(
 
             try:
                 piece = get_score_piece_from_data_frames(
-                    data_dfs["notes"].loc[i], data_dfs["chords"].loc[i], data_dfs["measures"].loc[i]
+                    data_dfs["notes"].loc[i],
+                    data_dfs["chords"].loc[i],
+                    data_dfs["measures"].loc[i],
+                    changes=changes,
                 )
                 if piece.get_chords() is None or len(piece.get_chords()) == 0:
                     raise ValueError("No valid chords in Piece.")
@@ -1548,6 +1963,8 @@ def get_dataset_splits(
     xml_and_csv_paths: Dict[str, List[Union[str, Path]]] = None,
     splits: Iterable[float] = (0.8, 0.1, 0.1),
     seed: int = None,
+    changes: bool = False,
+    cpm_kwargs: Dict = {},
 ) -> Tuple[List[List[HarmonicDataset]], List[List[int]], List[List[Piece]]]:
     """
     Get datasets representing splits of the data in the given DataFrames.
@@ -1568,6 +1985,16 @@ def get_dataset_splits(
         This will be normalized to sum to 1.
     seed : int
         A numpy random seed, if given.
+    changes : bool
+        False to merge otherwise identical chords together when they differ only by chord
+        changes. True to treat them as separate chord symbols.
+    cpm_kwargs : Dict
+        Arguments to pass to the CPM data creation function. These include:
+            - window: The window padding to use for the CPM. That is, how many additional
+                notes on either side of each chord should be given to the model.
+            - merge_changes: True to merge chords which differ only by their changes.
+            - merge_reduction: A dictionary representing a chord type reduction to
+                apply before trying to merge chords.
 
     Returns
     -------
@@ -1584,6 +2011,7 @@ def get_dataset_splits(
         xml_and_csv_paths=xml_and_csv_paths,
         splits=splits,
         seed=seed,
+        changes=changes,
     )
 
     dataset_splits = np.full((len(datasets), len(splits)), None)
@@ -1597,7 +2025,8 @@ def get_dataset_splits(
             continue
 
         for dataset_index, dataset_class in enumerate(datasets):
-            dataset_splits[dataset_index][split_index] = dataset_class(pieces)
+            kwargs = {} if dataset_class != ChordPitchesDataset else cpm_kwargs
+            dataset_splits[dataset_index][split_index] = dataset_class(pieces, **kwargs)
 
     return dataset_splits, split_ids, split_pieces
 
@@ -1641,4 +2070,5 @@ DATASETS = {
     "ktm": KeyTransitionDataset,
     "ksm": KeySequenceDataset,
     "kppm": KeyPostProcessorDataset,
+    "cpm": ChordPitchesDataset,
 }

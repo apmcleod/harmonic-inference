@@ -128,11 +128,9 @@ def load_pieces(
         file_ids = list(files_df.index) if not xml else list(range(len(xmls)))
 
     # Load from pkl if available
-    if piece_dicts_path:
-        pkl_path = Path(piece_dicts_path)
-        if pkl_path.exists():
-            with open(pkl_path, "rb") as pkl_file:
-                piece_dicts = pickle.load(pkl_file)
+    if piece_dicts_path and Path(piece_dicts_path).exists():
+        with open(Path(piece_dicts_path), "rb") as pkl_file:
+            piece_dicts = pickle.load(pkl_file)
     elif xml:
         piece_dicts = [None] * len(xmls)
     else:

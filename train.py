@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 
 import harmonic_inference.data.datasets as ds
 import harmonic_inference.models.chord_classifier_models as ccm
+import harmonic_inference.models.chord_pitches_models as cpm
 import harmonic_inference.models.chord_sequence_models as csm
 import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.initial_chord_models as icm
@@ -42,7 +43,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--int-targets",
         action="store_true",
-        help=("Train the CCM with intermediate targets rather than the simple CCM."),
+        help="Train the CCM with intermediate targets rather than the simple CCM.",
+    )
+
+    parser.add_argument(
+        "--note-based",
+        action="store_true",
+        help="Train the NoteBasedCPM with note-based is_chord_tone targets, not the simple CPM.",
     )
 
     parser.add_argument(
@@ -287,6 +294,39 @@ if __name__ == "__main__":
                 PitchType.TPC,
                 learning_rate=ARGS.lr,
                 scheduled_sampling=ARGS.sched,
+                **kwargs,
+            )
+
+    elif ARGS.model == "cpm":
+        # Special case: we need to load the window from the dataset for model creation
+        h5_path_valid = Path(
+            ARGS.h5_dir / f"{ds.DATASETS[ARGS.model].__name__}_valid_seed_{ARGS.seed}.h5"
+        )
+        with h5py.File(h5_path_valid, "r") as h5_file:
+            window = h5_file["window"][0] if "window" in h5_file else 2
+        # End special case
+
+        cpm_init = (
+            cpm.NoteBasedChordPitchesModel if ARGS.note_based else cpm.NoteBasedChordPitchesModel
+        )
+        model = cpm_init(
+            PitchType.TPC,
+            PitchType.TPC,
+            learning_rate=ARGS.lr,
+            window=window,
+            **kwargs,
+        )
+
+        if "input_mask" in kwargs:
+            kwargs["input_mask"] = ds.transform_input_mask_to_binary(
+                kwargs["input_mask"],
+                model.input_dim,
+            )
+            model = cpm_init(
+                PitchType.TPC,
+                PitchType.TPC,
+                learning_rate=ARGS.lr,
+                window=window,
                 **kwargs,
             )
 

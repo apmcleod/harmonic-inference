@@ -1,6 +1,6 @@
 """Utility functions for getting harmonic and pitch information from the corpus DataFrames."""
 import itertools
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Set, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -359,6 +359,12 @@ def get_chord_one_hot_index(
     """
     if reduction is None:
         reduction = NO_REDUCTION
+    else:
+        # Correct inversion to root on reduction
+        if reduction[chord_type] != chord_type and inversion >= get_chord_inversion_count(
+            reduction[chord_type]
+        ):
+            inversion = 0
 
     chord_types = sorted(set(reduction.values()))
     chord_type = reduction[chord_type]
@@ -518,26 +524,31 @@ def decode_relative_keys(
     pitch_type: PitchType,
 ) -> Tuple[int, KeyMode]:
     """
-    [summary]
+    Decode a relative key symbol (which might be itself applied, e.g. `V/V`)
+    into a relative mode and tonic.
 
     Parameters
     ----------
     relative_string : str
-        [description]
+        A relative key symbol. Either a Roman Numeral, like `V` or `iii`,
+        or multiple Roman Numerals, separated by slashes, like `V/V` or
+        `vii/V`.
     tonic : int
-        [description]
+        The absolute tonic pitch of the current local key to which the given
+        root is applied.
     mode : KeyMode
-        [description]
+        The mode of the current local key to which the given root is applied.
     pitch_type : PitchType
-        [description]
+        The pitch type used for the tonic pitch, and to be used to return the
+        relative applied tonic.
 
     Returns
     -------
     relative_tonic : int
-        [description]
+        The tonic pitch of the applied key.
 
     relative_mode : KeyMode
-        [description]
+        The mode of the applied key.
     """
     # Handle doubly-relative chords iteratively
     for relative in reversed(relative_string.split("/")):
@@ -581,6 +592,37 @@ def get_bass_note(
     chord_pitches = hc.CHORD_PITCHES[pitch_type][chord_type]
     bass = chord_pitches[(inversion % len(chord_pitches)) if modulo else inversion]
     return transpose_pitch(bass, root - hc.C[pitch_type], pitch_type)
+
+
+def get_default_chord_pitches(
+    root: int,
+    chord_type: ChordType,
+    pitch_type: PitchType,
+) -> Set[int]:
+    """
+    Get the default chord pitches list given a root and a chord type. The returned chord
+    pitches set will contain the absolute pitch classes for the notes in the default version
+    of that chord.
+
+    Parameters
+    ----------
+    root : int
+        The root pitch of the chord.
+    chord_type : ChordType
+        The chord type.
+    pitch_type : PitchType
+        The pitch type used for the root, and to use for the returned chord pitches.
+
+    Returns
+    -------
+    chord_pitches : Set[int]
+        The absolute pitches present in the default version of the given chord,
+        represented with the given pitch type.
+    """
+    return set(
+        transpose_pitch(pitch, root - hc.C[pitch_type], pitch_type)
+        for pitch in hc.CHORD_PITCHES[pitch_type][chord_type]
+    )
 
 
 def get_chord_inversion_count(chord_type: ChordType) -> int:
@@ -774,6 +816,186 @@ def get_vector_from_chord_type(
     return chord_vector
 
 
+def get_chord_pitches_string(
+    root: int,
+    chord_type: ChordType,
+    pitches: List[int],
+    tonic: int,
+    mode: KeyMode,
+    pitch_type: PitchType,
+) -> str:
+    """
+    Get a string encoding in a readable format the chord pitches for a given chord.
+    If the pitches are the chord defaults, this will be the empty string. Otherwise,
+    this will contain any alterations within parentheses.
+
+    Parameters
+    ----------
+    root : int
+        The chord's root pitch.
+    chord_type : ChordType
+        The chord type.
+    pitches : List[int]
+        The pitches contained in the chord.
+    tonic : int
+        The tonic of the current key.
+    mode : KeyMode
+        The mode of the current key.
+    pitch_type : PitchType
+        The pitch type used to encode the root and tonic.
+
+    Returns
+    -------
+    chord_pitches_string : str
+        A human-readable string of any alterations to the default chord tones. If the default
+        tones are in the given pitches list, the empty string is returned. Otherwise, an
+        alteration string is returned within parentheses.
+    """
+
+    def get_pitch_label(
+        pitch: int, root: int, tonic: int, mode: KeyMode, pitch_type: PitchType
+    ) -> Tuple[str, int]:
+        """
+        Get an accidental string and a pitch integer for a given pitch. The
+        accidental + pitch_int will be the one by which the pitch should be referred to
+        in the chord alteration string.
+
+        Parameters
+        ----------
+        pitch : int
+            The pitch we want to refer to.
+        root : int
+            The root of the chord.
+        tonic : int
+            The tonic of the key.
+        mode : KeyMode
+            The mode of the key.
+        pitch_type : PitchType
+            The pitch type used for the given pitch.
+
+        Returns
+        -------
+        accidental : str
+            An accidental string, which should be pre-pended to the returned pitch_int.
+        pitch_int : int
+            The pitch integer, in steps above the given pitch.
+        """
+        if pitch_type == PitchType.MIDI:
+            return get_pitch_label(
+                get_pitch_from_string(get_pitch_string(pitch, PitchType.MIDI), PitchType.TPC),
+                get_pitch_from_string(get_pitch_string(root, PitchType.MIDI), PitchType.TPC),
+                get_pitch_from_string(get_pitch_string(tonic, PitchType.MIDI), PitchType.TPC),
+                mode,
+                PitchType.TPC,
+            )
+
+        pitch_int = (
+            "ABCDEFG".index(get_pitch_string(pitch, PitchType.TPC)[0])
+            - "ABCDEFG".index(get_pitch_string(root, PitchType.TPC)[0])
+        ) % 7
+        sd_string = get_scale_degree_from_interval(pitch - tonic, mode, pitch_type)
+        accidentals = sd_string.replace("V", "").replace("I", "")
+
+        return accidentals, pitch_int + 1
+
+    default_pitches = get_default_chord_pitches(root, chord_type, pitch_type)
+
+    pitch_set = set(pitches)
+    if pitch_set == default_pitches:
+        return ""
+
+    removed_pitches = np.array(list(default_pitches - pitch_set))
+    added_pitches = np.array(list(pitch_set - default_pitches))
+
+    if len(removed_pitches) == 0:
+        # We only have added pitches
+        accidentals, pitch_ints = zip(
+            *[get_pitch_label(pitch, root, tonic, mode, pitch_type) for pitch in added_pitches]
+        )
+        pitch_strings = [f"+{accidentals[i]}{pitch_ints[i]}" for i in np.argsort(pitch_ints)]
+
+        return "(" + "".join(reversed(pitch_strings)) + ")"
+
+    # Here we have added and removed pitches
+    added_accidentals, added_pitch_ints = zip(
+        *[get_pitch_label(pitch, root, tonic, mode, pitch_type) for pitch in added_pitches]
+    )
+    added_accidentals = list(added_accidentals)
+    added_pitch_ints = list(added_pitch_ints)
+    removed_pitch_ints = [
+        get_pitch_label(pitch, root, tonic, mode, pitch_type)[1] for pitch in removed_pitches
+    ]
+
+    additional_marks = []
+    pitch_ints = []
+    accidentals = []
+
+    # Check for accidentally-altered tones (same step, different accidental)
+    for step in range(8):
+        if step in added_pitch_ints and step in removed_pitch_ints:
+            added_idx = added_pitch_ints.index(step)
+            pitch_ints.append(added_pitch_ints[added_idx])
+            accidentals.append(added_accidentals[added_idx])
+            additional_marks.append("")
+
+            del added_accidentals[added_idx]
+            del added_pitch_ints[added_idx]
+            del removed_pitch_ints[removed_pitch_ints.index(step)]
+
+    # Check for specific common replacements
+    for added, removed, if_sharp, if_natural, if_flat in [
+        (6, 7, "", "^", "^"),
+        (6, 5, "v", "", ""),
+        (4, 5, "", "^", "^"),
+        (4, 3, "v", "", ""),
+        (2, 3, "", "^", "^"),
+        (2, 1, "v", "", ""),
+    ]:
+        if added in added_pitch_ints and removed in removed_pitch_ints:
+            added_idx = added_pitch_ints.index(added)
+            pitch_ints.append(added_pitch_ints[added_idx])
+            accidentals.append(added_accidentals[added_idx])
+
+            additional_marks.append(
+                if_sharp
+                if "#" in accidentals[-1]
+                else if_flat
+                if "b" in accidentals[-1]
+                else if_natural
+            )
+
+            del added_accidentals[added_idx]
+            del added_pitch_ints[added_idx]
+            del removed_pitch_ints[removed_pitch_ints.index(removed)]
+
+    # Add and remove remaining pitches ad hoc
+    if len(added_pitch_ints) != 0:
+        for accidental, pitch_int in zip(added_accidentals, added_pitch_ints):
+            if pitch_int == 2:
+                pitch_int = 9
+
+            accidentals.append(accidental)
+            pitch_ints.append(pitch_int)
+
+            if pitch_int in removed_pitch_ints:
+                additional_marks.append("")
+                del removed_pitch_ints[removed_pitch_ints.index(pitch_int)]
+            else:
+                additional_marks.append("" if pitch_int == 9 else "+")
+
+    if len(removed_pitch_ints) != 0:
+        for pitch_int in removed_pitch_ints:
+            accidentals.append("")
+            pitch_ints.append(pitch_int)
+            additional_marks.append("-")
+
+    pitch_strings = [
+        f"{additional_marks[i]}{accidentals[i]}{pitch_ints[i]}" for i in np.argsort(pitch_ints)
+    ]
+
+    return "(" + "".join(reversed(pitch_strings)) + ")"
+
+
 def get_interval_from_numeral(numeral: str, mode: KeyMode, pitch_type: PitchType) -> int:
     """
     Get the interval from the key tonic to the given scale degree numeral.
@@ -900,7 +1122,12 @@ def get_scale_degree_from_interval(interval: int, mode: KeyMode, pitch_type: Pit
     )
 
 
-def transpose_pitch(pitch: int, interval: int, pitch_type: PitchType) -> int:
+def transpose_pitch(
+    pitch: int,
+    interval: int,
+    pitch_type: PitchType,
+    ignore_range: bool = False,
+) -> int:
     """
     Transpose the given pitch by the given interval.
 
@@ -916,6 +1143,9 @@ def transpose_pitch(pitch: int, interval: int, pitch_type: PitchType) -> int:
         returned pitch must be on the range [0, 35), and the given interval is interpreted as
         fifths. This is not modded. Rather, an exception is raised if the returned pitch would be
         outside of the TPC range.
+    ignore_range : bool
+        True to ignore any errors resulting from a TPC pitch being transposed out of the legal
+        TPC range. Useful if the value represents something like a TPC interval.
 
     Returns
     -------
@@ -926,7 +1156,7 @@ def transpose_pitch(pitch: int, interval: int, pitch_type: PitchType) -> int:
         return (pitch + interval) % hc.NUM_PITCHES[PitchType.MIDI]
     pitch = pitch + interval
 
-    if pitch < 0 or pitch >= hc.NUM_PITCHES[PitchType.TPC]:
+    if not ignore_range and (pitch < 0 or pitch >= hc.NUM_PITCHES[PitchType.TPC]):
         raise ValueError(
             f"pitch_type is TPC but transposed pitch {pitch} lies outside of TPC " "range."
         )

@@ -99,7 +99,7 @@ class KeyPostProcessorModel(pl.LightningModule, ABC):
             "input_mask": self.input_mask,
         }
 
-    def load_scheduled_sampling_inputs(self, batch: Dict[str, Any]) -> None:
+    def load_scheduled_sampling_inputs(self, batch: Dict[str, Any], force: bool = False) -> None:
         """
         Load scheduled sampling data *in place* in the given batch dictionary.
         The resulting input will be placed in batch["input"], overwriting whatever
@@ -110,6 +110,9 @@ class KeyPostProcessorModel(pl.LightningModule, ABC):
         ----------
         batch : Dict[str, Any]
             The batch data, mapping strings to tensrs.
+
+        force : bool
+            Force all data to be replaced with the scheduled sampling inputs.
         """
 
         def get_scheduled_sampling_prob(epoch_num: int, sigmoid_k: float = 10.0) -> float:
@@ -131,6 +134,10 @@ class KeyPostProcessorModel(pl.LightningModule, ABC):
             """
             return sigmoid_k / (sigmoid_k + exp(epoch_num / sigmoid_k))
 
+        if force:
+            batch["inputs"] = batch["scheduled_sampling_data"]
+            return
+
         clean_prob = get_scheduled_sampling_prob(self.current_epoch, sigmoid_k=self.sigmoid_k)
         random_sample = torch.bernoulli(
             torch.full((torch.sum(batch["input_lengths"].clip(0)).item(),), 1 - clean_prob)
@@ -148,9 +155,34 @@ class KeyPostProcessorModel(pl.LightningModule, ABC):
 
             start += length
 
-    def get_data_from_batch(self, batch, sched):
+    def get_data_from_batch(
+        self, batch: Dict[str, Any], sched: bool, force_sched: bool = False
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Load data from the given batch in the correct format and type.
+
+        Parameters
+        ----------
+        batch : Dict[str, Any]
+            The batch data, from a DataLoader.
+        sched : bool
+            True to perform scheduled sampling.
+        force_sched : bool
+            True to force scheduled sampling with p=1 (i.e., all inputs will be replaced
+            by noisy inputs). If sched is False, this is ignored.
+
+        Returns
+        -------
+        inputs : torch.Tensor
+            The inputs, replaced by scheduled sampling ones if desired.
+        input_lengths : torch.Tensor
+            A tensor of longs indicating the length of each input sequence.
+        targets : torch.Tensor
+            A tensor of longs, including the target for each input. -100 is set
+            for invalid targets.
+        """
         if sched:
-            self.load_scheduled_sampling_inputs(batch)
+            self.load_scheduled_sampling_inputs(batch, force=force_sched)
 
         inputs = batch["inputs"].float()
         input_lengths = (
@@ -171,8 +203,8 @@ class KeyPostProcessorModel(pl.LightningModule, ABC):
         if targets is not None:
             targets = targets[:, :longest]
 
-        for i, length in enumerate(input_lengths):
-            targets[i, length:] = -100
+            for i, length in enumerate(input_lengths):
+                targets[i, length:] = -100
 
         return inputs, input_lengths, targets
 
@@ -192,7 +224,9 @@ class KeyPostProcessorModel(pl.LightningModule, ABC):
         return loss
 
     def validation_step(self, batch: Dict[str, Any], batch_idx: int):
-        inputs, input_lengths, targets = self.get_data_from_batch(batch, self.scheduled_sampling)
+        inputs, input_lengths, targets = self.get_data_from_batch(
+            batch, self.scheduled_sampling, force_sched=True
+        )
 
         outputs = self(inputs, input_lengths)
 

@@ -49,15 +49,16 @@ def get_range_length(
     length = act_dur + offset - start_beat
 
     # Loop until reaching end_mc
-    while current_mc != end_mc and current_mc is not None:
+    while not pd.isna(current_mc) and current_mc != end_mc:
         act_dur, current_mc = measures.loc[
             measures["mc"] == current_mc, ["act_dur", "next"]
         ].values[0]
         length += act_dur
 
     # Add remainder
-    final_offset = measures.loc[measures["mc"] == current_mc, MEASURE_OFFSET].values[0]
-    length += end_beat - final_offset
+    if not pd.isna(current_mc):
+        final_offset = measures.loc[measures["mc"] == current_mc, MEASURE_OFFSET].values[0]
+        length += end_beat - final_offset
 
     return factor * length
 

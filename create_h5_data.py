@@ -11,6 +11,7 @@ import numpy as np
 
 import harmonic_inference.data.datasets as ds
 from harmonic_inference.data.corpus_reading import load_clean_corpus_dfs
+from harmonic_inference.data.data_types import MAJOR_MINOR_REDUCTION, TRIAD_REDUCTION
 
 SPLITS = ["train", "valid", "test"]
 
@@ -26,6 +27,14 @@ if __name__ == "__main__":
         type=Path,
         default=Path("corpus_data"),
         help="The directory containing the raw corpus files.",
+    )
+
+    parser.add_argument(
+        "-ds",
+        "--dataset",
+        choices=ds.DATASETS.keys(),
+        help="Create data for only a single dataset.",
+        default=None,
     )
 
     parser.add_argument(
@@ -71,6 +80,38 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--changes",
+        action="store_true",
+        help="Do not merge otherwise identical chords whose changes (chord pitches) differ.",
+    )
+
+    parser.add_argument(
+        "--cpm-merge-changes",
+        action="store_true",
+        help=(
+            "Regardless of --changes, for the CPM, merge chords which differ only "
+            "by their changes."
+        ),
+    )
+
+    parser.add_argument(
+        "--cpm-merge-reduction",
+        type=str,
+        choices=["triad", "Mm"],
+        help=(
+            "For the CPM, merge input chords after reducing to their associated triad or 3rd "
+            "type."
+        ),
+    )
+
+    parser.add_argument(
+        "--cpm-window",
+        type=int,
+        default=2,
+        help="The window size to use for creating the CPM data.",
+    )
+
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="True to parse only the first 5 pieces, as a test of data creation.",
@@ -111,14 +152,10 @@ if __name__ == "__main__":
         xmls_and_csvs = {"xmls": xmls, "csvs": csvs}
 
     else:
-        files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(ARGS.input)
-
-        dfs = {
-            "files": files_df,
-            "measures": measures_df,
-            "chords": chords_df,
-            "notes": notes_df,
-        }
+        dfs = {}
+        dfs["files"], dfs["measures"], dfs["chords"], dfs["notes"] = load_clean_corpus_dfs(
+            ARGS.input
+        )
 
         if ARGS.debug:
             dfs["files"] = dfs["files"].iloc[:5]
@@ -137,12 +174,25 @@ if __name__ == "__main__":
             ]
 
     dataset_splits, split_ids, split_pieces = ds.get_dataset_splits(
-        ds.DATASETS.values(),
+        ds.DATASETS.values() if ARGS.dataset is None else [ds.DATASETS[ARGS.dataset]],
         data_dfs=dfs,
         xml_and_csv_paths=xmls_and_csvs,
         splits=ARGS.splits,
         seed=ARGS.seed,
+        changes=ARGS.changes,
+        cpm_kwargs={
+            "window": ARGS.cpm_window,
+            "merge_changes": ARGS.cpm_merge_changes,
+            "merge_reduction": (
+                TRIAD_REDUCTION
+                if ARGS.cpm_merge_reduction == "triad"
+                else MAJOR_MINOR_REDUCTION
+                if ARGS.cpm_merge_reduction == "Mm"
+                else None
+            ),
+        },
     )
+    dfs = None  # To save memory
 
     os.makedirs(Path(ARGS.output), exist_ok=True)
 
@@ -152,7 +202,13 @@ if __name__ == "__main__":
             with open(pickle_path, "wb") as pickle_file:
                 pickle.dump([piece.to_dict() for piece in pieces], pickle_file)
 
-    for i1, data_type in enumerate(ds.DATASETS.values()):
+    # Should save a lot of memory
+    pieces = None
+    split_pieces = None
+
+    for i1, data_type in enumerate(
+        ds.DATASETS.values() if ARGS.dataset is None else [ds.DATASETS[ARGS.dataset]]
+    ):
         for i2, split in enumerate(SPLITS):
             if dataset_splits[i1][i2] is not None:
                 h5_path = ARGS.output / f"{data_type.__name__}_{split}_seed_{ARGS.seed}.h5"

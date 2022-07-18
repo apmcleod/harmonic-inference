@@ -16,6 +16,7 @@ from tqdm import tqdm
 
 import harmonic_inference.data.datasets as ds
 import harmonic_inference.models.chord_classifier_models as ccm
+import harmonic_inference.models.chord_pitches_models as cpm
 import harmonic_inference.models.chord_sequence_models as csm
 import harmonic_inference.models.chord_transition_models as ctm
 import harmonic_inference.models.initial_chord_models as icm
@@ -31,6 +32,7 @@ from harmonic_inference.utils.beam_search_utils import Beam, HashedBeam, State
 
 MODEL_CLASSES = {
     "ccm": [ccm.SimpleChordClassifier, ccm.MultiTargetChordClassifier],
+    "cpm": [cpm.SimpleChordPitchesModel, cpm.NoteBasedChordPitchesModel],
     "ctm": [ctm.SimpleChordTransitionModel],
     "csm": [csm.SimpleChordSequenceModel],
     "ktm": [ktm.SimpleKeyTransitionModel],
@@ -58,9 +60,12 @@ MAX_KEY_BRANCHING_FACTOR_DEFAULT = 2
 TARGET_KEY_BRANCH_PROB_DEFAULT = 0.5
 HASH_LENGTH_DEFAULT = 5
 KSM_EXPONENT_DEFAULT = 50
+CPM_CHORD_TONE_THRESHOLD_DEFAULT = 0.5
+CPM_NON_CHORD_TONE_ADD_THRESHOLD_DEFAULT = 0.5
+CPM_NON_CHORD_TONE_REPLACE_THRESHOLD_DEFAULT = 0.5
 
 
-def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
+def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False, cpm_only: bool = False):
     """
     Add parameters for the HarmonicInferenceModel to the given ArgumentParser.
 
@@ -70,114 +75,163 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False):
         The ArgumentParser to add the HarmonicInferenceModel arguments to.
     grid_search : bool
         True to allow lists of values for each argument for a potential grid search.
+    cpm_only : bool
+        True to only add cpm-based hyperparameters.
     """
-    parser.add_argument(
-        "--min-chord-change-prob",
-        default=MIN_CHORD_CHANGE_PROB_DEFAULT,
-        type=float,
-        nargs="+" if grid_search else None,
-        help="The minimum CTM probability that can be a chord change.",
-    )
+    if not cpm_only:
+        parser.add_argument(
+            "--min-chord-change-prob",
+            default=MIN_CHORD_CHANGE_PROB_DEFAULT,
+            type=float,
+            nargs="+" if grid_search else None,
+            help="The minimum CTM probability that can be a chord change.",
+        )
+
+        parser.add_argument(
+            "--max-no-chord-change-prob",
+            default=MAX_NO_CHORD_CHANGE_PROB_DEFAULT,
+            type=float,
+            nargs="+" if grid_search else None,
+            help="The maximum CTM probability that can be a non-chord change.",
+        )
+
+        parser.add_argument(
+            "--max-chord-length",
+            default=MAX_CHORD_LENGTH_DEFAULT,
+            type=Fraction,
+            nargs="+" if grid_search else None,
+            help="The maximum duration (in whole notes) of a chord.",
+        )
+
+        parser.add_argument(
+            "--min-key-change-prob",
+            default=MIN_KEY_CHANGE_PROB_DEFAULT,
+            type=float,
+            nargs="+" if grid_search else None,
+            help="The minimum KTM probability that can be a key change.",
+        )
+
+        parser.add_argument(
+            "--max-no-key-change-prob",
+            default=MAX_NO_KEY_CHANGE_PROB_DEFAULT,
+            type=float,
+            nargs="+" if grid_search else None,
+            help="The maximum KTM probability that can be a non-key change.",
+        )
+
+        parser.add_argument(
+            "--beam-size",
+            default=BEAM_SIZE_DEFAULT,
+            type=int,
+            nargs="+" if grid_search else None,
+            help="The beam size to use during decoding.",
+        )
+
+        parser.add_argument(
+            "--max-chord-branching-factor",
+            default=MAX_CHORD_BRANCHING_FACTOR_DEFAULT,
+            type=int,
+            nargs="+" if grid_search else None,
+            help="The maximum number of different chords to branch into.",
+        )
+
+        parser.add_argument(
+            "--target-chord-branch-prob",
+            default=TARGET_CHORD_BRANCH_PROB_DEFAULT,
+            type=float,
+            nargs="+" if grid_search else None,
+            help=(
+                "Once the chords branched into account for at least this much probability "
+                "mass to stop branching, disregarding --max-chord-branching-factor."
+            ),
+        )
+
+        parser.add_argument(
+            "--max-key-branching-factor",
+            default=MAX_KEY_BRANCHING_FACTOR_DEFAULT,
+            type=int,
+            nargs="+" if grid_search else None,
+            help="The maximum number of different keys to branch into.",
+        )
+
+        parser.add_argument(
+            "--target-key-branch-prob",
+            default=TARGET_KEY_BRANCH_PROB_DEFAULT,
+            type=float,
+            nargs="+" if grid_search else None,
+            help=(
+                "Once the keys branched into account for at least this much probability "
+                "mass to stop branching, disregarding --max-key-branching-factor."
+            ),
+        )
+
+        parser.add_argument(
+            "--hash-length",
+            default=HASH_LENGTH_DEFAULT,
+            type=int,
+            nargs="+" if grid_search else None,
+            help=(
+                "If 2 states are identical in chord and key for this many chord changes "
+                "(disregarding change index), only the most likely state is kept in the beam."
+            ),
+        )
+
+        parser.add_argument(
+            "--ksm-exponent",
+            default=KSM_EXPONENT_DEFAULT,
+            type=float,
+            nargs="+" if grid_search else None,
+            help=(
+                "An exponent to be applied to the KSM's probability outputs. Used to weight "
+                "the KSM and CSM equally even given their different vocabulary sizes."
+            ),
+        )
 
     parser.add_argument(
-        "--max-no-chord-change-prob",
-        default=MAX_NO_CHORD_CHANGE_PROB_DEFAULT,
-        type=float,
-        nargs="+" if grid_search else None,
-        help="The maximum CTM probability that can be a non-chord change.",
-    )
-
-    parser.add_argument(
-        "--max-chord-length",
-        default=MAX_CHORD_LENGTH_DEFAULT,
-        type=Fraction,
-        nargs="+" if grid_search else None,
-        help="The maximum duration (in whole notes) of a chord.",
-    )
-
-    parser.add_argument(
-        "--min-key-change-prob",
-        default=MIN_KEY_CHANGE_PROB_DEFAULT,
-        type=float,
-        nargs="+" if grid_search else None,
-        help="The minimum KTM probability that can be a key change.",
-    )
-
-    parser.add_argument(
-        "--max-no-key-change-prob",
-        default=MAX_NO_KEY_CHANGE_PROB_DEFAULT,
-        type=float,
-        nargs="+" if grid_search else None,
-        help="The maximum KTM probability that can be a non-key change.",
-    )
-
-    parser.add_argument(
-        "--beam-size",
-        default=BEAM_SIZE_DEFAULT,
-        type=int,
-        nargs="+" if grid_search else None,
-        help="The beam size to use during decoding.",
-    )
-
-    parser.add_argument(
-        "--max-chord-branching-factor",
-        default=MAX_CHORD_BRANCHING_FACTOR_DEFAULT,
-        type=int,
-        nargs="+" if grid_search else None,
-        help="The maximum number of different chords to branch into.",
-    )
-
-    parser.add_argument(
-        "--target-chord-branch-prob",
-        default=TARGET_CHORD_BRANCH_PROB_DEFAULT,
+        "--cpm-chord-tone-threshold",
+        default=CPM_CHORD_TONE_THRESHOLD_DEFAULT,
         type=float,
         nargs="+" if grid_search else None,
         help=(
-            "Once the chords branched into account for at least this much probability mass "
-            "stop branching, disregarding --max-chord-branching-factor."
+            "The threshold above which a default chord tone must reach in the CPM output "
+            "in order to be considered present in a given chord."
         ),
     )
 
     parser.add_argument(
-        "--max-key-branching-factor",
-        default=MAX_KEY_BRANCHING_FACTOR_DEFAULT,
-        type=int,
-        nargs="+" if grid_search else None,
-        help="The maximum number of different keys to branch into.",
-    )
-
-    parser.add_argument(
-        "--target-key-branch-prob",
-        default=TARGET_KEY_BRANCH_PROB_DEFAULT,
+        "--cpm-non-chord-tone-add-threshold",
+        default=CPM_NON_CHORD_TONE_ADD_THRESHOLD_DEFAULT,
         type=float,
         nargs="+" if grid_search else None,
         help=(
-            "Once the keys branched into account for at least this much probability mass "
-            "stop branching, disregarding --max-key-branching-factor."
+            "The threshold above which a default non-chord tone must reach in the CPM output "
+            "in order to be included as an added tone in a given chord."
         ),
     )
 
     parser.add_argument(
-        "--hash-length",
-        default=HASH_LENGTH_DEFAULT,
-        type=int,
-        nargs="+" if grid_search else None,
-        help=(
-            "If 2 states are identical in chord and key for this many chord changes "
-            "(disregarding change index), only the most likely state is kept in the beam."
-        ),
-    )
-
-    parser.add_argument(
-        "--ksm-exponent",
-        default=KSM_EXPONENT_DEFAULT,
+        "--cpm-non-chord-tone-replace-threshold",
+        default=CPM_NON_CHORD_TONE_REPLACE_THRESHOLD_DEFAULT,
         type=float,
         nargs="+" if grid_search else None,
         help=(
-            "An exponent to be applied to the KSM's probability outputs. Used to weight "
-            "the KSM and CSM equally even given their different vocabulary sizes."
+            "The threshold above which a default non-chord tone must reach in the CPM output "
+            "in order to replace a chord tone in a given chord."
         ),
     )
+
+    if not cpm_only:
+        parser.add_argument(
+            "--no-kppm",
+            action="store_true",
+            help="Do not perform KPPM post-processing.",
+        )
+
+        parser.add_argument(
+            "--no-cpm",
+            action="store_true",
+            help="Do not perform CPM post-processing.",
+        )
 
 
 class HarmonicInferenceModel:
@@ -200,6 +254,11 @@ class HarmonicInferenceModel:
         target_key_branch_prob: float = TARGET_KEY_BRANCH_PROB_DEFAULT,
         hash_length: int = HASH_LENGTH_DEFAULT,
         ksm_exponent: float = KSM_EXPONENT_DEFAULT,
+        cpm_chord_tone_threshold: float = CPM_CHORD_TONE_THRESHOLD_DEFAULT,
+        cpm_non_chord_tone_add_threshold: float = CPM_NON_CHORD_TONE_ADD_THRESHOLD_DEFAULT,
+        cpm_non_chord_tone_replace_threshold: float = CPM_NON_CHORD_TONE_REPLACE_THRESHOLD_DEFAULT,
+        no_kppm: bool = False,
+        no_cpm: bool = False,
     ):
         """
         Create a new HarmonicInferenceModel from a set of pre-loaded models.
@@ -215,6 +274,7 @@ class HarmonicInferenceModel:
                 'ksm': A KeySequenceModel
                 'icm': An InitialChordModel
                 'kppm': A KeyPostProcessorModel
+                'cpm': A ChordPitchesModel
         min_chord_change_prob : float
             The minimum probability (from the CTM) on which a chord change can occur.
         max_no_chord_change_prob : float
@@ -246,6 +306,19 @@ class HarmonicInferenceModel:
         ksm_exponent : float
             An exponent to apply to the KSM's output probabilities. Used to weight the KSM
             and CSM equally, even given their different vocabulary sizes.
+        cpm_chord_tone_threshold : float
+            The threshold above which a default chord tone must reach in the CPM output
+            in order to be considered present in a given chord.
+        cpm_non_chord_tone_add_threshold : float
+            The threshold above which a default non-chord tone must reach in the CPM output
+            in order to be an added tone in a given chord.
+        cpm_non_chord_tone_replace_threshold : float
+            The threshold above which a default non-chord tone must reach in the CPM output
+            in order to replace a chord tone in a given chord.
+        no_kppm : bool
+            Do not perform KPPM post-processing.
+        no_cpm : bool
+            Do not perform CPM post-processing.
         """
         for model, model_classes in MODEL_CLASSES.items():
             assert model in models.keys(), f"`{model}` not in models dict."
@@ -257,13 +330,20 @@ class HarmonicInferenceModel:
         for arg_name in inspect.getfullargspec(HarmonicInferenceModel.__init__).args[1:]:
             logging.info("    %s = %s", arg_name, locals()[arg_name])
 
+        # Post-processing and other flags
+        self.no_kppm = no_kppm
+        self.no_cpm = no_cpm
+
         self.chord_classifier: ccm.ChordClassifierModel = models["ccm"]
         self.chord_sequence_model: csm.ChordSequenceModel = models["csm"]
         self.chord_transition_model: ctm.ChordTransitionModel = models["ctm"]
         self.key_sequence_model: ksm.KeySequenceModel = models["ksm"]
         self.key_transition_model: ktm.KeyTransitionModel = models["ktm"]
-        self.key_post_processor_model: kppm.SimpleKeyPostProcessorModel = models["kppm"]
+        if not self.no_kppm:
+            self.key_post_processor_model: kppm.SimpleKeyPostProcessorModel = models["kppm"]
         self.initial_chord_model: icm.SimpleInitialChordModel = models["icm"]
+        if not self.no_cpm:
+            self.chord_pitches_model: cpm.SimpleChordPitchesModel = models["cpm"]
         self.check_input_output_types()
 
         # Set joint model types
@@ -273,7 +353,12 @@ class HarmonicInferenceModel:
 
         # Load labels
         self.LABELS = {
-            "chord": hu.get_chord_from_one_hot_index(slice(None, None), self.CHORD_OUTPUT_TYPE),
+            "chord": hu.get_chord_from_one_hot_index(
+                slice(None, None),
+                self.CHORD_OUTPUT_TYPE,
+                use_inversions=self.chord_classifier.use_inversions,
+                reduction=self.chord_classifier.reduction,
+            ),
             "key": hu.get_key_from_one_hot_index(slice(None, None), self.KEY_OUTPUT_TYPE),
             "relative_key": list(
                 itertools.product(
@@ -313,6 +398,11 @@ class HarmonicInferenceModel:
         self.target_key_branch_prob = target_key_branch_prob
         self.ksm_exponent = ksm_exponent
 
+        # Chord pitch params (CPM)
+        self.cpm_chord_tone_threshold = cpm_chord_tone_threshold
+        self.cpm_non_chord_tone_add_threshold = cpm_non_chord_tone_add_threshold
+        self.cpm_non_chord_tone_replace_threshold = cpm_non_chord_tone_replace_threshold
+
         # Beam search params
         self.beam_size = beam_size
         self.hash_length = hash_length
@@ -341,9 +431,10 @@ class HarmonicInferenceModel:
         assert (
             self.chord_classifier.OUTPUT_PITCH == self.chord_sequence_model.INPUT_CHORD_PITCH_TYPE
         ), "CCM output pitch type does not match CSM chord pitch type"
-        assert (
-            self.chord_classifier.OUTPUT_PITCH == self.key_post_processor_model.INPUT_PITCH
-        ), "CCM output pitch type does not match KPPM input pitch type"
+        if not self.no_kppm:
+            assert (
+                self.chord_classifier.OUTPUT_PITCH == self.key_post_processor_model.INPUT_PITCH
+            ), "CCM output pitch type does not match KPPM input pitch type"
 
         # Output from CSM
         assert (
@@ -358,6 +449,10 @@ class HarmonicInferenceModel:
             self.chord_sequence_model.OUTPUT_PITCH_TYPE
             == self.chord_sequence_model.INPUT_CHORD_PITCH_TYPE
         ), "CSM output pitch type does not match its own input chord pitch type"
+        if not self.no_cpm:
+            assert (
+                self.chord_sequence_model.OUTPUT_PITCH_TYPE == self.chord_pitches_model.OUTPUT_PITCH
+            ), "CSM output pitch type does not match CPM input pitch type"
 
         # Output from KSM
         assert (
@@ -377,6 +472,12 @@ class HarmonicInferenceModel:
         assert (
             self.initial_chord_model.PITCH_TYPE == self.chord_sequence_model.OUTPUT_PITCH_TYPE
         ), "ICM pitch type does not match CSM output pitch type"
+
+        # Output from CPM
+        if not self.no_cpm:
+            assert (
+                self.chord_pitches_model.OUTPUT_PITCH == self.chord_sequence_model.OUTPUT_PITCH_TYPE
+            ), "CPM output pitch type does not match overall and CSM output pitch type"
 
     def _validate_and_load_forced_labels(self):
         """
@@ -510,6 +611,30 @@ class HarmonicInferenceModel:
                     f"{self.forced_key_ids[change_index]} at that index."
                 )
 
+    def load_piece(self, piece: Piece):
+        """
+        Load a Piece and the corresponding caches into the model.
+
+        Parameters
+        ----------
+        piece : Piece
+            The piece to load.
+        """
+        self.current_piece = piece
+        assert piece.DATA_TYPE == self.INPUT_TYPE, "Piece type doesn't match expected input type"
+
+        # Save caches from piece
+        self.duration_cache = piece.get_duration_cache()
+        self.onset_cache = [vec.onset for vec in piece.get_inputs()] + [
+            piece.get_inputs()[-1].offset
+        ]
+        self.onset_level_cache = [vec.onset_level for vec in piece.get_inputs()] + [
+            piece.get_inputs()[-1].offset_level
+        ]
+        self.beat_duration_cache = [vec.beat_duration for vec in piece.get_inputs()] + [
+            piece.get_inputs()[-1].beat_duration
+        ]
+
     def get_harmony(
         self,
         piece: Piece,
@@ -519,7 +644,7 @@ class HarmonicInferenceModel:
         forced_key_non_changes: Set[int] = None,
         forced_chords: Dict[Tuple[int, int], int] = None,
         forced_keys: Dict[Tuple[int, int], int] = None,
-    ) -> State:
+    ) -> Tuple[State, Piece]:
         """
         Run the model on a piece and output its harmony.
 
@@ -560,27 +685,17 @@ class HarmonicInferenceModel:
         -------
         state : State
             The top estimated state.
+
+        piece : Piece
+            The estimated ScorePiece.
         """
-        self.current_piece = piece
-        assert piece.DATA_TYPE == self.INPUT_TYPE, "Piece type doesn't match expected input type"
+        self.load_piece(piece)
 
         self.debugger = DebugLogger(
             self,
             self.max_chord_branching_factor,
             self.max_key_branching_factor,
         )
-
-        # Save caches from piece
-        self.duration_cache = piece.get_duration_cache()
-        self.onset_cache = [vec.onset for vec in piece.get_inputs()] + [
-            piece.get_inputs()[-1].offset
-        ]
-        self.onset_level_cache = [vec.onset_level for vec in piece.get_inputs()] + [
-            piece.get_inputs()[-1].offset_level
-        ]
-        self.beat_duration_cache = [vec.beat_duration for vec in piece.get_inputs()] + [
-            piece.get_inputs()[-1].beat_duration
-        ]
 
         # Validate forced changes
         self.forced_chord_changes = set() if forced_chord_changes is None else forced_chord_changes
@@ -635,12 +750,30 @@ class HarmonicInferenceModel:
             chord_ranges, range_log_probs, rejoin_log_probs, chord_classifications
         )
 
-        # KPPM Post-processing for key labels
-        self.post_process(state)
+        # KPPM post-processing for key labels
+        if not self.no_kppm:
+            logging.info("Performing KPPM post-processing")
+            self.kppm_post_processing(state)
+
+        # CPM post-processing for chord pitches
+        if not self.no_cpm:
+            logging.info("Performing CPM post-processing")
+            self.cpm_post_processing(state)
+
+        piece = state.get_score_piece(
+            self.current_piece,
+            self.CHORD_OUTPUT_TYPE,
+            self.KEY_OUTPUT_TYPE,
+            self.duration_cache,
+            self.onset_cache,
+            self.onset_level_cache,
+            self.beat_duration_cache,
+            self.LABELS,
+        )
 
         self.current_piece = None
 
-        return state
+        return state, piece
 
     def get_chord_change_probs(self) -> List[float]:
         """
@@ -954,6 +1087,9 @@ class HarmonicInferenceModel:
             desc="Beam searching through inputs",
             total=len(all_states) - 1,
         ):
+            current_start: int
+            current_states: List[State]
+
             if len(current_states) == 0:
                 continue
 
@@ -987,7 +1123,7 @@ class HarmonicInferenceModel:
                     # Quick exit if range will never get into resulting beam
                     continue
 
-                # Ensure each state branches at least once
+                # Ensure each state branches to at least one completely new chord
                 if max_index == 1 and chord_priors_argsort[0] == state.chord:
                     max_index = 2
 
@@ -1393,9 +1529,10 @@ class HarmonicInferenceModel:
             state.csm_log_prior = log_prior.numpy()[0]
             state.csm_hidden_state = (hidden, cell)
 
-    def post_process(self, state: State) -> None:
+    def kppm_post_processing(self, state: State) -> None:
         """
-        Run the KPPM post-processing step, and update the state in place with its outputs.
+        Run the KPPM post-processing step, and update the state in place with its outputs
+        (new key labels).
 
         Parameters
         ----------
@@ -1425,6 +1562,76 @@ class HarmonicInferenceModel:
         current_state = state
         for key in reversed(keys):
             current_state.key = key
+            current_state = current_state.prev_state
+
+    def cpm_post_processing(self, state: State) -> State:
+        """
+        Run the CPM post-processing step, and update the state in place with its outputs
+        (pitch presence vectors for each chord).
+
+        Parameters
+        ----------
+        state : State
+            The most likely state as output by the beam search.
+
+        Returns
+        -------
+        new_state : State
+            The new final state of the decoding process. In case the last chord is split
+            by the CPM (in which case, a new state will be added to the end and then returned).
+        """
+        piece = state.get_score_piece(
+            self.current_piece,
+            self.CHORD_OUTPUT_TYPE,
+            self.KEY_OUTPUT_TYPE,
+            self.duration_cache,
+            self.onset_cache,
+            self.onset_level_cache,
+            self.beat_duration_cache,
+            self.LABELS,
+        )
+
+        chord_pitches = cpm.get_chord_pitches(
+            self.chord_pitches_model,
+            piece,
+            self.cpm_chord_tone_threshold,
+            self.cpm_non_chord_tone_add_threshold,
+            self.cpm_non_chord_tone_replace_threshold,
+        )
+
+        current_state = state
+        for pitches, chord in zip(reversed(chord_pitches), reversed(piece.get_chords())):
+            if isinstance(pitches, List):
+                # Note-based output: Need to do some special handling
+                abs_pitches = []
+
+                for window_pitches, window_index in pitches:
+                    # Convert binary pitches array into root-relative indices
+                    pitch_indices = np.where(window_pitches)[0]
+                    if self.chord_pitches_model.INPUT_PITCH == PitchType.TPC:
+                        pitch_indices -= hc.MAX_CHORD_PITCH_INTERVAL_TPC
+
+                    # Convert root-relative indices into absolute pitches
+                    abs_pitches.append(
+                        [set([chord.root + pitch for pitch in pitch_indices]), window_index]
+                    )
+
+                # Remove list if only one window
+                if len(abs_pitches) == 1:
+                    abs_pitches = abs_pitches[0][0]
+
+            else:
+                # Chord-Pitches output: can be written directly to states
+
+                # Convert binary pitches array into root-relative indices
+                pitch_indices = np.where(pitches)[0]
+                if self.chord_pitches_model.OUTPUT_PITCH == PitchType.TPC:
+                    pitch_indices -= hc.MAX_CHORD_PITCH_INTERVAL_TPC
+
+                # Convert root-relative indices into absolute pitches
+                abs_pitches = set([chord.root + pitch for pitch in pitch_indices])
+
+            current_state.chord_pitches = abs_pitches
             current_state = current_state.prev_state
 
 
@@ -2124,7 +2331,7 @@ class DebugLogger:
         logging.debug("    prob=%s rank=%s", correct_prob, correct_rank)
 
 
-def from_args(models: Dict, ARGS: Namespace) -> HarmonicInferenceModel:
+def from_args(models: Dict, ARGS: Namespace, cpm_only: bool = False) -> HarmonicInferenceModel:
     """
     Load a HarmonicInferenceModel from this given models and argparse parsed arguments.
 
@@ -2139,12 +2346,21 @@ def from_args(models: Dict, ARGS: Namespace) -> HarmonicInferenceModel:
             'ksm': A KeySequenceModel
     ARGS : Namespace
         Parsed command-line arguments for the HarmonicInferenceModel's parameters.
+    cpm_only : bool
+        True to include only cpm-based arguments for the Model constructor.
 
     Returns
     -------
     model : HarmonicInferenceModel
         A HarmonicInferenceModel, with parameters taken from the parsed args.
     """
+    if cpm_only:
+        return HarmonicInferenceModel(
+            models,
+            cpm_chord_tone_threshold=ARGS.cpm_chord_tone_threshold,
+            cpm_non_chord_tone_add_threshold=ARGS.cpm_non_chord_tone_add_threshold,
+            cpm_non_chord_tone_replace_threshold=ARGS.cpm_non_chord_tone_replace_threshold,
+        )
     return HarmonicInferenceModel(
         models,
         min_chord_change_prob=ARGS.min_chord_change_prob,
@@ -2159,4 +2375,9 @@ def from_args(models: Dict, ARGS: Namespace) -> HarmonicInferenceModel:
         target_key_branch_prob=ARGS.target_key_branch_prob,
         hash_length=ARGS.hash_length,
         ksm_exponent=ARGS.ksm_exponent,
+        cpm_chord_tone_threshold=ARGS.cpm_chord_tone_threshold,
+        cpm_non_chord_tone_add_threshold=ARGS.cpm_non_chord_tone_add_threshold,
+        cpm_non_chord_tone_replace_threshold=ARGS.cpm_non_chord_tone_replace_threshold,
+        no_kppm=ARGS.no_kppm,
+        no_cpm=ARGS.no_cpm,
     )
