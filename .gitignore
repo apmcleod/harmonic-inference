@@ -18,6 +18,7 @@ debug.py
 h5_data*/**
 harmonic_inference.egg-info/**
 ismir/**
+emr/**
 model_jsons*/**
 output*/**
 results*/**
