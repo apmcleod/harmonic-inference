@@ -349,7 +349,11 @@ class HarmonicInferenceModel:
         # Set joint model types
         self.INPUT_TYPE = self.chord_classifier.INPUT_TYPE
         self.CHORD_OUTPUT_TYPE = self.chord_sequence_model.OUTPUT_PITCH_TYPE
-        self.KEY_OUTPUT_TYPE = self.key_post_processor_model.OUTPUT_PITCH
+        self.KEY_OUTPUT_TYPE = (
+            self.key_post_processor_model.OUTPUT_PITCH
+            if not self.no_kppm
+            else self.key_sequence_model.OUTPUT_PITCH_TYPE
+        )
 
         # Load labels
         self.LABELS = {
