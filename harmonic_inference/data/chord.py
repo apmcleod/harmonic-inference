@@ -619,7 +619,7 @@ class Chord:
 
         return (
             f"{get_pitch_string(self.root, self.pitch_type)}:"
-            f"{get_chord_string(self.chord_type)} {inversion_str} "
+            f"{get_chord_string(self.chord_type, False)} {inversion_str} "
             f"BASS={get_pitch_string(self.bass, self.pitch_type)}: "
             f"{self.onset}--{self.offset}"
         )

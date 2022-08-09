@@ -75,7 +75,7 @@ def get_chord_label_list(
         roots = [get_pitch_string(i, pitch_type) for i in range(hc.NUM_PITCHES[pitch_type])]
 
     return [
-        f"{root}{get_chord_string(chord_type)}{get_figbass_string(inv, chord_type)}"
+        f"{root}{get_chord_string(chord_type, True)}{get_figbass_string(inv, chord_type)}"
         for chord_type, root in itertools.product(sorted(set(reduction.values())), roots)
         for inv in (range(get_chord_inversion_count(chord_type)) if use_inversions else [None])
     ]
