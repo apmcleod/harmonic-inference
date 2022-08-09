@@ -779,6 +779,7 @@ def get_annotation_df(
     use_inversions: bool,
     reduction: Dict[ChordType, ChordType],
     use_chord_pitches: bool = False,
+    label_type: str = "abs",
 ) -> pd.DataFrame:
     """
     Get a df containing the labels of the given estimated output.
@@ -800,10 +801,15 @@ def get_annotation_df(
         reduction used by the CCM during the search process.
     use_chord_pitches : bool
         True to include altered tones in the output chord labels.
+    label_type : str
+        The types of labels to return in the df. Options are:
+            - abs (default): Absolute pitches.
+            - rel: Roman numeral-based chords, but still absolute keys.
+            - dcml: DCML-style output strings.
 
     Returns
     -------
-    annotation_df : pd.DataFrame[type]
+    annotation_df : pd.DataFrame
         A DataFrame containing the harmony annotations from the given state.
     """
     labels_list = []
@@ -813,7 +819,9 @@ def get_annotation_df(
     )
 
     chord_label_list = hu.get_chord_label_list(
-        root_type, use_inversions=use_inversions, reduction=reduction
+        root_type,
+        use_inversions=use_inversions,
+        reduction=reduction,
     )
     chord_list = hu.get_chord_from_one_hot_index(
         slice(None), root_type, use_inversions=use_inversions, reduction=reduction
@@ -846,7 +854,8 @@ def get_annotation_df(
         ):
             continue
 
-        if est_key_string != prev_est_key_string:
+        # DCML labels combine key and chord
+        if est_key_string != prev_est_key_string and label_type != "dcml":
             labels_list.append(
                 {
                     "label": est_key_string,
@@ -856,18 +865,38 @@ def get_annotation_df(
                 }
             )
 
-        if est_chord_string != prev_est_chord_string or est_pitches != prev_est_chord_pitches:
-            est_root, est_chord_type, _ = chord_list[est_chord_label]
-            est_tonic, est_mode = key_list[est_key_label]
+        est_root, est_chord_type, _ = chord_list[est_chord_label]
+        est_tonic, est_mode = key_list[est_key_label]
 
-            chord_pitches_string = (
-                hu.get_chord_pitches_string(
-                    est_root, est_chord_type, est_pitches, est_tonic, est_mode, root_type
-                )
-                if use_chord_pitches
-                else ""
+        chord_pitches_string = (
+            hu.get_chord_pitches_string(
+                est_root, est_chord_type, est_pitches, est_tonic, est_mode, root_type
+            )
+            if use_chord_pitches
+            else ""
+        )
+
+        if label_type in ["rel", "dcml"]:
+            est_chord_string = hu.convert_abs_chord_label_to_rel(
+                est_chord_string,
+                est_tonic,
+                est_mode,
+                root_type,
+                tonic_type,
             )
 
+        # Replace "m" with a lowercase root
+        if "o" in est_chord_string or "%" in est_chord_string or "m" in est_chord_string:
+            for char in ["A", "B", "C", "D", "E", "F", "G", "V", "I"]:
+                est_chord_string = est_chord_string.replace(char, char.lower())
+        est_chord_string = est_chord_string.replace("m", "")
+
+        # TODO: Check for dcml-type labels (and make key relative)
+
+        if (
+            est_chord_string != prev_est_chord_string
+            or chord_pitches_string != prev_est_chord_pitches
+        ):
             labels_list.append(
                 {
                     "label": est_chord_string + chord_pitches_string,
@@ -879,7 +908,7 @@ def get_annotation_df(
 
         prev_est_key_string = est_key_string
         prev_est_chord_string = est_chord_string
-        prev_est_chord_pitches = est_pitches
+        prev_est_chord_pitches = chord_pitches_string
 
     return pd.DataFrame(labels_list)
 
@@ -941,6 +970,7 @@ def get_results_annotation_df(
     use_inversions: bool,
     reduction: Dict[ChordType, ChordType],
     use_chord_pitches: bool = False,
+    label_type: str = "abs",
 ) -> pd.DataFrame:
     """
     Get a df containing the full labels of the given estimated output, color-coded in terms
@@ -964,6 +994,11 @@ def get_results_annotation_df(
         reduction used by the CCM during the search process.
     use_chord_pitches : bool
         True to include altered tones in the output chord labels.
+    label_type : str
+        The types of labels to return in the df. Options are:
+            - abs (default): Absolute pitches.
+            - rel: Roman numeral-based chords, but absolute keys.
+            - dcml: DCML-style output strings.
 
     Returns
     -------

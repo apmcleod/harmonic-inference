@@ -77,8 +77,48 @@ def get_chord_label_list(
     return [
         f"{root}{get_chord_string(chord_type, True)}{get_figbass_string(inv, chord_type)}"
         for chord_type, root in itertools.product(sorted(set(reduction.values())), roots)
-        for inv in (range(get_chord_inversion_count(chord_type)) if use_inversions else [None])
+        for inv in (range(get_chord_inversion_count(chord_type)) if use_inversions else [0])
     ]
+
+
+def convert_abs_chord_label_to_rel(
+    chord_label: str,
+    tonic: int,
+    mode: KeyMode,
+    root_type: PitchType,
+    tonic_type: PitchType,
+) -> str:
+    """
+    Convert an absolute chord label to a relative one.
+
+    Parameters
+    ----------
+    chord_label : str
+        The absolute chord label.
+    tonic : int
+        The tonic pitch of the current key.
+    mode : KeyMode
+        The mode of the current key.
+    root_type : PitchType
+        The pitch type of the given root pitch.
+    tonic_type : PitchType
+        The pitch type of the given tonic.
+
+    Returns
+    -------
+    rel_label : str
+        A relative label for the given chord_label string.
+    """
+    num_accidentals = chord_label[1:].count("b") + chord_label[1:].count("#")
+    label_suffix = chord_label[1 + num_accidentals :]  # This won't change
+
+    if tonic_type != root_type:
+        tonic = get_pitch_from_string(get_pitch_string(tonic, tonic_type), root_type)
+
+    root = get_pitch_from_string(chord_label[: 1 + num_accidentals], root_type)
+    root_string = get_scale_degree_from_interval(root - tonic, mode, root_type)
+
+    return root_string + label_suffix
 
 
 def split_changes_into_list(changes: str) -> List[str]:

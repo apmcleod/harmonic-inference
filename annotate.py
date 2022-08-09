@@ -131,6 +131,7 @@ def set_default_args(ARGS: argparse.Namespace):
 def annotate(
     model: HarmonicInferenceModel,
     pieces: List[Piece],
+    label_type: str,
     output_tsv_dir: Union[Path, str] = None,
 ):
     """
@@ -142,6 +143,8 @@ def annotate(
         The model to use to estimate chords and keys.
     pieces : List[Piece]
         The input pieces to estimate chords and keys from.
+    label_type : str
+        The label type to use when annotating. Either abs, rel, or dcml.
     output_tsv_dir : Union[Path, str]
         A directory to output TSV labels into. Each piece's output labels will go into
         a sub-directory according to its name field. If None, label TSVs are not generated.
@@ -153,7 +156,7 @@ def annotate(
         if piece.name is not None:
             logging.info("Running piece %s", piece.name)
 
-        state = model.get_harmony(piece)
+        state, estimated_piece = model.get_harmony(piece)
 
         if state is None:
             logging.info("Returned None")
@@ -163,13 +166,14 @@ def annotate(
                 eu.log_state(state, piece, model.CHORD_OUTPUT_TYPE, model.KEY_OUTPUT_TYPE)
 
             annotation_df = eu.get_annotation_df(
-                state,
+                estimated_piece,
                 piece,
                 model.CHORD_OUTPUT_TYPE,
                 model.KEY_OUTPUT_TYPE,
                 model.chord_classifier.use_inversions,
                 model.chord_classifier.reduction,
                 use_chord_pitches=True,
+                label_type=label_type,
             )
 
             if piece.name is not None and output_tsv_dir is not None:
@@ -240,6 +244,14 @@ if __name__ == "__main__":
         type=Path,
         default="outputs",
         help="The directory to write label tsvs and annotated MuseScore3 scores to.",
+    )
+
+    parser.add_argument(
+        "--label-type",
+        type=str,
+        choices=["abs", "rel", "dcml"],
+        default="abs",
+        help="The format to use for the annotations.",
     )
 
     parser.add_argument(
@@ -332,5 +344,6 @@ if __name__ == "__main__":
     annotate(
         from_args(models, ARGS),
         pieces,
+        ARGS.label_type,
         output_tsv_dir=ARGS.output,
     )
