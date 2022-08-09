@@ -9,7 +9,10 @@ from ms3 import Score
 
 from harmonic_inference.data.data_types import KeyMode, PitchType
 from harmonic_inference.data.piece import ScorePiece
-from harmonic_inference.utils.harmonic_constants import CHORD_TYPE_TO_STRING, STRING_TO_CHORD_TYPE
+from harmonic_inference.utils.harmonic_constants import (
+    CHORD_TYPE_TO_STRING_READABLE,
+    STRING_TO_CHORD_TYPE,
+)
 from harmonic_inference.utils.harmonic_utils import (
     get_chord_one_hot_index,
     get_key_one_hot_index,
@@ -25,7 +28,8 @@ PITCH_REGEX = r"[A-Ga-g](#{0,2}|b{0,2})"
 
 CHORD_REGEX = re.compile(
     f"C=({PITCH_REGEX})"  # Root
-    "(" + "|".join(list(CHORD_TYPE_TO_STRING.values())).replace("+", "\\+") + ")"  # Chord type
+    # Chord type
+    "(" + "|".join(list(CHORD_TYPE_TO_STRING_READABLE.values())).replace("+", "\\+") + ")"
     r"(_[0-3])?"  # Inversion
 )
 KEY_REGEX = re.compile(f"K={PITCH_REGEX}")

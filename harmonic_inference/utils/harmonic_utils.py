@@ -75,7 +75,7 @@ def get_chord_label_list(
         roots = [get_pitch_string(i, pitch_type) for i in range(hc.NUM_PITCHES[pitch_type])]
 
     return [
-        f"{root}:{get_chord_string(chord_type)}{'' if inv is None else f', inv:{inv}'}"
+        f"{root}{get_chord_string(chord_type)}{get_figbass_string(inv, chord_type)}"
         for chord_type, root in itertools.product(sorted(set(reduction.values())), roots)
         for inv in (range(get_chord_inversion_count(chord_type)) if use_inversions else [None])
     ]
@@ -448,7 +448,7 @@ def get_key_label_list(
         tonics = [get_pitch_string(i, pitch_type) for i in range(hc.NUM_PITCHES[pitch_type])]
 
     return [
-        f"{tonic.lower() if key_mode == KeyMode.MINOR else tonic}:{key_mode}"
+        tonic.lower() if key_mode == KeyMode.MINOR else tonic
         for key_mode, tonic in itertools.product(KeyMode, tonics)
     ]
 
@@ -1188,6 +1188,30 @@ def get_chord_inversion(figbass: str) -> int:
         ) from exception
 
 
+def get_figbass_string(inversion: int, chord_type: ChordType) -> str:
+    """
+    Get the figured bass string for a particular inversion of the given chord type.
+
+    Parameters
+    ----------
+    inversion : int
+        The inversion.
+    chord_type : ChordType
+        The chord type. Used to disambiguate triads and tetrads.
+
+    Returns
+    -------
+    figbass : str
+        The figured bass string for the given inversion.
+    """
+    if inversion is None:
+        return ""
+
+    is_triad = len(hc.CHORD_PITCHES[PitchType.TPC][chord_type]) == 3
+
+    return hc.FIGBASS_STRINGS[is_triad][inversion]
+
+
 # Chord/Pitch string <--> object conversion functions =============================================
 
 
@@ -1217,7 +1241,7 @@ def get_chord_type_from_string(chord_string: str) -> ChordType:
         raise ValueError(f"String type {chord_string} not recognized.") from exception
 
 
-def get_chord_string(chord_type: ChordType) -> str:
+def get_chord_string(chord_type: ChordType, for_labels: bool) -> str:
     """
     Get a chord type string from a given ChordType.
 
@@ -1226,12 +1250,21 @@ def get_chord_string(chord_type: ChordType) -> str:
     chord_type : ChordType
         A ChordType to convert to a string.
 
+    for_labels : bool
+        True if the returned string is for labels. False if it should be directly
+        readable as a type. The main difference is that for labels, "7" is never
+        included, since that is instead included in the figured bass string.
+
     Returns
     -------
     chord_type_str : str
         The string representation of the given ChordType.
     """
-    return hc.CHORD_TYPE_TO_STRING[chord_type]
+    return (
+        hc.CHORD_TYPE_TO_STRING_LABELS[chord_type]
+        if for_labels
+        else hc.CHORD_TYPE_TO_STRING_READABLE[chord_type]
+    )
 
 
 def get_pitch_from_string(pitch_string: str, pitch_type: PitchType) -> int:

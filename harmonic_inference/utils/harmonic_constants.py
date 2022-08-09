@@ -167,6 +167,7 @@ for pitch_type in [PitchType.MIDI, PitchType.TPC]:
         )
 
 
+# DCML annotation tsv strings
 STRING_TO_CHORD_TYPE = {
     "M": ChordType.MAJOR,
     "m": ChordType.MINOR,
@@ -180,17 +181,58 @@ STRING_TO_CHORD_TYPE = {
     "%7": ChordType.HALF_DIM7,
     "+7": ChordType.AUG_MIN7,
     "+M7": ChordType.AUG_MAJ7,
+    "It": ChordType.DIMINISHED,
+    "Ger": ChordType.DIM7,
+    "Fr": ChordType.MAJ_MIN7,
+}
+
+CHORD_TYPE_TO_STRING_LABELS = {
+    ChordType.MAJOR: "",
+    ChordType.MINOR: "m",
+    ChordType.DIMINISHED: "o",
+    ChordType.AUGMENTED: "+",
+    ChordType.MAJ_MAJ7: "M",
+    ChordType.MAJ_MIN7: "",
+    ChordType.MIN_MAJ7: "mM",
+    ChordType.MIN_MIN7: "m",
+    ChordType.DIM7: "o",
+    ChordType.HALF_DIM7: "%",
+    ChordType.AUG_MIN7: "+",
+    ChordType.AUG_MAJ7: "+M",
+}
+
+CHORD_TYPE_TO_STRING_READABLE = {
+    ChordType.MAJOR: "M",
+    ChordType.MINOR: "m",
+    ChordType.DIMINISHED: "o",
+    ChordType.AUGMENTED: "+",
+    ChordType.MAJ_MAJ7: "M7",
+    ChordType.MAJ_MIN7: "7",
+    ChordType.MIN_MAJ7: "mM7",
+    ChordType.MIN_MIN7: "m7",
+    ChordType.DIM7: "o7",
+    ChordType.HALF_DIM7: "%7",
+    ChordType.AUG_MIN7: "+7",
+    ChordType.AUG_MAJ7: "+M7",
 }
 
 
-CHORD_TYPE_TO_STRING = {chord_type: string for string, chord_type in STRING_TO_CHORD_TYPE.items()}
-
-STRING_TO_CHORD_TYPE["It"] = ChordType.DIMINISHED
-STRING_TO_CHORD_TYPE["Ger"] = ChordType.DIM7
-STRING_TO_CHORD_TYPE["Fr"] = ChordType.MAJ_MIN7
-
-
 FIGBASS_INVERSIONS = {"7": 0, "6": 1, "65": 1, "43": 2, "64": 2, "2": 3}
+
+# Usage: FIGBASS_STRINGS[is_triad][inversion]
+FIGBASS_STRINGS = {
+    True: {
+        0: "",
+        1: "6",
+        2: "64",
+    },
+    False: {
+        0: "7",
+        1: "65",
+        2: "43",
+        3: "2",
+    },
+}
 
 CHORD_INVERSION_COUNT = {
     ChordType.MAJOR: 3,
