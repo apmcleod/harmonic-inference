@@ -60,9 +60,9 @@ MAX_KEY_BRANCHING_FACTOR_DEFAULT = 2
 TARGET_KEY_BRANCH_PROB_DEFAULT = 0.5
 HASH_LENGTH_DEFAULT = 5
 KSM_EXPONENT_DEFAULT = 50
-CPM_CHORD_TONE_THRESHOLD_DEFAULT = 0.5
-CPM_NON_CHORD_TONE_ADD_THRESHOLD_DEFAULT = 0.5
-CPM_NON_CHORD_TONE_REPLACE_THRESHOLD_DEFAULT = 0.5
+CPM_CHORD_TONE_THRESHOLD_DEFAULT = 0.9
+CPM_NON_CHORD_TONE_ADD_THRESHOLD_DEFAULT = 0.9
+CPM_NON_CHORD_TONE_REPLACE_THRESHOLD_DEFAULT = 0.6
 
 
 def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False, cpm_only: bool = False):
@@ -349,7 +349,11 @@ class HarmonicInferenceModel:
         # Set joint model types
         self.INPUT_TYPE = self.chord_classifier.INPUT_TYPE
         self.CHORD_OUTPUT_TYPE = self.chord_sequence_model.OUTPUT_PITCH_TYPE
-        self.KEY_OUTPUT_TYPE = self.key_post_processor_model.OUTPUT_PITCH
+        self.KEY_OUTPUT_TYPE = (
+            self.key_post_processor_model.OUTPUT_PITCH
+            if not self.no_kppm
+            else self.key_sequence_model.OUTPUT_PITCH_TYPE
+        )
 
         # Load labels
         self.LABELS = {
