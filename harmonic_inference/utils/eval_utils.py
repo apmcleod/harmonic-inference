@@ -1013,7 +1013,7 @@ def get_annotation_df(
                 )
 
     if label_type != "dcml":
-        for i in reversed(label_type):
+        for i in reversed(to_remove):
             del labels_list[i]
 
     for label_dict in labels_list:
