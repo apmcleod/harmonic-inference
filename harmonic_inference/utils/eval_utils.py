@@ -1011,6 +1011,7 @@ def get_annotation_df(
                     + applied_key
                     + labels_list[label_idx]["label"][idx:]
                 )
+            to_remove.append(key_indices[i])
 
     if label_type != "dcml":
         for i in reversed(to_remove):
