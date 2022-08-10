@@ -13,7 +13,7 @@ from ms3 import Parse
 import harmonic_inference.utils.harmonic_constants as hc
 import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.data.chord import Chord
-from harmonic_inference.data.data_types import TRIAD_REDUCTION, ChordType, PitchType
+from harmonic_inference.data.data_types import TRIAD_REDUCTION, ChordType, KeyMode, PitchType
 from harmonic_inference.data.piece import Piece
 from harmonic_inference.models.joint_model import State
 
@@ -829,9 +829,13 @@ def get_annotation_df(
     key_label_list = hu.get_key_label_list(tonic_type)
     key_list = hu.get_key_from_one_hot_index(slice(None), tonic_type)
 
+    # Default to first key being the global tonic
+    global_tonic, global_mode = key_list[estimated_key_labels[0]]
+
     prev_est_key_string = None
     prev_est_chord_string = None
     prev_est_chord_pitches = None
+    first = True
 
     for duration, note, est_chord_label, est_key_label, est_pitches in zip(
         gt_piece.get_duration_cache(),
@@ -846,7 +850,7 @@ def get_annotation_df(
         est_chord_string = chord_label_list[est_chord_label]
         est_key_string = key_label_list[est_key_label]
 
-        # No change in labels
+        # No change in labels (will only catch label_type == "abs")
         if (
             est_chord_string == prev_est_chord_string
             and est_key_string == prev_est_key_string
@@ -854,19 +858,29 @@ def get_annotation_df(
         ):
             continue
 
-        # DCML labels combine key and chord
-        if est_key_string != prev_est_key_string and label_type != "dcml":
-            labels_list.append(
-                {
-                    "label": est_key_string,
-                    "mc": note.onset[0],
-                    "mc_onset": note.mc_onset,
-                    "mn_onset": note.onset[1],
-                }
-            )
-
         est_root, est_chord_type, _ = chord_list[est_chord_label]
         est_tonic, est_mode = key_list[est_key_label]
+
+        # DCML labels combine key and chord
+        if est_key_string != prev_est_key_string:
+            if label_type == "dcml":
+                if not first:
+                    # Key should be a Roman numeral here
+                    est_key_string = hu.get_scale_degree_from_interval(
+                        est_tonic - global_tonic, global_mode, tonic_type
+                    )
+                    if est_mode == KeyMode.MINOR:
+                        est_key_string = est_key_string.lower()
+
+            else:
+                labels_list.append(
+                    {
+                        "label": est_key_string,
+                        "mc": note.onset[0],
+                        "mc_onset": note.mc_onset,
+                        "mn_onset": note.onset[1],
+                    }
+                )
 
         chord_pitches_string = (
             hu.get_chord_pitches_string(
@@ -891,11 +905,10 @@ def get_annotation_df(
                 est_chord_string = est_chord_string.replace(char, char.lower())
         est_chord_string = est_chord_string.replace("m", "")
 
-        # TODO: Check for dcml-type labels (and make key relative)
-
         if (
             est_chord_string != prev_est_chord_string
             or chord_pitches_string != prev_est_chord_pitches
+            or est_key_string != prev_est_key_string
         ):
             labels_list.append(
                 {
@@ -906,9 +919,15 @@ def get_annotation_df(
                 }
             )
 
+        if label_type == "dcml" and est_key_string != prev_est_key_string:
+            labels_list[-1]["label"] = est_key_string + "." + labels_list[-1]["label"]
+
         prev_est_key_string = est_key_string
         prev_est_chord_string = est_chord_string
         prev_est_chord_pitches = chord_pitches_string
+        first = False
+
+    # TODO: Convert short key changes into applied
 
     return pd.DataFrame(labels_list)
 
