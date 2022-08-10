@@ -875,7 +875,7 @@ def get_annotation_df(
             else:
                 labels_list.append(
                     {
-                        "label": est_key_string,
+                        "label": "Key: " + est_key_string,
                         "mc": note.onset[0],
                         "mc_onset": note.mc_onset,
                         "mn_onset": note.onset[1],
@@ -927,7 +927,102 @@ def get_annotation_df(
         prev_est_chord_pitches = chord_pitches_string
         first = False
 
-    # TODO: Convert short key changes into applied
+    # Convert short key changes into applied
+    keys = []
+    key_indices = []
+    for i, label_dict in enumerate(labels_list):
+        label = label_dict["label"]
+        if label_type == "dcml" and "." in label:
+            keys.append(label[: label.index(".")])
+            key_indices.append(i)
+        elif label.startswith("Key: "):
+            keys.append(label[5:])
+            key_indices.append(i)
+
+    # Check for length < 3
+    diff = 3
+    if label_type != "dcml":
+        diff += 1
+    can_be_applied = (
+        [False] + [j - i < diff for i, j in zip(key_indices[1:-1], key_indices[2:])] + [False]
+    )
+
+    current_key = keys[0]
+    if label_type == "dcml":
+        current_key = "I" if keys[0].isupper() else "i"
+        keys[0] = current_key
+    current_key_tonic = global_tonic
+    current_key_mode = global_mode
+    to_remove = []
+    for i, can_apply in enumerate(can_be_applied[1:], start=1):
+        if keys[i] == current_key:
+            if label_type == "dcml":
+                labels_list[key_indices[i]]["label"] = labels_list[key_indices[i]]["label"][
+                    labels_list[key_indices[i]]["label"].index(".") + 1 :
+                ]
+            else:
+                to_remove.append(key_indices[i])
+        elif not can_apply:
+            current_key = keys[i]
+            if label_type == "dcml":
+                current_key_tonic = (
+                    hu.get_interval_from_scale_degree(keys[i], True, global_mode, tonic_type)
+                    + global_tonic
+                )
+                current_key_mode = KeyMode.MINOR if keys[i][-1].islower() else KeyMode.MAJOR
+            else:
+                current_key_tonic = hu.get_pitch_from_string(keys[i], tonic_type)
+                current_key_mode = KeyMode.MINOR if keys[i][0].islower() else KeyMode.MAJOR
+
+        elif keys[i] != current_key:
+            # An applied key that is different from the current key
+            if label_type == "dcml":
+                tonic = (
+                    hu.get_interval_from_scale_degree(keys[i], True, global_mode, tonic_type)
+                    + global_tonic
+                )
+                mode = KeyMode.MINOR if keys[i][-1].islower() else KeyMode.MAJOR
+            else:
+                tonic = hu.get_pitch_from_string(keys[i], tonic_type)
+                mode = KeyMode.MINOR if keys[i][0].islower() else KeyMode.MAJOR
+
+            applied_key = (
+                hu.get_pitch_string(tonic, tonic_type)
+                if label_type == "abs"
+                else hu.get_scale_degree_from_interval(
+                    tonic - current_key_tonic, current_key_mode, tonic_type
+                )
+            )
+            if mode == KeyMode.MINOR:
+                applied_key = applied_key.lower()
+
+            for label_idx in range(key_indices[i], key_indices[i + 1]):
+                if label_type == "dcml" and "." in labels_list[label_idx]["label"]:
+                    labels_list[label_idx]["label"] = labels_list[label_idx]["label"][
+                        labels_list[label_idx]["label"].index(".") + 1 :
+                    ]
+                if "(" in labels_list[label_idx]["label"]:
+                    idx = labels_list[label_idx]["label"].index("(")
+                else:
+                    idx = len(labels_list[label_idx]["label"])
+                labels_list[label_idx]["label"] = (
+                    labels_list[label_idx]["label"][:idx]
+                    + "/"
+                    + applied_key
+                    + labels_list[label_idx]["label"][idx:]
+                )
+
+    if label_type != "dcml":
+        for i in reversed(label_type):
+            del labels_list[i]
+
+    for label_dict in labels_list:
+        if label_dict["label"] == "V7/V(b5)":
+            label_dict["label"] = "Fr6"
+        if label_dict["label"] == "viio6/V(b3)":
+            label_dict["label"] = "It6"
+        if label_dict["label"] == "viio65/V(b3)":
+            label_dict["label"] = "Ger6"
 
     return pd.DataFrame(labels_list)
 
