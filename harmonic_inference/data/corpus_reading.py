@@ -121,6 +121,9 @@ def load_clean_corpus_dfs(dir_path: Union[str, Path], count: int = None):
         )
         measures_df = measures_df.drop("offset", axis=1)
 
+    if "gracenote" not in notes_df.columns:
+        notes_df.loc[:, "gracenote"] = pd.NA
+
     if chords_df is not None:
         if "onset" in chords_df.columns:
             chords_df.loc[:, CHORD_ONSET_BEAT] = chords_df[CHORD_ONSET_BEAT].fillna(
