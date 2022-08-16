@@ -782,7 +782,9 @@ def get_annotation_df(
     label_type: str = "abs",
 ) -> pd.DataFrame:
     """
-    Get a df containing the labels of the given estimated output.
+    Get a df containing the labels of the given estimated output. The gt input is not
+    required to have any chord lables, and the output will be just the estimated labels,
+    not any indication of correctness.
 
     Parameters
     ----------
@@ -861,8 +863,9 @@ def get_annotation_df(
         est_root, est_chord_type, _ = chord_list[est_chord_label]
         est_tonic, est_mode = key_list[est_key_label]
 
-        # DCML labels combine key and chord
+        # Key change
         if est_key_string != prev_est_key_string:
+            # DCML labels combine key and chord
             if label_type == "dcml":
                 if not first:
                     # Key should be a Roman numeral here
@@ -931,6 +934,37 @@ def get_annotation_df(
         prev_est_chord_pitches = chord_pitches_string
         first = False
 
+    post_process_labels(labels_list, label_type, global_tonic, global_mode, tonic_type)
+
+    return pd.DataFrame(labels_list)
+
+
+def post_process_labels(
+    labels_list: List[Dict],
+    label_type: str,
+    global_tonic: int,
+    global_mode: KeyMode,
+    tonic_type: PitchType,
+) -> None:
+    """
+    Post-process a list of annotation labels. This does 2 things:
+    1. Convert short key changes into applied chords.
+    2. Replace aug6 chords with their proper label.
+
+    Parameters
+    ----------
+    labels_list : List[Dict]
+        A List of Dict entries, each containing at least a "label"
+        to be post-processed. This will be changed in place.
+    label_type : str
+        The label type contained in the list. Either abs, rel, or dcml.
+    global_tonic : int
+        The global tonic pitch.
+    global_mode : KeyMode
+        The global key's mode.
+    tonic_type : PitchType
+        The pitch_type used to represent the tonic.
+    """
     # Convert short key changes into applied
     keys = []  # List of strings representing each key
     key_indices = []  # Indexes of key changes
@@ -949,7 +983,12 @@ def get_annotation_df(
         # rel and abs have the key as an additional label, which adds 1 to the diff
         diff += 1
     can_be_applied = (
-        [False] + [j - i < diff for i, j in zip(key_indices[1:-1], key_indices[2:])] + [False]
+        [False]
+        + [
+            j - i - sum(label_dict["label"] == "--" for label_dict in labels_list[i:j]) < diff
+            for i, j in zip(key_indices[1:-1], key_indices[2:])
+        ]
+        + [False]
     )
 
     # Initial key
@@ -1013,6 +1052,10 @@ def get_annotation_df(
 
             # Change all labels within this now applied key
             for label_idx in range(key_indices[i], key_indices[i + 1]):
+                if labels_list[label_idx]["label"] == "--":
+                    # Skip dashes
+                    continue
+
                 # Remove the initial key change label for dcml
                 if label_type == "dcml" and "." in labels_list[label_idx]["label"]:
                     labels_list[label_idx]["label"] = labels_list[label_idx]["label"][
@@ -1047,8 +1090,6 @@ def get_annotation_df(
             label_dict["label"] = "It6"
         if label_dict["label"] == "viio65/V(b3)":
             label_dict["label"] = "Ger6"
-
-    return pd.DataFrame(labels_list)
 
 
 def get_labels_from_piece(
@@ -1162,12 +1203,16 @@ def get_results_annotation_df(
     key_label_list = hu.get_key_label_list(tonic_type)
     key_list = hu.get_key_from_one_hot_index(slice(None), tonic_type)
 
+    # Default to first key being the global tonic
+    global_tonic, global_mode = key_list[estimated_key_labels[0]]
+
     prev_gt_chord_string = None
     prev_gt_key_string = None
     prev_gt_chord_pitches = None
     prev_est_key_string = None
     prev_est_chord_string = None
     prev_est_chord_pitches = None
+    first = True
 
     for (
         duration,
@@ -1201,7 +1246,7 @@ def get_results_annotation_df(
         est_key_string = key_label_list[est_key_label]
         est_tonic, est_mode = key_list[est_key_label]
 
-        # No change in labels
+        # No change in labels (will only catch label_type == "abs")
         if (
             gt_chord_string == prev_gt_chord_string
             and gt_key_string == prev_gt_key_string
@@ -1213,36 +1258,70 @@ def get_results_annotation_df(
             continue
 
         if gt_key_string != prev_gt_key_string or est_key_string != prev_est_key_string:
-            if gt_tonic == est_tonic and gt_mode == est_mode:
-                color = "green"
-            elif gt_tonic == est_tonic:
-                color = "orange"
-            else:
-                color = "red"
+            if label_type == "dcml":
+                # Combined key and chord for dcml
+                if not first:
+                    # Key should be a Roman numeral here
+                    est_key_string = hu.get_scale_degree_from_interval(
+                        est_tonic - global_tonic, global_mode, tonic_type
+                    )
+                    if est_mode == KeyMode.MINOR:
+                        est_key_string = est_key_string.lower()
 
-            labels_list.append(
-                {
-                    "label": est_key_string if est_key_string != prev_est_key_string else "--",
-                    "mc": note.onset[0],
-                    "mc_onset": note.mc_onset,
-                    "mn_onset": note.onset[1],
-                    "color_name": color,
-                }
+            else:
+                if gt_tonic == est_tonic and gt_mode == est_mode:
+                    color = "green"
+                elif gt_tonic == est_tonic:
+                    color = "orange"
+                else:
+                    color = "red"
+
+                labels_list.append(
+                    {
+                        "label": (
+                            "Key: "
+                            + (est_key_string if est_key_string != prev_est_key_string else "--")
+                        ),
+                        "mc": note.onset[0],
+                        "mc_onset": note.mc_onset,
+                        "mn_onset": note.onset[1],
+                        "color_name": color,
+                    }
+                )
+
+        chord_pitches_string = (
+            hu.get_chord_pitches_string(
+                est_root, est_chord_type, est_pitches, est_tonic, est_mode, root_type
             )
+            if use_chord_pitches
+            else ""
+        )
+
+        # Convert absolute chord to relative key-relative
+        if label_type in ["rel", "dcml"]:
+            est_chord_string = hu.convert_abs_chord_label_to_rel(
+                est_chord_string,
+                est_tonic,
+                est_mode,
+                root_type,
+                tonic_type,
+            )
+
+        # Make roots lowercase for minor, dim, and half-dim chords
+        if "o" in est_chord_string or "%" in est_chord_string or "m" in est_chord_string:
+            for char in ["A", "B", "C", "D", "E", "F", "G", "V", "I"]:
+                est_chord_string = est_chord_string.replace(char, char.lower())
+        # Remove "m" (lowercase root implies this already)
+        est_chord_string = est_chord_string.replace("m", "")
 
         if (
             gt_chord_string != prev_gt_chord_string
             or est_chord_string != prev_est_chord_string
             or est_pitches != prev_est_chord_pitches
             or gt_pitches != prev_gt_chord_pitches
+            or est_key_string != prev_est_key_string
+            or gt_key_string != prev_gt_key_string
         ):
-            chord_pitches_string = (
-                hu.get_chord_pitches_string(
-                    est_root, est_chord_type, est_pitches, est_tonic, est_mode, root_type
-                )
-                if use_chord_pitches
-                else ""
-            )
 
             if (
                 gt_root == est_root
@@ -1271,12 +1350,19 @@ def get_results_annotation_df(
                 }
             )
 
+            # For dcml labels, combine key with chord if there is a key change
+            if label_type == "dcml" and est_key_string != prev_est_key_string:
+                labels_list[-1]["label"] = est_key_string + "." + labels_list[-1]["label"]
+
         prev_gt_key_string = gt_key_string
         prev_gt_chord_string = gt_chord_string
         prev_gt_chord_pitches = gt_pitches
         prev_est_key_string = est_key_string
         prev_est_chord_string = est_chord_string
         prev_est_chord_pitches = est_pitches
+        first = False
+
+    post_process_labels(labels_list, label_type, global_tonic, global_mode, tonic_type)
 
     return pd.DataFrame(labels_list)
 
