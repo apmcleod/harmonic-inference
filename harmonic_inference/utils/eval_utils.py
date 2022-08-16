@@ -873,6 +873,7 @@ def get_annotation_df(
                         est_key_string = est_key_string.lower()
 
             else:
+                # Non-dcml labels have key and chords separate
                 labels_list.append(
                     {
                         "label": "Key: " + est_key_string,
@@ -890,6 +891,7 @@ def get_annotation_df(
             else ""
         )
 
+        # Convert absolute chord to relative key-relative
         if label_type in ["rel", "dcml"]:
             est_chord_string = hu.convert_abs_chord_label_to_rel(
                 est_chord_string,
@@ -899,10 +901,11 @@ def get_annotation_df(
                 tonic_type,
             )
 
-        # Replace "m" with a lowercase root
+        # Make roots lowercase for minor, dim, and half-dim chords
         if "o" in est_chord_string or "%" in est_chord_string or "m" in est_chord_string:
             for char in ["A", "B", "C", "D", "E", "F", "G", "V", "I"]:
                 est_chord_string = est_chord_string.replace(char, char.lower())
+        # Remove "m" (lowercase root implies this already)
         est_chord_string = est_chord_string.replace("m", "")
 
         if (
@@ -919,6 +922,7 @@ def get_annotation_df(
                 }
             )
 
+        # For dcml labels, combine key with chord if there is a key change
         if label_type == "dcml" and est_key_string != prev_est_key_string:
             labels_list[-1]["label"] = est_key_string + "." + labels_list[-1]["label"]
 
@@ -928,8 +932,8 @@ def get_annotation_df(
         first = False
 
     # Convert short key changes into applied
-    keys = []
-    key_indices = []
+    keys = []  # List of strings representing each key
+    key_indices = []  # Indexes of key changes
     for i, label_dict in enumerate(labels_list):
         label = label_dict["label"]
         if label_type == "dcml" and "." in label:
@@ -939,30 +943,40 @@ def get_annotation_df(
             keys.append(label[5:])
             key_indices.append(i)
 
-    # Check for length < 3
+    # Check for length < 3 (those become applied chords)
     diff = 3
     if label_type != "dcml":
+        # rel and abs have the key as an additional label, which adds 1 to the diff
         diff += 1
     can_be_applied = (
         [False] + [j - i < diff for i, j in zip(key_indices[1:-1], key_indices[2:])] + [False]
     )
 
+    # Initial key
     current_key = keys[0]
     if label_type == "dcml":
+        # Convert first key relative for dcml labels
         current_key = "I" if keys[0].isupper() else "i"
         keys[0] = current_key
     current_key_tonic = global_tonic
     current_key_mode = global_mode
-    to_remove = []
+
+    to_remove = []  # Some key changes will be removed (turned into applied chords)
     for i, can_apply in enumerate(can_be_applied[1:], start=1):
+
         if keys[i] == current_key:
+            # This is no longer a key change (maybe previous key turned into applied)
             if label_type == "dcml":
+                # Just remove what comes before the dot
                 labels_list[key_indices[i]]["label"] = labels_list[key_indices[i]]["label"][
                     labels_list[key_indices[i]]["label"].index(".") + 1 :
                 ]
             else:
+                # Non-dcml: Remove this key label
                 to_remove.append(key_indices[i])
+
         elif not can_apply:
+            # Different key, and cannot be applied: we have a local key change
             current_key = keys[i]
             if label_type == "dcml":
                 current_key_tonic = (
@@ -986,6 +1000,7 @@ def get_annotation_df(
                 tonic = hu.get_pitch_from_string(keys[i], tonic_type)
                 mode = KeyMode.MINOR if keys[i][0].islower() else KeyMode.MAJOR
 
+            # Create new key label string
             applied_key = (
                 hu.get_pitch_string(tonic, tonic_type)
                 if label_type == "abs"
@@ -996,27 +1011,35 @@ def get_annotation_df(
             if mode == KeyMode.MINOR:
                 applied_key = applied_key.lower()
 
+            # Change all labels within this now applied key
             for label_idx in range(key_indices[i], key_indices[i + 1]):
+                # Remove the initial key change label for dcml
                 if label_type == "dcml" and "." in labels_list[label_idx]["label"]:
                     labels_list[label_idx]["label"] = labels_list[label_idx]["label"][
                         labels_list[label_idx]["label"].index(".") + 1 :
                     ]
+
+                # Where to insert the applied key (before changes, after everything else)
                 if "(" in labels_list[label_idx]["label"]:
                     idx = labels_list[label_idx]["label"].index("(")
                 else:
                     idx = len(labels_list[label_idx]["label"])
+
                 labels_list[label_idx]["label"] = (
                     labels_list[label_idx]["label"][:idx]
                     + "/"
                     + applied_key
                     + labels_list[label_idx]["label"][idx:]
                 )
+
             to_remove.append(key_indices[i])
 
+    # Remove any now-spurious key changes
     if label_type != "dcml":
         for i in reversed(to_remove):
             del labels_list[i]
 
+    # Convert Aug6 chords into actual Aug6 labels (for either dcml or rel labels)
     for label_dict in labels_list:
         if label_dict["label"] == "V7/V(b5)":
             label_dict["label"] = "Fr6"
