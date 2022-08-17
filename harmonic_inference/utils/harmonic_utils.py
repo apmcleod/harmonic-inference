@@ -533,7 +533,9 @@ def get_key_from_one_hot_index(
     return [(tonic, key_mode) for key_mode, tonic in itertools.product(KeyMode, tonics)][one_hot]
 
 
-def get_key_one_hot_index(key_mode: KeyMode, tonic: int, pitch_type: PitchType) -> int:
+def get_key_one_hot_index(
+    key_mode: KeyMode, tonic: int, pitch_type: PitchType, relative: bool = False
+) -> int:
     """
     Get the one hot index of a given key.
 
@@ -545,16 +547,30 @@ def get_key_one_hot_index(key_mode: KeyMode, tonic: int, pitch_type: PitchType) 
         The pitch of the tonic of this key.
     pitch_type : int
         The representation used for `tonic`.
+    relative : bool
+        True if the given tonic is a relative interval, rather than an absolute pitch.
 
     Returns
     -------
     index : int
         The index of the given key's label in the list of all possible key labels.
     """
-    if tonic < 0 or tonic >= hc.NUM_PITCHES[pitch_type]:
-        raise ValueError("Given root is outside of valid range")
+    if not relative:
+        if tonic < 0 or tonic >= hc.NUM_PITCHES[pitch_type]:
+            raise ValueError("Given root is outside of valid range")
 
-    return hc.NUM_PITCHES[pitch_type] * key_mode.value + tonic
+        return hc.NUM_PITCHES[pitch_type] * key_mode.value + tonic
+
+    if pitch_type == PitchType.TPC:
+        minimum = hc.MIN_KEY_CHANGE_INTERVAL_TPC
+        maximum = hc.MAX_KEY_CHANGE_INTERVAL_TPC
+
+        tonics = list(range(minimum, maximum))
+
+    else:
+        tonics = list(range(0, hc.NUM_PITCHES[pitch_type]))
+
+    return len(tonics) * key_mode.value + tonics.index(tonic)
 
 
 def decode_relative_keys(

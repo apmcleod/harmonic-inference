@@ -1062,18 +1062,8 @@ def post_process_labels(
                         labels_list[label_idx]["label"].index(".") + 1 :
                     ]
 
-                # Where to insert the applied key (before changes, after everything else)
-                if "(" in labels_list[label_idx]["label"]:
-                    idx = labels_list[label_idx]["label"].index("(")
-                else:
-                    idx = len(labels_list[label_idx]["label"])
-
-                labels_list[label_idx]["label"] = (
-                    labels_list[label_idx]["label"][:idx]
-                    + "/"
-                    + applied_key
-                    + labels_list[label_idx]["label"][idx:]
-                )
+                # Insert the applied key after everything else
+                labels_list[label_idx]["label"] += f"/{applied_key}"
 
             to_remove.append(key_indices[i])
 
