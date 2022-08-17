@@ -1,4 +1,5 @@
 import bisect
+import logging
 import re
 from fractions import Fraction
 from pathlib import Path
@@ -7,11 +8,13 @@ from typing import List, Tuple, Union
 import pandas as pd
 from ms3 import Score
 
-from harmonic_inference.data.data_types import KeyMode, PitchType
+from harmonic_inference.data.data_types import ChordType, KeyMode, PitchType
 from harmonic_inference.data.piece import ScorePiece
 from harmonic_inference.utils.harmonic_utils import (
+    decode_relative_keys,
     get_chord_inversion,
     get_chord_one_hot_index,
+    get_key_from_one_hot_index,
     get_key_one_hot_index,
     get_pitch_from_string,
 )
@@ -86,7 +89,7 @@ def extract_forces_from_musescore(
     Tuple[int, Fraction],
     Tuple[int, Fraction],
     Tuple[int, Fraction],
-    Tuple[int, Fraction, int, str],
+    Tuple[int, Fraction, Union[Tuple[int, str], Tuple[str, ChordType, int, str]], str],
     Tuple[int, Fraction, Union[int, str], str],
 ]:
     """
@@ -111,10 +114,12 @@ def extract_forces_from_musescore(
     key_non_changes : Tuple[int, Fraction]
         Tuples of (mc, mn_onset) indicating positions at which there must NOT be a key change.
 
-    chords : Tuple[int, Fraction, int, str]
+    chords : Tuple[int, Fraction, Union[Tuple[int, str], Tuple[str, ChordType, int, str]], str]
         Tuples of (mc, mn_onset, chord_id, type) indicating positions at which a given chord label
         is forced. Type may be either "abs" or "rel", denoting the type of chord_id used
-        (abs for absolute root, rel for relative to the current local key).
+        If abs, chord_id is a tuple containing the one-hot chord id and a string of the changes.
+        If rel, chord_id is a tuple containing the (string) relative root, the chord type,
+        the inversion, and a string of the changes.
 
     keys : Tuple[int, Fraction, Union[int, str], str]
         Tuples of (mc, mn_onset, key_id, type) indicating positions at which a given key label
@@ -210,24 +215,72 @@ def extract_forces_from_musescore(
         type_string = chord_match.group(5)
         figbass_string = chord_match.group(6)
         changes_string = chord_match.group(7)
-        # TODO: relroot_string = chord_match.group(13)
+        relroot_string = chord_match.group(13)
+
+        # Get chord features
+        is_minor = root_string.islower()
+        inversion = get_chord_inversion(figbass_string)
+        if figbass_string in ["7", "65", "43", "2"]:
+            # 7th chord
+            chord_type = {
+                "o": ChordType.DIM7,
+                "%": ChordType.HALF_DIM7,
+                "+": ChordType.AUG_MIN7,
+                "+M": ChordType.AUG_MAJ7,
+                "M": ChordType.MIN_MAJ7 if is_minor else ChordType.MAJ_MAJ7,
+                "": ChordType.MIN_MIN7 if is_minor else ChordType.MAJ_MIN7,
+            }[type_string]
+        else:
+            # Triad
+            chord_type = {
+                "o": ChordType.DIMINISHED,
+                "+": ChordType.AUGMENTED,
+                "": ChordType.MINOR if is_minor else ChordType.MAJOR,
+            }[type_string]
 
         if any([numeral in root_string for numeral in ["v", "i"]]):
             id_type = "rel"
-            chord_id = (root_string, type_string, figbass_string, changes_string)
+            chord_id = (root_string, chord_type, inversion, changes_string)
 
         else:
             id_type = "abs"
-            chord_id = get_chord_one_hot_index(
-                type_string,  # TODO
-                get_pitch_from_string(root_string, PitchType.TPC),
-                PitchType.TPC,
-                inversion=get_chord_inversion(figbass_string),
+            chord_id = (
+                get_chord_one_hot_index(
+                    chord_type,
+                    get_pitch_from_string(root_string, PitchType.TPC),
+                    PitchType.TPC,
+                    inversion=inversion,
+                ),
+                changes_string,
             )
 
-        # TODO: handle relroot (add to key)
-
         chord_ids.append(mc, mn_onset, chord_id, id_type)
+
+        # Handle relroot_string (add to existing key force)
+        found = False
+        for i, (key_mc, key_mn_onset, key_id, key_id_type) in enumerate(key_ids):
+            if key_mc == mc and key_mn_onset == mn_onset:
+                found = True
+                if key_id_type == "abs":
+                    tonic, mode = get_key_from_one_hot_index(key_id, PitchType.TPC)
+                    tonic, mode = decode_relative_keys(relroot_string, tonic, mode, PitchType.TPC)
+                    key_ids[i] = (
+                        key_mc,
+                        key_mn_onset,
+                        get_key_one_hot_index(mode, tonic, PitchType.TPC),
+                        key_id_type,
+                    )
+
+                else:
+                    # Relative: Just append relroot to previous relative key
+                    key_ids[i] = (key_mc, key_mn_onset, f"{relroot_string}/{key_id}", key_id_type)
+
+        if not found:
+            # Here, there is no real way to represent this during the search, so it is ignored
+            logging.warning(
+                "Ignoring relative root of forced %s (relative roots are ignored for forces)",
+                label,
+            )
 
     return (
         chord_changes,
