@@ -211,7 +211,7 @@ def extract_forces_from_musescore(
         tonic_str = KEY_REGEX.match(label).group(1)
         mode = KeyMode.MINOR if tonic_str.islower() else KeyMode.MAJOR
 
-        if any([numeral in tonic_str for numeral in ["v", "i"]]):
+        if any([numeral in tonic_str for numeral in ["v", "V", "i", "I"]]):
             id_type = "rel"
             key_id = tonic_str
 
@@ -237,7 +237,7 @@ def extract_forces_from_musescore(
             label = label[idx + 1 :]
 
             # Handle key label
-            if any([numeral in tonic_str for numeral in ["v", "i"]]):
+            if any([numeral in tonic_str for numeral in ["v", "V", "i", "I"]]):
                 id_type = "rel"
                 key_id = tonic_str
 
@@ -257,17 +257,9 @@ def extract_forces_from_musescore(
         chord_match = CHORD_REGEX.match(label)
         root_string = chord_match.group(1)
         type_string = chord_match.group(5)
-        if type_string is None:
-            type_string = ""
         figbass_string = chord_match.group(6)
-        if figbass_string is None:
-            figbass_string = ""
         changes_string = chord_match.group(7)
-        if changes_string is None:
-            changes_string = ""
         relroot_string = chord_match.group(13)
-        if relroot_string is None:
-            relroot_string = ""
 
         # Get chord features
         is_minor = root_string.islower()
@@ -280,17 +272,17 @@ def extract_forces_from_musescore(
                 "+": ChordType.AUG_MIN7,
                 "+M": ChordType.AUG_MAJ7,
                 "M": ChordType.MIN_MAJ7 if is_minor else ChordType.MAJ_MAJ7,
-                "": ChordType.MIN_MIN7 if is_minor else ChordType.MAJ_MIN7,
+                None: ChordType.MIN_MIN7 if is_minor else ChordType.MAJ_MIN7,
             }[type_string]
         else:
             # Triad
             chord_type = {
                 "o": ChordType.DIMINISHED,
                 "+": ChordType.AUGMENTED,
-                "": ChordType.MINOR if is_minor else ChordType.MAJOR,
+                None: ChordType.MINOR if is_minor else ChordType.MAJOR,
             }[type_string]
 
-        if any([numeral in root_string for numeral in ["v", "i"]]):
+        if any([numeral in root_string for numeral in ["v", "V", "i", "I"]]):
             id_type = "rel"
             chord_id = (root_string, chord_type, inversion, changes_string)
 
@@ -311,30 +303,38 @@ def extract_forces_from_musescore(
         )
 
         # Handle relroot_string (add to existing key force)
-        found = False
-        for i, (key_mc, key_mn_onset, key_id, key_id_type) in enumerate(key_ids):
-            if key_mc == mc and key_mn_onset == mn_onset:
-                found = True
-                if key_id_type == "abs":
-                    tonic, mode = get_key_from_one_hot_index(key_id, PitchType.TPC)
-                    tonic, mode = decode_relative_keys(relroot_string, tonic, mode, PitchType.TPC)
-                    key_ids[i] = (
-                        key_mc,
-                        key_mn_onset,
-                        get_key_one_hot_index(mode, tonic, PitchType.TPC),
-                        key_id_type,
-                    )
+        if relroot_string is not None:
+            found = False
+            for i, (key_mc, key_mn_onset, key_id, key_id_type) in enumerate(key_ids):
+                if key_mc == mc and key_mn_onset == mn_onset:
+                    found = True
+                    if key_id_type == "abs":
+                        tonic, mode = get_key_from_one_hot_index(key_id, PitchType.TPC)
+                        tonic, mode = decode_relative_keys(
+                            relroot_string, tonic, mode, PitchType.TPC
+                        )
+                        key_ids[i] = (
+                            key_mc,
+                            key_mn_onset,
+                            get_key_one_hot_index(mode, tonic, PitchType.TPC),
+                            key_id_type,
+                        )
 
-                else:
-                    # Relative: Just append relroot to previous relative key
-                    key_ids[i] = (key_mc, key_mn_onset, f"{relroot_string}/{key_id}", key_id_type)
+                    else:
+                        # Relative: Just append relroot to previous relative key
+                        key_ids[i] = (
+                            key_mc,
+                            key_mn_onset,
+                            f"{relroot_string}/{key_id}",
+                            key_id_type,
+                        )
 
-        if not found:
-            # Here, there is no real way to represent this during the search, so it is ignored
-            logging.warning(
-                "Ignoring relative root of forced %s (relative roots are ignored for forces)",
-                label,
-            )
+            if not found:
+                # Here, there is no real way to represent this during the search, so it is ignored
+                logging.warning(
+                    "Ignoring relative root of forced %s (relative roots are ignored for forces)",
+                    label,
+                )
 
     return (
         chord_changes,
