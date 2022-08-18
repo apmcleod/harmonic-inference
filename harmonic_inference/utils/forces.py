@@ -1,9 +1,11 @@
+"""A module containing functions to load forced labels from Musescore3 files."""
 import bisect
 import logging
 import re
 from fractions import Fraction
+from glob import glob
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import Set, Tuple, Union
 
 import pandas as pd
 from ms3 import Score
@@ -45,52 +47,83 @@ DCML_LABEL_REGEX = re.compile(
 )
 
 
-def convert_score_positions_to_note_indexes(
-    forces: Union[List[Tuple[int, Fraction]], List[Tuple[int, Fraction, int]]],
-    piece: ScorePiece,
-) -> Union[List[int], List[Tuple[int, int]]]:
+def convert_score_position_to_note_index(mc: int, mn_onset: Fraction, piece: ScorePiece) -> int:
     """
-    Convert a list of forces whose positions are encoded as (mc, mn_onset) into
-    one with positions encoded as note_indexes into the given piece.
+    Convert a score position (given as an mc and an mn_onset) into a note-index for the given
+    piece.
 
     Parameters
     ----------
-    forces : Union[List[Tuple[int, Fraction]], List[Tuple[int, Fraction, int]]]
-        A list of forces, either (mc, mn_onset) tuples, or (mc, mn_onset, id) tuples.
+    mc : int
+        The score position's mc.
+
+    mn_onset : Fraction
+        The score position's mn_onset.
 
     piece : ScorePiece
         A score in which to extract note indexes.
 
     Returns
     -------
-    forces : Union[List[int], List[Tuple[int, int]]]
-        A list of forces, where the (mc, mn_onset) position is converted into a note index.
+    note_index : int
+        The note index of the given score position.
     """
     note_positions = [note.onset for note in piece.get_inputs()]
 
-    new_forces = [0] * len(forces)
-    for i, force in enumerate(forces):
-        index = bisect.bisect_left(note_positions, force[:2])
+    index = bisect.bisect_left(note_positions, (mc, mn_onset))
 
-        if note_positions[index] != force[:2]:
-            raise ValueError(
-                f"Position {force[:2]} is not a note onset. Closest is {note_positions[index]}"
-            )
+    if note_positions[index] != (mc, mn_onset):
+        raise ValueError(
+            f"Position ({mc}, {mn_onset}) is not a note onset. Closest is {note_positions[index]}"
+        )
 
-        new_forces[i] = index if len(force) == 2 else (index, force[-1])
+    return index
 
-    return new_forces
+
+def find_forces_musescore_file_for_piece(piece: ScorePiece, forces_dir: Path) -> Path:
+    """
+    Given a piece and a directory containing labeled musescore3 files, find the musescore3 file
+    corresponding to the given piece.
+
+    Parameters
+    ----------
+    piece : ScorePiece
+        The piece whose corresponding musescore3 file to find and return.
+
+    forces_dir : Path
+        The directory containing potentially matching files.
+
+    Returns
+    -------
+    score_path : Path
+        The Path to the corresponding score file, if found. Otherwise, None.
+    """
+    piece_name = Path(piece.name.split(" ")[-1])
+    matches = glob(str(forces_dir / "**" / piece_name.stem) + "*.mscx", recursive=True)
+    if len(matches) == 0:
+        return None
+
+    if len(matches) == 1:
+        return matches[0]
+
+    logging.info("Multiple matches found. Searching for the best match.")
+    for match in matches:
+        if str(piece_name.parent) in match:
+            return match
+
+    logging.info("No great match found. Returning the first match.")
+    return matches[0]
 
 
 def extract_forces_from_musescore(
-    score_path: Union[str, Path]
+    score_path: Union[str, Path], piece: ScorePiece
 ) -> Tuple[
-    Tuple[int, Fraction],
-    Tuple[int, Fraction],
-    Tuple[int, Fraction],
-    Tuple[int, Fraction],
-    Tuple[int, Fraction, Union[Tuple[int, str], Tuple[str, ChordType, int, str]], str],
-    Tuple[int, Fraction, Union[int, str], str],
+    Set[int],
+    Set[int],
+    Set[int],
+    Set[int],
+    Tuple[int, Union[Tuple[int, str], Tuple[str, ChordType, int, str]], str],
+    Tuple[int, Union[int, str], str],
 ]:
     """
     Extract forced labels, changes, and non-changes from a Musescore3 file.
@@ -100,29 +133,33 @@ def extract_forces_from_musescore(
     score_path : Union[str, Path]
         The path to the Musescore3 file which contains the labels.
 
+    piece : ScorePiece
+        The piece whose forces we are loading. To convert (mc, mn_onset) positions into
+        note indexes.
+
     Returns
     -------
-    chord_changes : Tuple[int, Fraction]
-        Tuples of (mc, mn_onset) indicating positions at which there must be a chord change.
+    chord_changes : Set[int]
+       A set of note indexes indicating positions at which there must be a chord change.
 
-    chord_non_changes : Tuple[int, Fraction]
-        Tuples of (mc, mn_onset) indicating positions at which there must NOT be a chord change.
+    chord_non_changes : Set[int]
+       A set of note indexes indicating positions at which there must NOT be a chord change.
 
-    key_changes : Tuple[int, Fraction]
-        Tuples of (mc, mn_onset) indicating positions at which there must be a key change.
+    key_changes : Set[int]
+       A set of note indexes indicating positions at which there must be a key change.
 
-    key_non_changes : Tuple[int, Fraction]
-        Tuples of (mc, mn_onset) indicating positions at which there must NOT be a key change.
+    key_non_changes : Set[int]
+       A set of note indexes indicating positions at which there must NOT be a key change.
 
-    chords : Tuple[int, Fraction, Union[Tuple[int, str], Tuple[str, ChordType, int, str]], str]
-        Tuples of (mc, mn_onset, chord_id, type) indicating positions at which a given chord label
+    chords : Tuple[int, Union[Tuple[int, str], Tuple[str, ChordType, int, str]], str]
+        Tuples of (note_index, chord_id, type) indicating positions at which a given chord label
         is forced. Type may be either "abs" or "rel", denoting the type of chord_id used
         If abs, chord_id is a tuple containing the one-hot chord id and a string of the changes.
         If rel, chord_id is a tuple containing the (string) relative root, the chord type,
         the inversion, and a string of the changes.
 
-    keys : Tuple[int, Fraction, Union[int, str], str]
-        Tuples of (mc, mn_onset, key_id, type) indicating positions at which a given key label
+    keys : Tuple[int, Union[int, str], str]
+        Tuples of (note_index, key_id, type) indicating positions at which a given key label
         is forced. Type may be either "abs" or "rel", denoting the type of key_id used.
         If abs, the key_id is a one-hot key id. If rel, a label string is given in that slot
         instead (since RN label intervals are dependant on the local mode). Such label strings
@@ -136,14 +173,15 @@ def extract_forces_from_musescore(
         [labels.loc[labels["label"].str.fullmatch(CHORD_CHANGE_REGEX), ["mc", "mn_onset"]]]
     )
     chord_changes = [
-        (mc, mn_onset) for mc, mn_onset in zip(chord_changes["mc"], chord_changes["mn_onset"])
+        convert_score_position_to_note_index(mc, mn_onset, piece)
+        for mc, mn_onset in zip(chord_changes["mc"], chord_changes["mn_onset"])
     ]
 
     chord_non_changes = pd.concat(
         [labels.loc[labels["label"].str.fullmatch(NO_CHORD_CHANGE_REGEX), ["mc", "mn_onset"]]]
     )
     chord_non_changes = [
-        (mc, mn_onset)
+        convert_score_position_to_note_index(mc, mn_onset, piece)
         for mc, mn_onset in zip(chord_non_changes["mc"], chord_non_changes["mn_onset"])
     ]
 
@@ -151,14 +189,16 @@ def extract_forces_from_musescore(
         [labels.loc[labels["label"].str.fullmatch(KEY_CHANGE_REGEX), ["mc", "mn_onset"]]]
     )
     key_changes = [
-        (mc, mn_onset) for mc, mn_onset in zip(key_changes["mc"], key_changes["mn_onset"])
+        convert_score_position_to_note_index(mc, mn_onset, piece)
+        for mc, mn_onset in zip(key_changes["mc"], key_changes["mn_onset"])
     ]
 
     key_non_changes = pd.concat(
         [labels.loc[labels["label"].str.fullmatch(NO_KEY_CHANGE_REGEX), ["mc", "mn_onset"]]]
     )
     key_non_changes = [
-        (mc, mn_onset) for mc, mn_onset in zip(key_non_changes["mc"], key_non_changes["mn_onset"])
+        convert_score_position_to_note_index(mc, mn_onset, piece)
+        for mc, mn_onset in zip(key_non_changes["mc"], key_non_changes["mn_onset"])
     ]
 
     chord_ids = []
@@ -181,7 +221,7 @@ def extract_forces_from_musescore(
                 mode, get_pitch_from_string(tonic_str, PitchType.TPC), PitchType.TPC
             )
 
-        key_ids.append(mc, mn_onset, key_id, id_type)
+        key_ids.append((convert_score_position_to_note_index(mc, mn_onset, piece), key_id, id_type))
 
     # Can include key and chord, plus relative roots (also modeled as key changes)
     dcml_labels = pd.concat(
@@ -204,18 +244,30 @@ def extract_forces_from_musescore(
             else:
                 id_type = "abs"
                 key_id = get_key_one_hot_index(
-                    mode, get_pitch_from_string(tonic_str, PitchType.TPC), PitchType.TPC
+                    KeyMode.MINOR if tonic_str[0].islower() else KeyMode.MAJOR,
+                    get_pitch_from_string(tonic_str, PitchType.TPC),
+                    PitchType.TPC,
                 )
 
-            key_ids.append((mc, mn_onset, key_id, id_type))
+            key_ids.append(
+                (convert_score_position_to_note_index(mc, mn_onset, piece), key_id, id_type)
+            )
 
         # Label is now only a chord label. We can match it to get groups.
         chord_match = CHORD_REGEX.match(label)
         root_string = chord_match.group(1)
         type_string = chord_match.group(5)
+        if type_string is None:
+            type_string = ""
         figbass_string = chord_match.group(6)
+        if figbass_string is None:
+            figbass_string = ""
         changes_string = chord_match.group(7)
+        if changes_string is None:
+            changes_string = ""
         relroot_string = chord_match.group(13)
+        if relroot_string is None:
+            relroot_string = ""
 
         # Get chord features
         is_minor = root_string.islower()
@@ -254,7 +306,9 @@ def extract_forces_from_musescore(
                 changes_string,
             )
 
-        chord_ids.append(mc, mn_onset, chord_id, id_type)
+        chord_ids.append(
+            (convert_score_position_to_note_index(mc, mn_onset, piece), chord_id, id_type)
+        )
 
         # Handle relroot_string (add to existing key force)
         found = False

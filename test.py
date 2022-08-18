@@ -1,12 +1,11 @@
 """Script to test (evaluate) a joint model for harmonic inference."""
 import argparse
-import json
 import logging
 import os
 import sys
 from glob import glob
 from pathlib import Path
-from typing import Dict, List, Set, Union
+from typing import List, Union
 
 import h5py
 import numpy as np
@@ -26,121 +25,6 @@ from harmonic_inference.models.joint_model import (
 from harmonic_inference.utils.data_utils import load_models_from_argparse, load_pieces
 
 SPLITS = ["train", "valid", "test"]
-
-
-def load_forces_from_json(json_path: Union[str, Path]) -> Dict[str, Dict[str, Union[Set, Dict]]]:
-    """
-    Load forced labels, changes, and non-changes from a json file and return them
-    in a dictionary that can be passed through to JointModel.get_harmony(...) as kwargs.
-
-    Parameters
-    ----------
-    json_path : Union[str, Path]
-        A reference to a json file containing forced labels, changes, and non-changes,
-        to be used for JointModel.get_harmony(...). It may have the following keys:
-            - "forced_chord_changes": A list of integers at which the chord must change.
-            - "forced_chord_non_changes": A list of integers at which the chord cannot change.
-            - "forced_key_changes": A list of integers at which the key must change.
-            - "forced_key_non_changes": A list of integers at which the key cannot change.
-            - "forced_chords": A dictionary mapping the string form of a tuple in the form
-                               (start, end) to a chord_id, saying that the input indexes on
-                               the range start (inclusive) to end (exclusive) must be output
-                               as the given chord_id.
-            - "forced_keys": Same as forced_chords, but for keys.
-
-    Returns
-    -------
-    forces_kwargs: Dict[str, Dict[str, Union[Set, Dict]]]
-        A nested dictionary containing the loaded keyword arguments for each input.
-        The outer-most keys should reference a specific input by string name,
-        or be the keyword "default", in which case the loaded kwargs will be used for all
-        input pieces not otherwise matched by string name.
-        In the inner dictionaries, keyword arguments have been loaded (with the correct types)
-        from the json file that can be passed directly as kwargs to JointModel.get_harmony(...)
-        for that particular piece.
-    """
-
-    def load_forces_from_nested_json(raw_data: Dict) -> Dict[str, Union[Set, Dict]]:
-        """
-        Load an inner forces_kwargs dict from a nested json forces_kwargs dict data.
-
-        Parameters
-        ----------
-        raw_data : Dict
-            The inner nested dictionary from which we will load the kwargs.
-            See load_forces_from_json for details.
-
-        Returns
-        -------
-        Dict[str, Union[Set, Dict]]
-            The kwargs for a single piece, unnested.
-        """
-        forces_kwargs = dict()
-
-        for key in [
-            "forced_chord_changes",
-            "forced_chord_non_changes",
-            "forced_key_changes",
-            "forced_key_non_changes",
-        ]:
-            if key in raw_data:
-                forces_kwargs[key] = set(raw_data[key])
-
-        for key in ["forced_chords", "forced_keys"]:
-            if key in raw_data:
-                forces_kwargs[key] = {
-                    tuple(map(int, range_tuple_str[1:-1].split(","))): label_id
-                    for range_tuple_str, label_id in raw_data[key].items()
-                }
-
-        for key in raw_data:
-            if key not in [
-                "forced_chord_changes",
-                "forced_chord_non_changes",
-                "forced_key_changes",
-                "forced_key_non_changes",
-                "forced_chords",
-                "forced_keys",
-            ]:
-                logging.warning(
-                    "--forces-json inner key not recognized: %s. Ignoring that key.", key
-                )
-
-        logging.info("Forces:" if len(forces_kwargs) > 0 else "Forces: None")
-        for key, item in sorted(forces_kwargs.items()):
-            if type(item) == dict:
-                logging.info("    %s:", key)
-                for inner_key, inner_item in sorted(item.items()):
-                    logging.info("        %s = %s", inner_key, inner_item)
-            else:
-                logging.info("    %s = %s", key, item)
-
-        return forces_kwargs
-
-    with open(json_path, "r") as json_file:
-        raw_data = json.load(json_file)
-
-    if (
-        "forced_chord_changes" in raw_data
-        or "forced_chord_non_changes" in raw_data
-        or "forced_key_changes" in raw_data
-        or "forced_key_non_changes" in raw_data
-        or "forced_chords" in raw_data
-        or "forced_keys" in raw_data
-    ):
-        logging.info(
-            "Given --json-forces not a nested, piece-specific mapping. Treating as default for "
-            "all inputs."
-        )
-        raw_data = {"default": raw_data}
-
-    all_forces_kwargs = {}
-
-    for key, nested_raw_data in raw_data.items():
-        logging.info("Loading forces for %s", key)
-        all_forces_kwargs[key] = load_forces_from_nested_json(nested_raw_data)
-
-    return all_forces_kwargs
 
 
 def write_tsvs_to_scores(
@@ -182,7 +66,6 @@ def evaluate(
     model: HarmonicInferenceModel,
     pieces: List[Piece],
     output_tsv_dir: Union[Path, str] = None,
-    forces_path: Union[Path, str] = None,
     force_segs: bool = False,
 ):
     """
@@ -197,33 +80,18 @@ def evaluate(
     output_tsv_dir : Union[Path, str]
         A directory to output TSV labels into. Each piece's output labels will go into
         a sub-directory according to its name field. If None, label TSVs are not generated.
-    forces_path : Union[Path, str]
-        The path to a json file containing forced labels, changes, or non-changes.
     force_segs : bool
         Force the model to use the ground truth segmentations.
     """
     if output_tsv_dir is not None:
         output_tsv_dir = Path(output_tsv_dir)
 
-    all_forces_dict = {} if forces_path is None else load_forces_from_json(forces_path)
-
     for piece in tqdm(pieces, desc="Getting harmony for pieces"):
         piece: Piece
         if piece.name is not None:
             logging.info("Running piece %s", piece.name)
 
-        # Load forces dict for this file
-        forces_dict = None
-        if piece.name is not None:
-            for key in set(all_forces_dict.keys()) - set(["default"]):
-                if key in piece.name:
-                    logging.info("Using forces with key %s", key)
-                    forces_dict = all_forces_dict[key]
-                    break
-
-        if forces_dict is None:
-            forces_dict = all_forces_dict["default"] if "default" in all_forces_dict else {}
-
+        forces_dict = {}
         if force_segs:
             forces_dict["forced_chord_changes"] = set(
                 [i for i in range(len(piece.get_inputs())) if i in piece.get_chord_change_indices()]
@@ -351,16 +219,6 @@ if __name__ == "__main__":
         help=(
             "Use the default hyperparameter settings from the FH-corpus-trained system, "
             "according to the chosen `--csm-version` (0, 1, or 2)."
-        ),
-    )
-
-    parser.add_argument(
-        "--forces-json",
-        type=Path,
-        default=None,
-        help=(
-            "A json file containing forced labels changes or non-changes, to be passed to "
-            "JointModel.get_harmony(...)."
         ),
     )
 
@@ -540,6 +398,5 @@ if __name__ == "__main__":
         from_args(models, ARGS),
         pieces,
         output_tsv_dir=ARGS.output,
-        forces_path=ARGS.forces_json,
         force_segs=ARGS.force_segs,
     )

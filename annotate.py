@@ -19,6 +19,10 @@ from harmonic_inference.models.joint_model import (
     from_args,
 )
 from harmonic_inference.utils.data_utils import load_models_from_argparse, load_pieces
+from harmonic_inference.utils.forces import (
+    extract_forces_from_musescore,
+    find_forces_musescore_file_for_piece,
+)
 
 SPLITS = ["train", "valid", "test"]
 
@@ -133,6 +137,7 @@ def annotate(
     pieces: List[Piece],
     label_type: str,
     output_tsv_dir: Union[Path, str] = None,
+    forces_dir: Path = None,
 ):
     """
     Get estimated chords and keys on the given pieces using the given model.
@@ -148,6 +153,9 @@ def annotate(
     output_tsv_dir : Union[Path, str]
         A directory to output TSV labels into. Each piece's output labels will go into
         a sub-directory according to its name field. If None, label TSVs are not generated.
+    forces_dir : Path
+        A directory in which to look for a Musescore3 file of the same name as the input piece,
+        to read forced labels from.
     """
     if output_tsv_dir is not None:
         output_tsv_dir = Path(output_tsv_dir)
@@ -156,7 +164,25 @@ def annotate(
         if piece.name is not None:
             logging.info("Running piece %s", piece.name)
 
-        state, estimated_piece = model.get_harmony(piece)
+        forces_dict = {}
+        if forces_dir is not None:
+            logging.info("Looking for forced labels...")
+            score_path = find_forces_musescore_file_for_piece(piece, forces_dir)
+            if score_path is None:
+                logging.info("No corresponding score found.")
+            else:
+                logging.info("Loading forces from %s", score_path)
+                forces = extract_forces_from_musescore(score_path, piece)
+                forces_dict = {
+                    "forced_chord_changes": forces[0],
+                    "forced_non_chord_changes": forces[1],
+                    "forced_key_changes": forces[2],
+                    "forced_non_key_changes": forces[3],
+                    "forced_chords": forces[4],
+                    "forced_keys": forces[5],
+                }
+
+        state, estimated_piece = model.get_harmony(piece, **forces_dict)
 
         if state is None:
             logging.info("Returned None")
@@ -204,6 +230,13 @@ if __name__ == "__main__":
         type=Path,
         default=Path("corpus_data"),
         help="The directory containing the raw corpus_data tsv of MusicXML files.",
+    )
+
+    parser.add_argument(
+        "--forces",
+        type=Path,
+        default=None,
+        help="Load forced labels from the corresponding score file in this directory.",
     )
 
     parser.add_argument(
@@ -346,4 +379,5 @@ if __name__ == "__main__":
         pieces,
         ARGS.label_type,
         output_tsv_dir=ARGS.output,
+        forces_dir=ARGS.forces,
     )
