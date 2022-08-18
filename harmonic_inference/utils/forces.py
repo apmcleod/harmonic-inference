@@ -230,6 +230,7 @@ def extract_forces_from_musescore(
     for mc, mn_onset, label in zip(
         dcml_labels["mc"], dcml_labels["mn_onset"], dcml_labels["label"]
     ):
+        note_index = convert_score_position_to_note_index(mc, mn_onset, piece)
         if "." in label:
             # Label has chord and key: handle the key here and save only the chord label
             idx = label.index(".")
@@ -249,9 +250,7 @@ def extract_forces_from_musescore(
                     PitchType.TPC,
                 )
 
-            key_ids.append(
-                (convert_score_position_to_note_index(mc, mn_onset, piece), key_id, id_type)
-            )
+            key_ids.append((note_index, key_id, id_type))
 
         # Label is now only a chord label. We can match it to get groups.
         chord_match = CHORD_REGEX.match(label)
@@ -298,15 +297,13 @@ def extract_forces_from_musescore(
                 changes_string,
             )
 
-        chord_ids.append(
-            (convert_score_position_to_note_index(mc, mn_onset, piece), chord_id, id_type)
-        )
+        chord_ids.append((note_index, chord_id, id_type))
 
         # Handle relroot_string (add to existing key force)
         if relroot_string is not None:
             found = False
-            for i, (key_mc, key_mn_onset, key_id, key_id_type) in enumerate(key_ids):
-                if key_mc == mc and key_mn_onset == mn_onset:
+            for i, (key_note_index, key_id, key_id_type) in enumerate(key_ids):
+                if key_note_index == note_index:
                     found = True
                     if key_id_type == "abs":
                         tonic, mode = get_key_from_one_hot_index(key_id, PitchType.TPC)
@@ -314,8 +311,7 @@ def extract_forces_from_musescore(
                             relroot_string, tonic, mode, PitchType.TPC
                         )
                         key_ids[i] = (
-                            key_mc,
-                            key_mn_onset,
+                            key_note_index,
                             get_key_one_hot_index(mode, tonic, PitchType.TPC),
                             key_id_type,
                         )
@@ -323,8 +319,7 @@ def extract_forces_from_musescore(
                     else:
                         # Relative: Just append relroot to previous relative key
                         key_ids[i] = (
-                            key_mc,
-                            key_mn_onset,
+                            key_note_index,
                             f"{relroot_string}/{key_id}",
                             key_id_type,
                         )
