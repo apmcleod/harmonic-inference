@@ -151,7 +151,7 @@ def extract_forces_from_musescore(
     key_non_changes : Set[int]
        A set of note indexes indicating positions at which there must NOT be a key change.
 
-    chords : Dict[int, Tuple[Union[Tuple[int, str], Tuple[str, ChordType, int, str]], str]
+    chords : Dict[int, Tuple[Union[Tuple[int, str], Tuple[str, ChordType, int, str]], str]]
         A dictionary mapping a note index to a tuple containing a chord label, and a
         chord label type (either "abs" or "rel").
         If "abs", the chord label is a tuple of the absolute chord's one-hot index and

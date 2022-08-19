@@ -7,7 +7,7 @@ import logging
 from argparse import ArgumentError, ArgumentParser, Namespace
 from collections import defaultdict
 from fractions import Fraction
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple, Union
 
 import numpy as np
 import torch
@@ -26,7 +26,7 @@ import harmonic_inference.models.key_transition_models as ktm
 import harmonic_inference.utils.harmonic_constants as hc
 import harmonic_inference.utils.harmonic_utils as hu
 from harmonic_inference.data.chord import get_chord_vector_length
-from harmonic_inference.data.data_types import KeyMode, PitchType
+from harmonic_inference.data.data_types import ChordType, KeyMode, PitchType
 from harmonic_inference.data.piece import Piece, get_range_start
 from harmonic_inference.utils.beam_search_utils import Beam, HashedBeam, State
 
@@ -646,7 +646,9 @@ class HarmonicInferenceModel:
         forced_chord_non_changes: Set[int] = None,
         forced_key_changes: Set[int] = None,
         forced_key_non_changes: Set[int] = None,
-        forced_chords: Dict[Tuple[int, int], int] = None,
+        forced_chords: Dict[
+            int, Tuple[Union[Tuple[int, str], Tuple[str, ChordType, int, str]], str]
+        ] = None,
         forced_keys: Dict[Tuple[int, int], int] = None,
     ) -> Tuple[State, Piece]:
         """
@@ -669,21 +671,22 @@ class HarmonicInferenceModel:
         forced_key_non_changes: Set[int]
             Note indexes at which there must NOT be a key change in the resulting harmony.
 
-        forced_chords: Dict[Tuple[int, int], int]
-            A dictionary of [(start, end): chord_id] indicating where chords are forced in the
-            resulting harmony. start is inclusive, end is exclusive, and chord_id is the
-            one-hot index of an absolute chord symbol, using the same alphabet as this joint_model.
-            start and end are not forced to be chord changes, but no chord change may lie within
-            the range, and any resulting chord containing this range must be the given
-            chord_id.
+        forced_chords : Dict[
+                    int, Tuple[Union[Tuple[int, str], Tuple[str, ChordType, int, str]], str]
+                ]
+            A dictionary mapping a note index to a tuple containing a chord label, and a
+            chord label type (either "abs" or "rel").
+            If "abs", the chord label is a tuple of the absolute chord's one-hot index and
+            the changes string.
+            If "rel", the chord label is a tuple containing the chord root (string of a Roman
+            numeral), the chord type, and the chord's inversion, plus the chord's changes
+            string.
 
-        forced_keys: Dict[Tuple[int, int], int]
-            A dictionary of [(start, end): key_id] indicating where keys are forced in the
-            resulting harmony. start is inclusive, end is exclusive, and key_id is the
-            one-hot index of an absolute key, using the same alphabet as this joint_model.
-            start and end are not forced to be key changes, but no key change may lie within
-            the range, and any resulting key containing this range must be the given
-            key_id.
+        forced_keys : Dict[int, Tuple[Union[int, str], str]]
+            A dictional mapping a note index to a tuple containing a key label and a label type
+            string (either "abs" or "rel").
+            If abs, the key label is an absolute key one-hot index. If rel, the key label
+            is a Roman numeral string.
 
         Returns
         -------
