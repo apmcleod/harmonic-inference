@@ -173,7 +173,35 @@ def extract_forces_from_musescore(
         global_mode: KeyMode,
         mc: int,
         mn_onset: Fraction,
-    ):
+    ) -> Tuple[Union[str, int], KeyMode, str]:
+        """
+        Decode the given (absolute or relative) key into a tonic and mode.
+
+        Parameters
+        ----------
+        tonic_str : str
+            An absolute or relative key string. Can also be a relative root with slashes.
+        global_tonic : Union[str, int]
+            The current surrounding tonic to which the given key is relative.
+        global_mode : KeyMode
+            The current surrounding mode to which the given key is relative.
+        mc : int
+            The mc of this key label, for error printing.
+        mn_onset : Fraction
+            The mn_onset of this key label, for error printing.
+
+        Returns
+        -------
+        tonic : Union[str, int]
+            The tonic of the given key, either absolute (int) if it was possible to
+            calculate, or as a relative string (to be interpreted relative to the global
+            key).
+        mode : KeyMode
+            The mode of the given key.
+        tonic_type : str
+            "abs" or "rel", depending on whether the returned tonic is an absolute int
+            or a relative string.
+        """
         mode = KeyMode.MINOR if tonic_str.split("/")[0].islower() else KeyMode.MAJOR
 
         if any([numeral in tonic_str for numeral in "VvIi"]):
