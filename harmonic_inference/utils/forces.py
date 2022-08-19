@@ -16,7 +16,6 @@ from harmonic_inference.utils.harmonic_utils import (
     decode_relative_keys,
     get_chord_inversion,
     get_chord_one_hot_index,
-    get_key_from_one_hot_index,
     get_key_one_hot_index,
     get_pitch_from_string,
 )
@@ -37,7 +36,8 @@ CHORD_REGEX_STRING = (
     r"(%|o|M|\+|\+M)?"  # Chord type
     r"(7|65|43|42|2|64|6)?"  # Fig bass (inversion)
     r"(\((((\+|-|\^|v)?(#{1,2}|b{1,2})?\d)+)\))?"  # Chord pitches
-    r"(/((((#{1,2}|b{1,2})?)(I|II|III|IV|V|VI|VII|i|ii|iii|iv|v|vi|vii)/?)*))?"  # Applied root
+    r"(/(((((#{1,2}|b{1,2})?)(I|II|III|IV|V|VI|VII|i|ii|iii|iv|v|vi|vii)|"  # Applied root
+    f"{ABS_PITCH_REGEX_STRING}/?)*))?"  # Applied root (con't)
 )
 CHORD_REGEX = re.compile(CHORD_REGEX_STRING)
 KEY_REGEX = re.compile(f"Key: ({ABS_PITCH_REGEX_STRING}|{REL_PITCH_REGEX_STRING})")
@@ -165,91 +165,114 @@ def extract_forces_from_musescore(
         instead (since RN label intervals are dependant on the local mode). Such label strings
         are formatted like relativeroots (slash-separated Roman numerals).
     """
-    score = Score(score_path)
 
-    labels: pd.DataFrame = score.annotations.get_labels()
+    def decode_key(
+        tonic_str: str,
+        global_tonic: Union[str, int],
+        global_mode: KeyMode,
+        mc: int,
+        mn_onset: Fraction,
+    ):
+        mode = KeyMode.MINOR if tonic_str.split("/")[0].islower() else KeyMode.MAJOR
 
-    chord_changes = pd.concat(
-        [labels.loc[labels["label"].str.fullmatch(CHORD_CHANGE_REGEX), ["mc", "mn_onset"]]]
-    )
-    chord_changes = [
-        convert_score_position_to_note_index(mc, mn_onset, piece)
-        for mc, mn_onset in zip(chord_changes["mc"], chord_changes["mn_onset"])
-    ]
-
-    chord_non_changes = pd.concat(
-        [labels.loc[labels["label"].str.fullmatch(NO_CHORD_CHANGE_REGEX), ["mc", "mn_onset"]]]
-    )
-    chord_non_changes = [
-        convert_score_position_to_note_index(mc, mn_onset, piece)
-        for mc, mn_onset in zip(chord_non_changes["mc"], chord_non_changes["mn_onset"])
-    ]
-
-    key_changes = pd.concat(
-        [labels.loc[labels["label"].str.fullmatch(KEY_CHANGE_REGEX), ["mc", "mn_onset"]]]
-    )
-    key_changes = [
-        convert_score_position_to_note_index(mc, mn_onset, piece)
-        for mc, mn_onset in zip(key_changes["mc"], key_changes["mn_onset"])
-    ]
-
-    key_non_changes = pd.concat(
-        [labels.loc[labels["label"].str.fullmatch(NO_KEY_CHANGE_REGEX), ["mc", "mn_onset"]]]
-    )
-    key_non_changes = [
-        convert_score_position_to_note_index(mc, mn_onset, piece)
-        for mc, mn_onset in zip(key_non_changes["mc"], key_non_changes["mn_onset"])
-    ]
-
-    chord_ids = []
-    key_ids = []
-
-    keys = pd.concat(
-        [labels.loc[labels["label"].str.fullmatch(KEY_REGEX), ["mc", "mn_onset", "label"]]]
-    )
-    for mc, mn_onset, label in zip(keys["mc"], keys["mn_onset"], keys["label"]):
-        tonic_str = KEY_REGEX.match(label).group(1)
-        mode = KeyMode.MINOR if tonic_str.islower() else KeyMode.MAJOR
-
-        if any([numeral in tonic_str for numeral in ["v", "V", "i", "I"]]):
-            id_type = "rel"
-            key_id = tonic_str
+        if any([numeral in tonic_str for numeral in "VvIi"]):
+            if global_tonic is None or global_mode is None:
+                id_type = "rel"
+                logging.warning(
+                    (
+                        "No global (absolute) key label given before relative label %s "
+                        "at position (%s, %s). Storing forced key as relative string."
+                    ),
+                    label,
+                    mc,
+                    mn_onset,
+                )
+                tonic = tonic_str
+            else:
+                tonic, mode = decode_relative_keys(
+                    tonic_str, global_tonic, global_mode, PitchType.TPC
+                )
+                id_type = "abs"
 
         else:
             id_type = "abs"
-            key_id = get_key_one_hot_index(
-                mode, get_pitch_from_string(tonic_str, PitchType.TPC), PitchType.TPC
-            )
+            tonic = get_pitch_from_string(tonic_str.split("/")[0], PitchType.TPC)
 
-        key_ids.append((convert_score_position_to_note_index(mc, mn_onset, piece), key_id, id_type))
+        return tonic, mode, id_type
+
+    score = Score(score_path)
+    labels: pd.DataFrame = score.annotations.get_labels()
+
+    chord_changes = set()
+    chord_non_changes = set()
+    key_changes = set()
+    key_non_changes = set()
+    chord_ids = []
+    key_ids = []
+
+    global_tonic = None
+    global_mode = None
+    local_tonic = None
+    local_mode = None
+    relative_tonic = None
+    relative_mode = None
+    for mc, mn_onset, label in zip(labels["mc"], labels["mn_onset"], labels["label"]):
+        note_index = convert_score_position_to_note_index(mc, mn_onset, piece)
+
+        added = False
+        for regex, index_set in zip(
+            [CHORD_CHANGE_REGEX, NO_CHORD_CHANGE_REGEX, KEY_CHANGE_REGEX, NO_KEY_CHANGE_REGEX],
+            [chord_changes, chord_non_changes, key_changes, key_non_changes],
+        ):
+            if regex.match(label).group(0) == label:
+                index_set.add(note_index)
+                added = True
+                if regex == KEY_CHANGE_REGEX:
+                    local_tonic = None
+                    local_mode = None
+        if added:
+            continue
+
+        key_match = KEY_REGEX.match(label)
+        if key_match.group(0) == label:
+            tonic_str = key_match.group(1)
+            local_tonic, local_mode, id_type = decode_key(
+                tonic_str, global_tonic, global_mode, mc, mn_onset
+            )
+            if id_type == "abs":
+                key_id = get_key_one_hot_index(local_mode, local_tonic, PitchType.TPC)
+                if note_index == 0:
+                    global_tonic = local_tonic
+                    global_mode = local_mode
+            else:
+                key_id = local_tonic
+
+            relative_tonic = local_tonic
+            relative_mode = local_mode
+            key_ids.append((note_index, key_id, id_type))
 
     # Can include key and chord, plus relative roots (also modeled as key changes)
-    dcml_labels = pd.concat(
-        [labels.loc[labels["label"].str.fullmatch(DCML_LABEL_REGEX), ["mc", "mn_onset", "label"]]]
-    )
-    for mc, mn_onset, label in zip(
-        dcml_labels["mc"], dcml_labels["mn_onset"], dcml_labels["label"]
-    ):
-        note_index = convert_score_position_to_note_index(mc, mn_onset, piece)
+    dcml_match = DCML_LABEL_REGEX.match(label)
+    if dcml_match.group(0) == label:
         if "." in label:
             # Label has chord and key: handle the key here and save only the chord label
             idx = label.index(".")
             tonic_str = label[:idx]
             label = label[idx + 1 :]
 
-            # Handle key label
-            if any([numeral in tonic_str for numeral in ["v", "V", "i", "I"]]):
-                id_type = "rel"
-                key_id = tonic_str
-
+            local_tonic, local_mode, id_type = decode_key(
+                tonic_str, global_tonic, global_mode, mc, mn_onset
+            )
+            if id_type == "abs":
+                key_id = get_key_one_hot_index(local_mode, local_tonic, PitchType.TPC)
+                if note_index == 0:
+                    global_tonic = local_tonic
+                    global_mode = local_mode
             else:
-                id_type = "abs"
-                key_id = get_key_one_hot_index(
-                    KeyMode.MINOR if tonic_str[0].islower() else KeyMode.MAJOR,
-                    get_pitch_from_string(tonic_str, PitchType.TPC),
-                    PitchType.TPC,
-                )
+                key_id = local_tonic
 
+            relative_tonic = local_tonic
+            relative_mode = local_mode
             key_ids.append((note_index, key_id, id_type))
 
         # Label is now only a chord label. We can match it to get groups.
@@ -281,16 +304,42 @@ def extract_forces_from_musescore(
                 None: ChordType.MINOR if is_minor else ChordType.MAJOR,
             }[type_string]
 
-        if any([numeral in root_string for numeral in ["v", "V", "i", "I"]]):
-            id_type = "rel"
-            chord_id = (root_string, chord_type, inversion, changes_string)
+        # Handle relroot_string (add to key force and set relative tonic and mode)
+        if relroot_string is not None:
+            relative_tonic, relative_mode, id_type = decode_key(
+                relroot_string, local_tonic, local_mode, mc, mn_onset
+            )
+            if id_type == "abs":
+                key_id = get_key_one_hot_index(relative_mode, relative_tonic, PitchType.TPC)
+            else:
+                key_id = relative_tonic
+            key_ids.append((note_index, key_id, id_type))
 
+        # Back to handling chord
+        if any([numeral in root_string for numeral in "VvIi"]):
+            id_type = "rel"
+            chord_root, _, id_type = decode_key(
+                tonic_str, relative_tonic, relative_mode, mc, mn_onset
+            )
+            if id_type == "rel":
+                chord_id = (root_string, chord_type, inversion, changes_string)
+            else:
+                chord_id = (
+                    get_chord_one_hot_index(
+                        chord_type,
+                        chord_root,
+                        PitchType.TPC,
+                        inversion=inversion,
+                    ),
+                    changes_string,
+                )
+
+            # TODO: Also force key here!
         else:
-            id_type = "abs"
             chord_id = (
                 get_chord_one_hot_index(
                     chord_type,
-                    get_pitch_from_string(root_string, PitchType.TPC),
+                    chord_root,
                     PitchType.TPC,
                     inversion=inversion,
                 ),
@@ -298,38 +347,6 @@ def extract_forces_from_musescore(
             )
 
         chord_ids.append((note_index, chord_id, id_type))
-
-        # Handle relroot_string (add to existing key force)
-        if relroot_string is not None:
-            found = False
-            for i, (key_note_index, key_id, key_id_type) in enumerate(key_ids):
-                if key_note_index == note_index:
-                    found = True
-                    if key_id_type == "abs":
-                        tonic, mode = get_key_from_one_hot_index(key_id, PitchType.TPC)
-                        tonic, mode = decode_relative_keys(
-                            relroot_string, tonic, mode, PitchType.TPC
-                        )
-                        key_ids[i] = (
-                            key_note_index,
-                            get_key_one_hot_index(mode, tonic, PitchType.TPC),
-                            key_id_type,
-                        )
-
-                    else:
-                        # Relative: Just append relroot to previous relative key
-                        key_ids[i] = (
-                            key_note_index,
-                            f"{relroot_string}/{key_id}",
-                            key_id_type,
-                        )
-
-            if not found:
-                # Here, there is no real way to represent this during the search, so it is ignored
-                logging.warning(
-                    "Ignoring relative root of forced %s (relative roots are ignored for forces)",
-                    label,
-                )
 
     return (
         chord_changes,
