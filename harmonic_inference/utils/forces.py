@@ -20,10 +20,10 @@ from harmonic_inference.utils.harmonic_utils import (
     get_pitch_from_string,
 )
 
-NO_CHORD_CHANGE_REGEX = r"^\=C"
-NO_KEY_CHANGE_REGEX = r"\=K"
-CHORD_CHANGE_REGEX = r"\!C"
-KEY_CHANGE_REGEX = r"\!K"
+NO_CHORD_CHANGE_REGEX = re.compile(r"^\=C")
+NO_KEY_CHANGE_REGEX = re.compile(r"\=K")
+CHORD_CHANGE_REGEX = re.compile(r"\!C")
+KEY_CHANGE_REGEX = re.compile(r"\!K")
 
 ACCIDENTAL_REGEX_STRING = "(#{1,2}|b{1,2})?"
 ABS_PITCH_REGEX_STRING = f"[A-Ga-g]{ACCIDENTAL_REGEX_STRING}"
@@ -37,10 +37,10 @@ CHORD_REGEX_STRING = (
     r"(7|65|43|42|2|64|6)?"  # Fig bass (inversion)
     r"(\((((\+|-|\^|v)?(#{1,2}|b{1,2})?\d)+)\))?"  # Chord pitches
     r"(/(((((#{1,2}|b{1,2})?)(I|II|III|IV|V|VI|VII|i|ii|iii|iv|v|vi|vii)|"  # Applied root
-    f"{ABS_PITCH_REGEX_STRING}/?)*))?"  # Applied root (con't)
+    f"{ABS_PITCH_REGEX_STRING})/?)*))?"  # Applied root (con't)
 )
 CHORD_REGEX = re.compile(CHORD_REGEX_STRING)
-KEY_REGEX = re.compile(f"Key: ({ABS_PITCH_REGEX_STRING}|{REL_PITCH_REGEX_STRING})")
+KEY_REGEX = re.compile(f"Key=({ABS_PITCH_REGEX_STRING}|{REL_PITCH_REGEX_STRING})")
 
 DCML_LABEL_REGEX = re.compile(
     f"(({ABS_PITCH_REGEX_STRING}|{REL_PITCH_REGEX_STRING}).)?{CHORD_REGEX_STRING}"
@@ -181,7 +181,7 @@ def extract_forces_from_musescore(
                 id_type = "rel"
                 logging.warning(
                     (
-                        "No global (absolute) key label given before relative label %s "
+                        "Unknown tonic for relative label %s "
                         "at position (%s, %s). Storing forced key as relative string."
                     ),
                     label,
@@ -202,7 +202,7 @@ def extract_forces_from_musescore(
         return tonic, mode, id_type
 
     score = Score(score_path)
-    labels: pd.DataFrame = score.annotations.get_labels()
+    labels: pd.DataFrame = score.annotations.get_labels(decode=True)
 
     chord_changes = set()
     chord_non_changes = set()
@@ -225,17 +225,21 @@ def extract_forces_from_musescore(
             [CHORD_CHANGE_REGEX, NO_CHORD_CHANGE_REGEX, KEY_CHANGE_REGEX, NO_KEY_CHANGE_REGEX],
             [chord_changes, chord_non_changes, key_changes, key_non_changes],
         ):
-            if regex.match(label).group(0) == label:
+            match = regex.match(label)
+            if match and match.group(0) == label:
                 index_set.add(note_index)
                 added = True
                 if regex == KEY_CHANGE_REGEX:
                     local_tonic = None
                     local_mode = None
+                    relative_tonic = None
+                    relative_mode = None
+                break
         if added:
             continue
 
         key_match = KEY_REGEX.match(label)
-        if key_match.group(0) == label:
+        if key_match and key_match.group(0) == label:
             tonic_str = key_match.group(1)
             local_tonic, local_mode, id_type = decode_key(
                 tonic_str, global_tonic, global_mode, mc, mn_onset
@@ -261,96 +265,123 @@ def extract_forces_from_musescore(
                 )
             key_ids[note_index] = (key_id, id_type)
 
-    # Can include key and chord, plus relative roots (also modeled as key changes)
-    dcml_match = DCML_LABEL_REGEX.match(label)
-    if dcml_match.group(0) == label:
-        if "." in label:
-            # Label has chord and key: handle the key here and save only the chord label
-            idx = label.index(".")
-            tonic_str = label[:idx]
-            label = label[idx + 1 :]
+        # Can include key and chord, plus relative roots (also modeled as key changes)
+        dcml_match = DCML_LABEL_REGEX.match(label)
+        if dcml_match and dcml_match.group(0) == label:
+            if "." in label:
+                # Label has chord and key: handle the key here and save only the chord label
+                idx = label.index(".")
+                tonic_str = label[:idx]
+                label = label[idx + 1 :]
 
-            local_tonic, local_mode, id_type = decode_key(
-                tonic_str, global_tonic, global_mode, mc, mn_onset
-            )
-            if id_type == "abs":
-                key_id = get_key_one_hot_index(local_mode, local_tonic, PitchType.TPC)
-                if note_index == 0:
-                    global_tonic = local_tonic
-                    global_mode = local_mode
-            else:
-                key_id = local_tonic
-
-            relative_tonic = local_tonic
-            relative_mode = local_mode
-            if note_index in key_ids and key_ids[note_index][0] != key_id:
-                logging.warning(
-                    "Overwriting key %s at position (%s, %s) with %s based on label %s",
-                    key_ids[note_index][0],
-                    mc,
-                    mn_onset,
-                    key_id,
-                    label,
+                local_tonic, local_mode, id_type = decode_key(
+                    tonic_str, global_tonic, global_mode, mc, mn_onset
                 )
-            key_ids[note_index] = (key_id, id_type)
+                if id_type == "abs":
+                    key_id = get_key_one_hot_index(local_mode, local_tonic, PitchType.TPC)
+                    if note_index == 0:
+                        global_tonic = local_tonic
+                        global_mode = local_mode
+                else:
+                    key_id = local_tonic
 
-        # Label is now only a chord label. We can match it to get groups.
-        chord_match = CHORD_REGEX.match(label)
-        root_string = chord_match.group(1)
-        type_string = chord_match.group(5)
-        figbass_string = chord_match.group(6)
-        changes_string = chord_match.group(7)
-        relroot_string = chord_match.group(13)
+                relative_tonic = local_tonic
+                relative_mode = local_mode
+                if note_index in key_ids and key_ids[note_index][0] != key_id:
+                    logging.warning(
+                        "Overwriting key %s at position (%s, %s) with %s based on label %s",
+                        key_ids[note_index][0],
+                        mc,
+                        mn_onset,
+                        key_id,
+                        label,
+                    )
+                key_ids[note_index] = (key_id, id_type)
 
-        # Get chord features
-        is_minor = root_string.islower()
-        inversion = get_chord_inversion(figbass_string)
-        if figbass_string in ["7", "65", "43", "2"]:
-            # 7th chord
-            chord_type = {
-                "o": ChordType.DIM7,
-                "%": ChordType.HALF_DIM7,
-                "+": ChordType.AUG_MIN7,
-                "+M": ChordType.AUG_MAJ7,
-                "M": ChordType.MIN_MAJ7 if is_minor else ChordType.MAJ_MAJ7,
-                None: ChordType.MIN_MIN7 if is_minor else ChordType.MAJ_MIN7,
-            }[type_string]
-        else:
-            # Triad
-            chord_type = {
-                "o": ChordType.DIMINISHED,
-                "+": ChordType.AUGMENTED,
-                None: ChordType.MINOR if is_minor else ChordType.MAJOR,
-            }[type_string]
+            # Label is now only a chord label. We can match it to get groups.
+            chord_match = CHORD_REGEX.match(label)
+            root_string = chord_match.group(1)
+            type_string = chord_match.group(5)
+            figbass_string = chord_match.group(6)
+            changes_string = chord_match.group(8)
+            relroot_string = chord_match.group(13)
 
-        # Handle relroot_string (add to key force and set relative tonic and mode)
-        if relroot_string is not None:
-            relative_tonic, relative_mode, id_type = decode_key(
-                relroot_string, local_tonic, local_mode, mc, mn_onset
-            )
-            if id_type == "abs":
-                key_id = get_key_one_hot_index(relative_mode, relative_tonic, PitchType.TPC)
+            # Get chord features
+            is_minor = root_string.islower()
+            inversion = get_chord_inversion(figbass_string)
+            if figbass_string in ["7", "65", "43", "2"]:
+                # 7th chord
+                chord_type = {
+                    "o": ChordType.DIM7,
+                    "%": ChordType.HALF_DIM7,
+                    "+": ChordType.AUG_MIN7,
+                    "+M": ChordType.AUG_MAJ7,
+                    "M": ChordType.MIN_MAJ7 if is_minor else ChordType.MAJ_MAJ7,
+                    None: ChordType.MIN_MIN7 if is_minor else ChordType.MAJ_MIN7,
+                }[type_string]
             else:
-                key_id = relative_tonic
-            if note_index in key_ids and key_ids[note_index][0] != key_id:
-                logging.warning(
-                    "Overwriting key %s at position (%s, %s) with %s based on label %s",
-                    key_ids[note_index][0],
-                    mc,
-                    mn_onset,
-                    key_id,
-                    label,
-                )
-            key_ids[note_index] = (key_id, id_type)
+                # Triad
+                chord_type = {
+                    "o": ChordType.DIMINISHED,
+                    "+": ChordType.AUGMENTED,
+                    None: ChordType.MINOR if is_minor else ChordType.MAJOR,
+                }[type_string]
 
-        # Back to handling chord
-        if any([numeral in root_string for numeral in "VvIi"]):
-            id_type = "rel"
-            chord_root, _, id_type = decode_key(
-                tonic_str, relative_tonic, relative_mode, mc, mn_onset
-            )
-            if id_type == "rel":
-                chord_id = (root_string, chord_type, inversion, changes_string)
+            # Handle relroot_string (add to key force and set relative tonic and mode)
+            if relroot_string is not None:
+                relative_tonic, relative_mode, id_type = decode_key(
+                    relroot_string, local_tonic, local_mode, mc, mn_onset
+                )
+                if id_type == "abs":
+                    key_id = get_key_one_hot_index(relative_mode, relative_tonic, PitchType.TPC)
+                else:
+                    key_id = relative_tonic
+                if note_index in key_ids and key_ids[note_index][0] != key_id:
+                    logging.warning(
+                        "Overwriting key %s at position (%s, %s) with %s based on label %s",
+                        key_ids[note_index][0],
+                        mc,
+                        mn_onset,
+                        key_id,
+                        label,
+                    )
+                key_ids[note_index] = (key_id, id_type)
+
+            # Back to handling chord
+            if any([numeral in root_string for numeral in "VvIi"]):
+                id_type = "rel"
+                chord_root, _, id_type = decode_key(
+                    root_string, relative_tonic, relative_mode, mc, mn_onset
+                )
+                if id_type == "rel":
+                    chord_id = (root_string, chord_type, inversion, changes_string)
+                else:
+                    chord_id = (
+                        get_chord_one_hot_index(
+                            chord_type,
+                            chord_root,
+                            PitchType.TPC,
+                            inversion=inversion,
+                        ),
+                        changes_string,
+                    )
+
+                # Also force key here, since the chord label is relative!
+                if isinstance(relative_tonic, str):
+                    key_id = relative_tonic
+                else:
+                    key_id = get_key_one_hot_index(relative_mode, relative_tonic, PitchType.TPC)
+                if note_index in key_ids and key_ids[note_index][0] != key_id:
+                    logging.warning(
+                        "Overwriting key %s at position (%s, %s) with %s based on label %s",
+                        key_ids[note_index][0],
+                        mc,
+                        mn_onset,
+                        key_id,
+                        label,
+                    )
+                key_ids[note_index] = (key_id, id_type)
+
             else:
                 chord_id = (
                     get_chord_one_hot_index(
@@ -362,34 +393,7 @@ def extract_forces_from_musescore(
                     changes_string,
                 )
 
-            # Also force key here, since the chord label is relative!
-            if isinstance(relative_tonic, str):
-                key_id = relative_tonic
-            else:
-                key_id = get_key_one_hot_index(relative_mode, relative_tonic, PitchType.TPC)
-            if note_index in key_ids and key_ids[note_index][0] != key_id:
-                logging.warning(
-                    "Overwriting key %s at position (%s, %s) with %s based on label %s",
-                    key_ids[note_index][0],
-                    mc,
-                    mn_onset,
-                    key_id,
-                    label,
-                )
-            key_ids[note_index] = (key_id, id_type)
-
-        else:
-            chord_id = (
-                get_chord_one_hot_index(
-                    chord_type,
-                    chord_root,
-                    PitchType.TPC,
-                    inversion=inversion,
-                ),
-                changes_string,
-            )
-
-        chord_ids[note_index] = (chord_id, id_type)
+            chord_ids[note_index] = (chord_id, id_type)
 
     return (
         chord_changes,

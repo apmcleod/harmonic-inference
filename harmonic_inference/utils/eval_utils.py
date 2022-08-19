@@ -879,7 +879,7 @@ def get_annotation_df(
                 # Non-dcml labels have key and chords separate
                 labels_list.append(
                     {
-                        "label": "Key: " + est_key_string,
+                        "label": "Key=" + est_key_string,
                         "mc": note.onset[0],
                         "mc_onset": note.mc_onset,
                         "mn_onset": note.onset[1],
@@ -1269,7 +1269,7 @@ def get_results_annotation_df(
                 labels_list.append(
                     {
                         "label": (
-                            "Key: "
+                            "Key="
                             + (est_key_string if est_key_string != prev_est_key_string else "--")
                         ),
                         "mc": note.onset[0],
