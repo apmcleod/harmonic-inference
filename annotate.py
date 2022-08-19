@@ -175,9 +175,9 @@ def annotate(
                 forces = extract_forces_from_musescore(score_path, piece)
                 forces_dict = {
                     "forced_chord_changes": forces[0],
-                    "forced_non_chord_changes": forces[1],
+                    "forced_chord_non_changes": forces[1],
                     "forced_key_changes": forces[2],
-                    "forced_non_key_changes": forces[3],
+                    "forced_key_non_changes": forces[3],
                     "forced_chords": forces[4],
                     "forced_keys": forces[5],
                 }
