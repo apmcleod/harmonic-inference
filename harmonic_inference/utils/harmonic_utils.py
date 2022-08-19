@@ -1,9 +1,11 @@
 """Utility functions for getting harmonic and pitch information from the corpus DataFrames."""
 import itertools
+import logging
 from typing import Dict, List, Set, Tuple, Union
 
 import numpy as np
 import pandas as pd
+from ms3 import changes2list
 
 import harmonic_inference.utils.harmonic_constants as hc
 from harmonic_inference.data.data_types import NO_REDUCTION, ChordType, KeyMode, PitchType
@@ -573,6 +575,109 @@ def get_key_one_hot_index(
     return len(tonics) * key_mode.value + tonics.index(tonic)
 
 
+def changes_string_to_pitches(
+    changes: str,
+    root: int,
+    chord_type: ChordType,
+    tonic: int,
+    mode: KeyMode,
+    pitch_type: PitchType,
+) -> Tuple[int]:
+    """
+    Given a changes string and a chord root and type, plus the current key tonic and mode,
+    get a list of pitches in the given chord.
+
+    Parameters
+    ----------
+    changes : str
+        The changes of the given chord, as a string of numbers, with +, -, ^, and v.
+    root : int
+        The root of the current chord.
+    chord_type : ChordType
+        The chord type of the chord.
+    tonic : int
+        The tonic pitch of the surrounding key.
+    mode : KeyMode
+        The mode of the surrounding key.
+    pitch_type : int
+        The pitch type encoding all given and returned information.
+
+    Returns
+    -------
+    chord_pitches : Tuple[int]
+        The pitches present in the given chord.
+    """
+    if pitch_type == PitchType.MIDI:
+        # We'll work in TPC and convert at the end
+        root = get_pitch_from_string(get_pitch_string(root, PitchType.MIDI), PitchType.TPC)
+        tonic = get_pitch_from_string(get_pitch_string(tonic, PitchType.MIDI), PitchType.TPC)
+
+    numerals = ["I", "II", "III", "IV", "V", "VI", "VII"]
+
+    chord_pitches = get_default_chord_pitches(root, chord_type, PitchType.TPC, use_list=True)
+    default_chord_pitches = tuple([pitch for pitch in chord_pitches])  # Do not change this
+    root_scale_degree_str = get_scale_degree_from_interval(root - tonic, mode, PitchType.TPC)
+    root_step = numerals.index(
+        root_scale_degree_str.replace("#", "").replace("b", "").upper()
+    )  # 0-indexed
+
+    for _, modifier, accidental, step in changes2list(changes):
+        if modifier == "-":
+            # Removed tone
+            try:
+                chord_pitches.remove(default_chord_pitches["1357".index(step)])
+            except Exception:
+                logging.warning("Could not remove step %s. Skipping.", accidental + step)
+            continue
+
+        # Replacement or added tone
+        if int(step) >= 8:
+            step = str(int(step) - 7)
+
+        # First add the tone
+        numeral = accidental + numerals[(int(step) - (root_step + 1)) % 7]
+        chord_pitches.append(get_interval_from_numeral(numeral, mode, PitchType.TPC) + tonic)
+
+        if modifier == "+":
+            # Nothing to remove
+            continue
+
+        # Remove the tone it replaced
+        if step in "1357":
+            # The default was a modified version of one of these
+            index = "1357".index(step)
+
+        elif modifier + accidental + step in ["#6", "^6", "^b6"]:
+            index = 3
+
+        elif modifier + accidental + step in ["^4", "^b4", "#4", "6", "b6", "v#6"]:
+            index = 2
+
+        elif modifier + accidental + step in ["^2", "^b2", "#2", "4", "b4", "v#4"]:
+            index = 1
+
+        elif modifier + accidental + step in ["^0", "^b0", "#0", "2", "b2", "v#2"]:
+            index = 0
+
+        else:
+            logging.warning("Could parse change %s. Skipping.", modifier + accidental + step)
+
+        try:
+            chord_pitches.remove(default_chord_pitches[index])
+        except Exception:
+            logging.warning(
+                "Could remove pitch for change %s. Skipping.", modifier + accidental + step
+            )
+
+    if pitch_type == PitchType.MIDI:
+        # Convert TPC back to MIDI if desired
+        chord_pitches = [
+            get_pitch_from_string(get_pitch_string(pitch, PitchType.TPC), PitchType.MIDI)
+            for pitch in chord_pitches
+        ]
+    return tuple(chord_pitches)
+
+
 def decode_relative_keys(
     relative_string: str,
     tonic: int,
@@ -654,7 +759,8 @@ def get_default_chord_pitches(
     root: int,
     chord_type: ChordType,
     pitch_type: PitchType,
-) -> Set[int]:
+    use_list: bool = False,
+) -> Union[Set[int], List[int]]:
     """
     Get the default chord pitches list given a root and a chord type. The returned chord
     pitches set will contain the absolute pitch classes for the notes in the default version
@@ -668,17 +774,20 @@ def get_default_chord_pitches(
         The chord type.
     pitch_type : PitchType
         The pitch type used for the root, and to use for the returned chord pitches.
+    use_list : bool
+        Return a list that preserves ordering, instead of a set.
 
     Returns
     -------
-    chord_pitches : Set[int]
+    chord_pitches : Union[Set[int], List[int]]
         The absolute pitches present in the default version of the given chord,
         represented with the given pitch type.
     """
-    return set(
+    pitches = [
         transpose_pitch(pitch, root - hc.C[pitch_type], pitch_type)
         for pitch in hc.CHORD_PITCHES[pitch_type][chord_type]
-    )
+    ]
+    return pitches if use_list else set(pitches)
 
 
 def get_chord_inversion_count(chord_type: ChordType) -> int:
