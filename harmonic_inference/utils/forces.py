@@ -5,7 +5,7 @@ import re
 from fractions import Fraction
 from glob import glob
 from pathlib import Path
-from typing import Set, Tuple, Union
+from typing import Dict, Set, Tuple, Union
 
 import pandas as pd
 from ms3 import Score
@@ -122,8 +122,8 @@ def extract_forces_from_musescore(
     Set[int],
     Set[int],
     Set[int],
-    Tuple[int, Union[Tuple[int, str], Tuple[str, ChordType, int, str]], str],
-    Tuple[int, Union[int, str], str],
+    Dict[int, Tuple[Union[Tuple[int, str], Tuple[str, ChordType, int, str]], str]],
+    Dict[int, Tuple[Union[int, str], str]],
 ]:
     """
     Extract forced labels, changes, and non-changes from a Musescore3 file.
@@ -151,19 +151,20 @@ def extract_forces_from_musescore(
     key_non_changes : Set[int]
        A set of note indexes indicating positions at which there must NOT be a key change.
 
-    chords : Tuple[int, Union[Tuple[int, str], Tuple[str, ChordType, int, str]], str]
-        Tuples of (note_index, chord_id, type) indicating positions at which a given chord label
-        is forced. Type may be either "abs" or "rel", denoting the type of chord_id used
-        If abs, chord_id is a tuple containing the one-hot chord id and a string of the changes.
-        If rel, chord_id is a tuple containing the (string) relative root, the chord type,
-        the inversion, and a string of the changes.
+    chords : Dict[int, Tuple[Union[Tuple[int, str], Tuple[str, ChordType, int, str]], str]
+        A dictionary mapping a note index to a tuple containing a chord label, and a
+        chord label type (either "abs" or "rel").
+        If "abs", the chord label is a tuple of the absolute chord's one-hot index and
+        the changes string.
+        If "rel", the chord label is a tuple containing the chord root (string of a Roman
+        numeral), the chord type, and the chord's inversion, plus the chord's changes
+        string.
 
-    keys : Tuple[int, Union[int, str], str]
-        Tuples of (note_index, key_id, type) indicating positions at which a given key label
-        is forced. Type may be either "abs" or "rel", denoting the type of key_id used.
-        If abs, the key_id is a one-hot key id. If rel, a label string is given in that slot
-        instead (since RN label intervals are dependant on the local mode). Such label strings
-        are formatted like relativeroots (slash-separated Roman numerals).
+    keys : Dict[int, Tuple[Union[int, str], str]]
+        A dictional mapping a note index to a tuple containing a key label and a label type
+        string (either "abs" or "rel").
+        If abs, the key label is an absolute key one-hot index. If rel, the key label
+        is a Roman numeral string.
     """
 
     def decode_key(
@@ -207,8 +208,8 @@ def extract_forces_from_musescore(
     chord_non_changes = set()
     key_changes = set()
     key_non_changes = set()
-    chord_ids = []
-    key_ids = []
+    chord_ids = dict()
+    key_ids = dict()
 
     global_tonic = None
     global_mode = None
@@ -249,7 +250,16 @@ def extract_forces_from_musescore(
 
             relative_tonic = local_tonic
             relative_mode = local_mode
-            key_ids.append((note_index, key_id, id_type))
+            if note_index in key_ids and key_ids[note_index][0] != key_id:
+                logging.warning(
+                    "Overwriting key %s at position (%s, %s) with %s based on label %s",
+                    key_ids[note_index][0],
+                    mc,
+                    mn_onset,
+                    key_id,
+                    label,
+                )
+            key_ids[note_index] = (key_id, id_type)
 
     # Can include key and chord, plus relative roots (also modeled as key changes)
     dcml_match = DCML_LABEL_REGEX.match(label)
@@ -273,7 +283,16 @@ def extract_forces_from_musescore(
 
             relative_tonic = local_tonic
             relative_mode = local_mode
-            key_ids.append((note_index, key_id, id_type))
+            if note_index in key_ids and key_ids[note_index][0] != key_id:
+                logging.warning(
+                    "Overwriting key %s at position (%s, %s) with %s based on label %s",
+                    key_ids[note_index][0],
+                    mc,
+                    mn_onset,
+                    key_id,
+                    label,
+                )
+            key_ids[note_index] = (key_id, id_type)
 
         # Label is now only a chord label. We can match it to get groups.
         chord_match = CHORD_REGEX.match(label)
@@ -313,7 +332,16 @@ def extract_forces_from_musescore(
                 key_id = get_key_one_hot_index(relative_mode, relative_tonic, PitchType.TPC)
             else:
                 key_id = relative_tonic
-            key_ids.append((note_index, key_id, id_type))
+            if note_index in key_ids and key_ids[note_index][0] != key_id:
+                logging.warning(
+                    "Overwriting key %s at position (%s, %s) with %s based on label %s",
+                    key_ids[note_index][0],
+                    mc,
+                    mn_onset,
+                    key_id,
+                    label,
+                )
+            key_ids[note_index] = (key_id, id_type)
 
         # Back to handling chord
         if any([numeral in root_string for numeral in "VvIi"]):
@@ -334,7 +362,22 @@ def extract_forces_from_musescore(
                     changes_string,
                 )
 
-            # TODO: Also force key here!
+            # Also force key here, since the chord label is relative!
+            if isinstance(relative_tonic, str):
+                key_id = relative_tonic
+            else:
+                key_id = get_key_one_hot_index(relative_mode, relative_tonic, PitchType.TPC)
+            if note_index in key_ids and key_ids[note_index][0] != key_id:
+                logging.warning(
+                    "Overwriting key %s at position (%s, %s) with %s based on label %s",
+                    key_ids[note_index][0],
+                    mc,
+                    mn_onset,
+                    key_id,
+                    label,
+                )
+            key_ids[note_index] = (key_id, id_type)
+
         else:
             chord_id = (
                 get_chord_one_hot_index(
@@ -346,7 +389,7 @@ def extract_forces_from_musescore(
                 changes_string,
             )
 
-        chord_ids.append((note_index, chord_id, id_type))
+        chord_ids[note_index] = (chord_id, id_type)
 
     return (
         chord_changes,
