@@ -222,6 +222,12 @@ def load_models_from_argparse(ARGS: Namespace, model_type: str = None) -> Dict:
         if model_type is not None and model_name != model_type:
             continue
 
+        if model_name == "cpm" and hasattr(ARGS, "no_cpm") and ARGS.no_cpm:
+            continue
+
+        if model_name == "kppm" and hasattr(ARGS, "no_kppm") and ARGS.no_kppm:
+            continue
+
         if model_name == "icm":
             continue
 
