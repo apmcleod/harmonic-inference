@@ -974,7 +974,7 @@ def post_process_labels(
             keys.append(label[: label.index(".")])
             key_indices.append(i)
         elif label.startswith("Key=") and label != "Key=--":
-            keys.append(label[5:])
+            keys.append(label[4:])
             key_indices.append(i)
 
     # Check for length < 3 (those become applied chords)

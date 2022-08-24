@@ -321,6 +321,10 @@ class HarmonicInferenceModel:
             Do not perform CPM post-processing.
         """
         for model, model_classes in MODEL_CLASSES.items():
+            if model == "cpm" and no_cpm:
+                continue
+            if model == "kppm" and no_kppm:
+                continue
             assert model in models.keys(), f"`{model}` not in models dict."
             assert (
                 type(models[model]) in model_classes
