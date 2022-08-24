@@ -973,7 +973,7 @@ def post_process_labels(
         if label_type == "dcml" and "." in label:
             keys.append(label[: label.index(".")])
             key_indices.append(i)
-        elif label.startswith("Key: "):
+        elif label.startswith("Key="):
             keys.append(label[5:])
             key_indices.append(i)
 
