@@ -784,7 +784,7 @@ def get_default_chord_pitches(
         represented with the given pitch type.
     """
     pitches = [
-        transpose_pitch(pitch, root - hc.C[pitch_type], pitch_type)
+        transpose_pitch(pitch, root - hc.C[pitch_type], pitch_type, ignore_range=True)
         for pitch in hc.CHORD_PITCHES[pitch_type][chord_type]
     ]
     return pitches if use_list else set(pitches)

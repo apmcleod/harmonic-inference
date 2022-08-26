@@ -991,6 +991,9 @@ def post_process_labels(
         + [False]
     )
 
+    if len(keys) <= 1:
+        can_be_applied = can_be_applied[: len(keys)]
+
     # Initial key
     current_key = keys[0]
     if label_type == "dcml":
