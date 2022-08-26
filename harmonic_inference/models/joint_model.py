@@ -233,6 +233,12 @@ def add_joint_model_args(parser: ArgumentParser, grid_search: bool = False, cpm_
             help="Do not perform CPM post-processing.",
         )
 
+    parser.add_argument(
+        "--rule-based-cpm",
+        action="store_true",
+        help="Use the rule-based CPM.",
+    )
+
 
 class HarmonicInferenceModel:
     """
@@ -259,6 +265,7 @@ class HarmonicInferenceModel:
         cpm_non_chord_tone_replace_threshold: float = CPM_NON_CHORD_TONE_REPLACE_THRESHOLD_DEFAULT,
         no_kppm: bool = False,
         no_cpm: bool = False,
+        rule_based_cpm: bool = False,
     ):
         """
         Create a new HarmonicInferenceModel from a set of pre-loaded models.
@@ -319,6 +326,8 @@ class HarmonicInferenceModel:
             Do not perform KPPM post-processing.
         no_cpm : bool
             Do not perform CPM post-processing.
+        rule_based_cpm : bool
+            Use the rule-based CPM.
         """
         for model, model_classes in MODEL_CLASSES.items():
             if model == "cpm" and no_cpm:
@@ -337,6 +346,7 @@ class HarmonicInferenceModel:
         # Post-processing and other flags
         self.no_kppm = no_kppm
         self.no_cpm = no_cpm
+        self.rule_based_cpm = rule_based_cpm
 
         self.chord_classifier: ccm.ChordClassifierModel = models["ccm"]
         self.chord_sequence_model: csm.ChordSequenceModel = models["csm"]
@@ -1608,6 +1618,8 @@ class HarmonicInferenceModel:
             self.cpm_chord_tone_threshold,
             self.cpm_non_chord_tone_add_threshold,
             self.cpm_non_chord_tone_replace_threshold,
+            rule_based=self.rule_based_cpm,
+            suspensions=True,
         )
 
         current_state = state
@@ -2391,4 +2403,5 @@ def from_args(models: Dict, ARGS: Namespace, cpm_only: bool = False) -> Harmonic
         cpm_non_chord_tone_replace_threshold=ARGS.cpm_non_chord_tone_replace_threshold,
         no_kppm=ARGS.no_kppm,
         no_cpm=ARGS.no_cpm,
+        rule_based_cpm=ARGS.rule_based_cpm,
     )
