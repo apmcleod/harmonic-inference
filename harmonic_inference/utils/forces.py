@@ -37,7 +37,7 @@ CHORD_REGEX_STRING = (
     r"(7|65|43|42|2|64|6)?"  # Fig bass (inversion)
     r"(\((((\+|-|\^|v)?(#{1,2}|b{1,2})?\d)+)\))?"  # Chord pitches
     r"(/(((((#{1,2}|b{1,2})?)(I|II|III|IV|V|VI|VII|i|ii|iii|iv|v|vi|vii)|"  # Applied root
-    f"{ABS_PITCH_REGEX_STRING})/?)*))?"  # Applied root (con't)
+    f"{ABS_PITCH_REGEX_STRING})/?)*))?$"  # Applied root (con't)
 )
 CHORD_REGEX = re.compile(CHORD_REGEX_STRING)
 KEY_REGEX = re.compile(f"Key=({ABS_PITCH_REGEX_STRING}|{REL_PITCH_REGEX_STRING})")
