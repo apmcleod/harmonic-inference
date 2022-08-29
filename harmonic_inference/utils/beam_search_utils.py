@@ -819,13 +819,18 @@ class State:
         pitches : List[List[int]]
             A List of the chord pitches for each chord up to this State.
         """
-        if self.prev_state is None:
-            return [], [self.change_index], []
+        chords = []
+        changes = []
+        pitches = []
 
-        chords, changes, pitches = self.prev_state.get_chords()
-        chords.append(self.chord)
-        changes.append(self.change_index)
-        pitches.append(self.chord_pitches if hasattr(self, "chord_pitches") else [])
+        state = self
+        while state.prev_state is not None:
+            chords = [state.chord] + chords
+            changes = [state.change_index] + changes
+            pitches = [state.chord_pitches if hasattr(state, "chord_pitches") else []] + pitches
+            state = state.prev_state
+
+        changes = [state.change_index] + changes
 
         return chords, changes, pitches
 
@@ -841,17 +846,17 @@ class State:
             A List of the key transition indexes up to this State. This list will be of
             length 1 greater than keys because it includes an initial 0.
         """
-        if self.prev_state is None:
-            return [], [self.change_index]
+        keys = []
+        changes = []
 
-        keys, changes = self.prev_state.get_keys()
-        if len(keys) == 0 or self.key != keys[-1]:
-            keys.append(self.key)
-            changes.append(self.change_index)
+        state = self
+        while state.prev_state is not None:
+            if len(keys) == 0 or state.key != keys[0]:
+                keys = [state.key] + keys
+                changes = [state.change_index] + changes
+            state = state.prev_state
 
-        # Key is equal to the previous one -- update change index
-        elif len(keys) != 0:
-            changes[-1] = self.change_index
+        changes = [state.change_index] + changes
 
         return keys, changes
 
