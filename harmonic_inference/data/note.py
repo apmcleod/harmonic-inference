@@ -213,7 +213,7 @@ class Note:
 
         Returns
         -------
-        vector : np.array
+        vector : np.ndarray
             The vector of this Note.
         """
         vectors = []

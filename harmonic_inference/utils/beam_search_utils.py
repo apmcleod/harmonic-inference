@@ -31,10 +31,10 @@ class State:
         log_prob: float = 0.0,
         prev_state: "State" = None,
         hash_length: int = None,
-        csm_hidden_state: np.array = None,
-        ktm_hidden_state: np.array = None,
-        ksm_hidden_state: np.array = None,
-        csm_log_prior: np.array = None,
+        csm_hidden_state: np.ndarray = None,
+        ktm_hidden_state: np.ndarray = None,
+        ksm_hidden_state: np.ndarray = None,
+        csm_log_prior: np.ndarray = None,
         key_obj: Key = None,
         must_key_transition: bool = False,
         most_recent_csm: float = None,
@@ -62,13 +62,13 @@ class State:
             will be self.hash_length Nones, as a tuple. Otherwise, this State's hash_tuple
             will be the last self.hash_length-1 entries in prev_state.hash_tuple, with
             this State's (key, chord) tuple appended to it.
-        csm_hidden_state : np.array
+        csm_hidden_state : np.ndarray
             The hidden state for the CSM's next step.
-        ktm_hidden_state : np.array
+        ktm_hidden_state : np.ndarray
             The hidden state for the KTM's next step.
-        ksm_hidden_state : np.array
+        ksm_hidden_state : np.ndarray
             The hidden state for the KSM's next run.
-        csm_log_prior : np.array
+        csm_log_prior : np.ndarray
             The log prior for each (relative) chord symbol, as output by the CSM.
         key_obj : Key
             The key object of this state, in case it can be copied from the previous state.
@@ -397,7 +397,7 @@ class State:
     def add_csm_prior(
         self,
         pitch_type: PitchType,
-        duration_cache: np.array,
+        duration_cache: np.ndarray,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[Fraction],
         beat_duration_cache: List[Fraction],
@@ -415,7 +415,7 @@ class State:
         ----------
         pitch_type : PitchType
             The pitch type used to store the chord root.
-        duration_cache : np.array
+        duration_cache : np.ndarray
             The duration of each input in the current piece.
         onset_cache : List[Tuple[int, Fraction]]
             The onset of each input in the current piece.
@@ -464,7 +464,7 @@ class State:
     def get_csm_input(
         self,
         pitch_type: PitchType,
-        duration_cache: np.array,
+        duration_cache: np.ndarray,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
         beat_duration_cache: List[Fraction],
@@ -477,7 +477,7 @@ class State:
         ----------
         pitch_type : PitchType
             The pitch type used to store the chord root and key tonic.
-        duration_cache : np.array
+        duration_cache : np.ndarray
             The duration of each input in the current piece.
         onset_cache : List[Tuple[int, Fraction]]
             The onset of each input in the current piece.
@@ -490,7 +490,7 @@ class State:
 
         Returns
         -------
-        csm_input : np.array
+        csm_input : np.ndarray
             The input for the next step of this state's CSM.
         """
         key_change_vector = np.zeros(get_key_change_vector_length(pitch_type, one_hot=False))
@@ -522,7 +522,7 @@ class State:
     def get_ktm_input(
         self,
         pitch_type: PitchType,
-        duration_cache: np.array,
+        duration_cache: np.ndarray,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
         beat_duration_cache: List[Fraction],
@@ -535,7 +535,7 @@ class State:
         ----------
         pitch_type : PitchType
             The pitch type used to store the chord root and key tonic.
-        duration_cache : np.array
+        duration_cache : np.ndarray
             The duration of each input in the current piece.
         onset_cache : List[Tuple[int, Fraction]]
             The onset of each input in the current piece.
@@ -548,7 +548,7 @@ class State:
 
         Returns
         -------
-        ktm_input : np.array
+        ktm_input : np.ndarray
             The input for the next step of this state's KTM.
         """
         key_change_vector = np.zeros(get_key_change_vector_length(pitch_type, one_hot=False) + 1)
@@ -578,7 +578,7 @@ class State:
     def get_ksm_input(
         self,
         pitch_type: PitchType,
-        duration_cache: np.array,
+        duration_cache: np.ndarray,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
         beat_duration_cache: List[Fraction],
@@ -594,7 +594,7 @@ class State:
         ----------
         pitch_type : PitchType
             The pitch type used to store the chord root and key tonic.
-        duration_cache : np.array
+        duration_cache : np.ndarray
             The duration of each input in the current piece.
         onset_cache : List[Tuple[int, Fraction]]
             The onset of each input in the current piece.
@@ -610,7 +610,7 @@ class State:
 
         Returns
         -------
-        ksm_input : np.array
+        ksm_input : np.ndarray
             The input for the KSM form the last key change until now, with `length` additional
             input vectors filled with 0 appended to the end.
         """
@@ -681,7 +681,7 @@ class State:
     def get_chord(
         self,
         pitch_type: PitchType,
-        duration_cache: np.array,
+        duration_cache: np.ndarray,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
         beat_duration_cache: List[Fraction],
@@ -694,7 +694,7 @@ class State:
         ----------
         pitch_type : PitchType
             The pitch type used to store the chord root.
-        duration_cache : np.array
+        duration_cache : np.ndarray
             The duration of each input in the current piece.
         onset_cache : List[Tuple[int, Fraction]]
             The onset of each input in the current piece.
@@ -767,7 +767,7 @@ class State:
     def get_relative_chord_index(
         self,
         pitch_type: PitchType,
-        duration_cache: np.array,
+        duration_cache: np.ndarray,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
         beat_duration_cache: List[Fraction],
@@ -780,7 +780,7 @@ class State:
         ----------
         pitch_type : PitchType
             The pitch type used to store the chord root.
-        duration_cache : np.array
+        duration_cache : np.ndarray
             The duration of each input in the current piece.
         onset_cache : List[Tuple[int, Fraction]]
             The onset of each input in the current piece.
@@ -865,7 +865,7 @@ class State:
         piece: ScorePiece,
         chord_pitch_type: PitchType,
         key_pitch_type: PitchType,
-        duration_cache: np.array,
+        duration_cache: np.ndarray,
         onset_cache: List[Tuple[int, Fraction]],
         onset_level_cache: List[int],
         beat_duration_cache: List[Fraction],
@@ -883,7 +883,7 @@ class State:
             The pitch type used to store the chord root.
         key_pitch_type : PitchType
             The pitch type used to store the key tonic.
-        duration_cache : np.array
+        duration_cache : np.ndarray
             The duration of each input in the current piece.
         onset_cache : List[Tuple[int, Fraction]]
             The onset of each input in the current piece.

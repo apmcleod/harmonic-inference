@@ -30,13 +30,13 @@ from harmonic_inference.utils.harmonic_utils import (
 )
 
 
-def decode_note_vector(note_vector: np.array) -> Note:
+def decode_note_vector(note_vector: np.ndarray) -> Note:
     """
     Print out information about the given note vector.
 
     Parameters
     ----------
-    note_vector : np.array
+    note_vector : np.ndarray
         A note vector to decode.
 
     Returns
@@ -83,13 +83,13 @@ def decode_note_vector(note_vector: np.array) -> Note:
     return Note(pitch, octave, onset, onset_level, dur, None, offset_level, pitch_type)
 
 
-def decode_key_change_vector(key_change_vector: np.array) -> Key:
+def decode_key_change_vector(key_change_vector: np.ndarray) -> Key:
     """
     Print out information about the given key change vector.
 
     Parameters
     ----------
-    key_vector : np.array
+    key_vector : np.ndarray
         A key vector to decode.
 
     Returns
@@ -120,7 +120,7 @@ def decode_key_change_vector(key_change_vector: np.array) -> Key:
 
 
 def decode_chord_vector(
-    chord_vector: np.array,
+    chord_vector: np.ndarray,
     pad: bool = False,
     pitch_type: PitchType = None,
 ) -> Chord:
@@ -129,7 +129,7 @@ def decode_chord_vector(
 
     Parameters
     ----------
-    chord_vector : np.array
+    chord_vector : np.ndarray
         A chord vector to decode.
     pad : bool
         If True and pitch_type is PitchType.TPC, the given vector allows for a padded
@@ -532,7 +532,7 @@ def reduce_chord_one_hots(
 
 
 def remove_chord_inversions(
-    tensor: np.array,
+    tensor: np.ndarray,
     pad: bool,
     pitch_type: PitchType = None,
     for_chord_pitches: bool = False,
@@ -543,7 +543,7 @@ def remove_chord_inversions(
 
     Parameters
     ----------
-    tensor : np.array
+    tensor : np.ndarray
         The chord vector tensor to remove inversions from. This tensor is changed in place.
     pad : bool
         Whether the tensor's pitches are padded or not.
@@ -573,7 +573,7 @@ def remove_chord_inversions(
 
 
 def reduce_chord_types(
-    tensor: np.array,
+    tensor: np.ndarray,
     reduction: Dict[ChordType, ChordType],
     pad: bool,
     pitch_type: PitchType = None,
@@ -584,7 +584,7 @@ def reduce_chord_types(
 
     Parameters
     ----------
-    tensor : np.array
+    tensor : np.ndarray
         The chord vector tensor to reduce. This tensor is changed in place.
     reduction : Dict[ChordType, ChordType]
         The reduction to appply.
@@ -624,7 +624,7 @@ def reduce_chord_types(
 
 
 def decode_chord_and_key_change_vector(
-    vector: np.array,
+    vector: np.ndarray,
     root_type: PitchType = None,
     tonic_type: PitchType = None,
     pad: bool = False,
@@ -634,7 +634,7 @@ def decode_chord_and_key_change_vector(
 
     Parameters
     ----------
-    vector : np.array
+    vector : np.ndarray
         A relative chord (and optional key change) vector.
     root_type : PitchType
         The pitch type used to store the chord vector's root and bass pitches. Either this or

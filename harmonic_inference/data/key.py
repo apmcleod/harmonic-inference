@@ -133,7 +133,7 @@ class Key:
 
         Returns
         -------
-        change_vector : np.array
+        change_vector : np.ndarray
             The non-one hot key change vector representing this key change.
         """
         change_vector = np.zeros(

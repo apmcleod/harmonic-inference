@@ -1286,7 +1286,7 @@ class HarmonicInferenceModel:
 
         Returns
         -------
-        key_change_probs : np.array[float]
+        key_change_probs : np.ndarray[float]
             The probability of a key change occurring for each given State.
         """
         key_change_probs = np.zeros(len(states), dtype=float)
