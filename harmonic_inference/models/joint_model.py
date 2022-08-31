@@ -506,9 +506,9 @@ class HarmonicInferenceModel:
         # First, ensure consistency within a given type of label (chord vs key)
         for type_str in ["chord", "key"]:
 
-            forced_changes = getattr(self, f"forced_{type_str}_changes")
-            forced_non_changes = getattr(self, f"forced_{type_str}_non_changes")
-            forced_labels = getattr(self, f"forced_{type_str}s")
+            forced_changes: Dict = getattr(self, f"forced_{type_str}_changes")
+            forced_non_changes: Dict = getattr(self, f"forced_{type_str}_non_changes")
+            forced_labels: Dict = getattr(self, f"forced_{type_str}s")
 
             # First: check forced changes and non-changes for validity
 
@@ -559,21 +559,32 @@ class HarmonicInferenceModel:
                 else (hc.NUM_PITCHES[self.key_sequence_model.OUTPUT_PITCH_TYPE] * len(KeyMode))
             )
 
-            for (start, end), label_id in forced_labels.items():
-                if label_id < 0 or label_id >= max_id:
-                    raise ArgumentError(
-                        f"Forced {type_str}_id {label_id} is outside of the valid range for "
-                        f"{type_str}s (0-{max_id})."
-                    )
+            for position, (label_id, id_type) in forced_labels.items():
+                if not isinstance(label_id, tuple):
+                    label_id = (label_id,)
+                if id_type == "abs":
+                    if label_id[0] < 0 or label_id[0] >= max_id:
+                        logging.warning(
+                            (
+                                "Forced absolute %s_id %s is outside of the valid "
+                                "range for %ss (0-%s). Ignoring."
+                            ),
+                            type_str,
+                            label_id[0],
+                            type_str,
+                            max_id,
+                        )
+                        continue
 
-                valid_indexes = np.isin(forced_ids[start:end], [-1, label_id])
-                if not np.all(valid_indexes):
-                    raise ArgumentError(
-                        f"The following indexes are forced to multiple different {type_str}s: ",
-                        f"{np.where(valid_indexes == False)[0] + start}",
-                    )
+                if forced_ids[position] != -1 and forced_ids[position] != label_id:
+                    logging.warning(f"Multiple forced {type_str} ids for position {position}.")
+                    if isinstance(forced_ids[position], int) and id_type == "rel":
+                        logging.warning("Ignoring relative id %s.", label_id)
+                        continue
+                    else:
+                        logging.warning("Overwriting %s with %s", forced_ids[position], label_id)
 
-                forced_ids[start:end] = label_id
+                forced_ids[position] = label_id
 
             # Third: check (non-)changes and forced_ids for compatability
             for change_index in forced_changes:
@@ -611,6 +622,7 @@ class HarmonicInferenceModel:
             if (
                 self.forced_chord_ids[change_index - 1] == self.forced_chord_ids[change_index]
                 and self.forced_chord_ids[change_index] != -1
+                and isinstance(self.forced_chord_ids[change_index], int)
             ):
                 raise ArgumentError(
                     f"Index {change_index} has a forced key change, but the chord is forced to id "
@@ -729,8 +741,8 @@ class HarmonicInferenceModel:
         )
         self.forced_chords = dict() if forced_chords is None else forced_chords
         self.forced_keys = dict() if forced_keys is None else forced_keys
-        self.forced_chord_ids = np.full(len(self.duration_cache), -1)
-        self.forced_key_ids = np.full(len(self.duration_cache), -1)
+        self.forced_chord_ids = np.full(len(self.duration_cache), -1, dtype=np.object)
+        self.forced_key_ids = np.full(len(self.duration_cache), -1, dtype=np.object)
         try:
             self._validate_and_load_forced_labels()
         except ArgumentError as exception:
@@ -912,14 +924,14 @@ class HarmonicInferenceModel:
 
                 # Ensure range doesn't contain multiple different forced chords
                 if forced_chord != -1:
-                    forced_chords.add(forced_chord)
+                    forced_chords.add(forced_chord[0])
                     if len(forced_chords) > 1:
                         reached_end = False
                         break
 
                 # Ensure range doesn't contain multiple different forced chords
                 if forced_key != -1:
-                    forced_keys.add(forced_key)
+                    forced_keys.add(forced_key[0])
                     if len(forced_keys) > 1:
                         reached_end = False
                         break
@@ -1083,7 +1095,7 @@ class HarmonicInferenceModel:
         all_initial_keys = (
             range(len(hu.get_key_label_list(self.KEY_OUTPUT_TYPE)))
             if self.forced_key_ids[0] == -1
-            else [self.forced_key_ids[0]]
+            else [self.forced_key_ids[0][0]]
         )
         for key in all_initial_keys:
             key_mode = self.LABELS["key"][key][1]
@@ -1149,13 +1161,29 @@ class HarmonicInferenceModel:
                     max_index = 2
 
                 # Check for any forced_chord_id and apply
+                forced_chord_id = None
+                forced_root = None
+                forced_chord_type = None
+                forced_inv = None
                 forced_chord_ids = set(self.forced_chord_ids[current_start:range_end]) - set([-1])
                 if len(forced_chord_ids) > 0:
-                    chord_priors_argsort[0] = list(forced_chord_ids)[0]
-                    max_index = 1
+                    forced_chord_id = list(forced_chord_ids)[0]
+                    if len(forced_chord_id) == 2:
+                        # Absolute chord forces we handle here. Relative must be checked later
+                        chord_priors_argsort[0] = forced_chord_id[0]
+                        max_index = 1
+                    else:
+                        # Relative force, but we can still get type and inversion
+                        forced_root, forced_chord_type, forced_inv = forced_chord_id[:3]
 
                 # Branch
                 for chord_id in chord_priors_argsort[:max_index]:
+                    if forced_chord_type is not None:
+                        # Chech for relative force type and inv (the key can still change)
+                        _, chord_type, inv = self.LABELS["chord"][chord_id]
+                        if chord_type != forced_chord_type or inv != forced_inv:
+                            continue
+
                     if chord_id == state.chord:
                         # Same chord as last range: rejoin a split range
                         new_state = state.rejoin(
@@ -1185,6 +1213,20 @@ class HarmonicInferenceModel:
                             new_state,
                             check_hash=False,
                         ):
+                            if forced_root is not None:
+                                # Check if forced root interval is correct
+                                root, _, _ = self.LABELS["chord"][new_state.chord]
+                                tonic, mode = self.LABELS["key"][new_state.key]
+                                current_interval = hu.get_interval_from_numeral(
+                                    forced_root, mode, self.CHORD_OUTPUT_TYPE
+                                )
+                                if tonic + current_interval != root:
+                                    # The state will have to key transition to be valid
+                                    if not new_state.can_key_transition():
+                                        new_state.invalidate()
+                                        continue
+                                    new_state._must_key_transition = True
+
                             to_check_for_key_change.append(new_state)
                         else:
                             # No other chord will fit in beam, since we are searching

@@ -70,14 +70,7 @@ def convert_score_position_to_note_index(mc: int, mn_onset: Fraction, piece: Sco
     """
     note_positions = [note.onset for note in piece.get_inputs()]
 
-    index = bisect.bisect_left(note_positions, (mc, mn_onset))
-
-    if note_positions[index] != (mc, mn_onset):
-        raise ValueError(
-            f"Position ({mc}, {mn_onset}) is not a note onset. Closest is {note_positions[index]}"
-        )
-
-    return index
+    return bisect.bisect_left(note_positions, (mc, mn_onset))
 
 
 def find_forces_musescore_file_for_piece(piece: ScorePiece, forces_dir: Path) -> Path:
@@ -205,12 +198,12 @@ def extract_forces_from_musescore(
         mode = KeyMode.MINOR if tonic_str.split("/")[0].islower() else KeyMode.MAJOR
 
         if any([numeral in tonic_str for numeral in "VvIi"]):
-            if global_tonic is None or global_mode is None:
+            if global_tonic is None or global_mode is None or isinstance(global_tonic, str):
                 id_type = "rel"
                 logging.warning(
                     (
                         "Unknown tonic for relative label %s "
-                        "at position (%s, %s). Storing forced key as relative string."
+                        "at position (%s, %s). Storing force as relative string."
                     ),
                     label,
                     mc,
@@ -357,30 +350,43 @@ def extract_forces_from_musescore(
 
             # Handle relroot_string (add to key force and set relative tonic and mode)
             if relroot_string is not None:
-                relative_tonic, relative_mode, id_type = decode_key(
-                    relroot_string, local_tonic, local_mode, mc, mn_onset
-                )
-                if id_type == "abs":
-                    key_id = get_key_one_hot_index(relative_mode, relative_tonic, PitchType.TPC)
-                else:
-                    key_id = relative_tonic
-                if note_index in key_ids and key_ids[note_index][0] != key_id:
+                if local_tonic is None or local_mode is None:
                     logging.warning(
-                        "Overwriting key %s at position (%s, %s) with %s based on label %s",
-                        key_ids[note_index][0],
+                        (
+                            "Unknown local key for symbol %s at position (%s, %s). "
+                            "Ignoring relative root."
+                        ),
+                        relroot_string,
                         mc,
                         mn_onset,
-                        key_id,
-                        label,
                     )
-                key_ids[note_index] = (key_id, id_type)
+                else:
+                    relative_tonic, relative_mode, id_type = decode_key(
+                        relroot_string, local_tonic, local_mode, mc, mn_onset
+                    )
+                    if id_type == "abs":
+                        key_id = get_key_one_hot_index(relative_mode, relative_tonic, PitchType.TPC)
+                    else:
+                        relative_tonic = f"{relative_tonic}/{local_tonic}"
+                        key_id = relative_tonic
+                    if note_index in key_ids and key_ids[note_index][0] != key_id:
+                        logging.warning(
+                            "Overwriting key %s at position (%s, %s) with %s based on label %s",
+                            key_ids[note_index][0],
+                            mc,
+                            mn_onset,
+                            key_id,
+                            label,
+                        )
+                    key_ids[note_index] = (key_id, id_type)
 
             # Back to handling chord
             if any([numeral in root_string for numeral in "VvIi"]):
                 id_type = "rel"
-                chord_root, _, id_type = decode_key(
-                    root_string, relative_tonic, relative_mode, mc, mn_onset
-                )
+                if isinstance(relative_tonic, int):
+                    chord_root, _, id_type = decode_key(
+                        root_string, relative_tonic, relative_mode, mc, mn_onset
+                    )
                 if id_type == "rel":
                     chord_id = (root_string, chord_type, inversion, changes_string)
                 else:
@@ -394,21 +400,22 @@ def extract_forces_from_musescore(
                         changes_string,
                     )
 
-                # Also force key here, since the chord label is relative!
-                if isinstance(relative_tonic, str):
-                    key_id = relative_tonic
-                else:
-                    key_id = get_key_one_hot_index(relative_mode, relative_tonic, PitchType.TPC)
-                if note_index in key_ids and key_ids[note_index][0] != key_id:
-                    logging.warning(
-                        "Overwriting key %s at position (%s, %s) with %s based on label %s",
-                        key_ids[note_index][0],
-                        mc,
-                        mn_onset,
-                        key_id,
-                        label,
-                    )
-                key_ids[note_index] = (key_id, id_type)
+                if relative_tonic is not None and relative_mode is not None:
+                    # Also force key here, since the chord label is relative!
+                    if isinstance(relative_tonic, str):
+                        key_id = relative_tonic
+                    else:
+                        key_id = get_key_one_hot_index(relative_mode, relative_tonic, PitchType.TPC)
+                    if note_index in key_ids and key_ids[note_index][0] != key_id:
+                        logging.warning(
+                            "Overwriting key %s at position (%s, %s) with %s based on label %s",
+                            key_ids[note_index][0],
+                            mc,
+                            mn_onset,
+                            key_id,
+                            label,
+                        )
+                    key_ids[note_index] = (key_id, id_type)
 
             else:
                 chord_id = (
