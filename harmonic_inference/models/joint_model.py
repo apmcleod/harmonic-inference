@@ -741,8 +741,8 @@ class HarmonicInferenceModel:
         )
         self.forced_chords = dict() if forced_chords is None else forced_chords
         self.forced_keys = dict() if forced_keys is None else forced_keys
-        self.forced_chord_ids = np.full(len(self.duration_cache), -1, dtype=np.object)
-        self.forced_key_ids = np.full(len(self.duration_cache), -1, dtype=np.object)
+        self.forced_chord_ids = np.full(len(self.duration_cache), -1, dtype=object)
+        self.forced_key_ids = np.full(len(self.duration_cache), -1, dtype=object)
         try:
             self._validate_and_load_forced_labels()
         except ArgumentError as exception:
