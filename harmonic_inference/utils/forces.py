@@ -223,7 +223,7 @@ def extract_forces_from_musescore(
         return tonic, mode, id_type
 
     score = Score(score_path)
-    labels: pd.DataFrame = score.annotations.get_labels(decode=True)
+    labels: pd.DataFrame = score.mscx.labels()
 
     chord_changes = set()
     chord_non_changes = set()
