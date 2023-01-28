@@ -1,6 +1,5 @@
 """Utility functions for evaluating model outputs."""
 import logging
-import re
 from collections import defaultdict
 from fractions import Fraction
 from pathlib import Path
@@ -8,7 +7,6 @@ from typing import Dict, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from ms3 import Parse
 
 import harmonic_inference.utils.harmonic_constants as hc
 import harmonic_inference.utils.harmonic_utils as hu
@@ -1358,45 +1356,6 @@ def get_results_annotation_df(
     post_process_labels(labels_list, label_type, global_tonic, global_mode, tonic_type)
 
     return pd.DataFrame(labels_list)
-
-
-def write_labels_to_score(
-    labels_dir: Union[str, Path],
-    annotations_dir: Union[str, Path],
-    basename: str,
-):
-    """
-    Write the annotation labels from a given directory onto a musescore file.
-
-    Parameters
-    ----------
-    labels_dir : Union[str, Path]
-        The directory containing the tsv file containing the model's annotations.
-    annotations_dir : Union[str, Path]
-        The directory containing the ground truth annotations and MS3 score file.
-    basename : str
-        The basename of the annotation TSV and the ground truth annotations/MS3 file.
-    """
-    if isinstance(labels_dir, Path):
-        labels_dir = str(labels_dir)
-
-    if isinstance(annotations_dir, Path):
-        annotations_dir = str(annotations_dir)
-
-    # Add musescore and tsv suffixes to filename match
-    filename_regex = re.compile(basename + "\\.(mscx|tsv)")
-
-    # Parse scores and tsvs
-    parse = Parse(annotations_dir, file_re=filename_regex)
-    parse.add_dir(labels_dir, key="labels", file_re=filename_regex)
-    parse.parse()
-
-    # Write annotations to score
-    parse.add_detached_annotations("MS3", "labels")
-    parse.attach_labels(staff=-1, voice=1, check_for_clashes=False, label_type=1)
-
-    # Write score out to file
-    parse.store_mscx(root_dir=labels_dir, suffix="_inferred", overwrite=True)
 
 
 def average_results(results_path: Union[Path, str], split_on: str = " = ") -> Dict[str, float]:
