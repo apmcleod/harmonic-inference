@@ -83,8 +83,13 @@ def write_tsvs_to_scores(
         # if the Corpus directory itself includes any labels we exclude them to avoid ambiguity
         if any(x.is_dir() and x.name == "labels" for x in annotations_base_dir.iterdir()):
             excluded_labels_path = annotations_base_dir / "labels"
-        corpus.view.exclude("path", str(excluded_labels_path))
-    corpus.add_dir(output_tsv_dir)
+            corpus.view.exclude("path", str(excluded_labels_path))
+    _ = corpus.add_dir(
+        output_tsv_dir,
+        filter_other_fnames=True,
+        file_re=r"\.tsv$",
+        exclude_re="",
+    )
     ms3.insert_labels_into_score(
         corpus,
         facet="labels",
@@ -94,6 +99,7 @@ def write_tsvs_to_scores(
         voice=voice,
         harmony_layer=harmony_layer,
         check_for_clashes=check_for_clashes,
+        print_info=False,
     )
     ms3.store_scores(
         corpus,
