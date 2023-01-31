@@ -132,16 +132,6 @@ if __name__ == "__main__":
         ),
     )
 
-    parser.add_argument(
-        "-f",
-        "--fuzzy",
-        action="store_true",
-        help=(
-            "Do not require that the annotations sub-directory structure matches the output "
-            "directory structure exactly. Rather, matches are made only by filename."
-        ),
-    )
-
     ARGS = parser.parse_args()
 
-    write_tsvs_to_scores(ARGS.output, ARGS.annotations, fuzzy=ARGS.fuzzy)
+    write_tsvs_to_scores(ARGS.output, ARGS.annotations)
