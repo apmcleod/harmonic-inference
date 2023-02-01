@@ -1,5 +1,7 @@
 """A script that can be used to write annotate.py or test.py outputs to a musical score."""
 import argparse
+import logging
+import sys
 from pathlib import Path
 from typing import Literal, Optional, Union
 
@@ -74,6 +76,9 @@ def write_tsvs_to_scores(
 
     """
     output_tsv_dir = Path(output_tsv_dir)
+    if not output_tsv_dir.exists():
+        logging.error("Output directory `%s' does not exist.", output_tsv_dir)
+        sys.exit(1)
     annotations_base_dir = Path(annotations_base_dir)
     outputs_are_under_corpus_path = (output_tsv_dir == annotations_base_dir) or (
         annotations_base_dir in annotations_base_dir.parents
