@@ -94,10 +94,13 @@ def remove_repeats(measures: pd.DataFrame, remove_unreachable: bool = True) -> p
     # Remove measures which are unreachable
     if remove_unreachable:
         # Start measures will not be in any next list, but they need to be saved as a special case
-        start_measures = np.roll(
-            measures.index.get_level_values("file_id").to_numpy(), 1
-        ) != measures.index.get_level_values("file_id")
-        start_indices = list(measures.index.to_numpy()[start_measures])
+        file_ids = measures.index.get_level_values("file_id")
+        if len(set(file_ids)) == 1:
+            # Special case for only 1 file_id
+            start_indices = [measures.index.to_numpy()[0]]
+        else:
+            start_measures = np.roll(file_ids.to_numpy(), 1) != file_ids
+            start_indices = list(measures.index.to_numpy()[start_measures])
 
         # Save to reset type later. Needs to be nullable for the merge to work
         mc_type = measures["mc"].dtype
