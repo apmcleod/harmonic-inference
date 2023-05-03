@@ -91,8 +91,12 @@ def find_forces_musescore_file_for_piece(piece: ScorePiece, forces_dir: Path) ->
     score_path : Path
         The Path to the corresponding score file, if found. Otherwise, None.
     """
-    piece_name = Path(piece.name.split(" ")[-1])
-    matches = glob(str(forces_dir / "**" / piece_name.stem) + "*.mscx", recursive=True)
+    piece_name = Path(" ".join(piece.name.split(" ")[1:])).stem
+    matches = glob(str(forces_dir / "**" / piece_name) + "*.mscx", recursive=True)
+    logging.info(
+        f"Found {len(matches)} scores in {forces_dir} that might contain "
+        f"forced labels for {piece_name!r}."
+    )
     if len(matches) == 0:
         return None
 
