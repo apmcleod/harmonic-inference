@@ -966,6 +966,10 @@ def get_score_piece_from_data_frames(
     chords_list = np.squeeze(chords_list)
     chord_ilocs = np.squeeze(chord_ilocs).astype(int)
 
+    if chords_list.size == 1:
+        chords_list = chords_list.reshape(1)
+        chord_ilocs = chord_ilocs.reshape(1)
+
     # Remove accidentally repeated chords
     non_repeated_mask = get_reduction_mask(
         chords_list,
