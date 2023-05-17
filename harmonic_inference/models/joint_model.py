@@ -1256,7 +1256,7 @@ class HarmonicInferenceModel:
                     self.forced_key_ids[state.prev_state.change_index : state.change_index]
                 ) - set([-1])
                 if len(forced_key_ids) > 0:
-                    forced_key_id = list(forced_key_ids)[0]
+                    forced_key_id = list(forced_key_ids)[0][0]
                     if state.key == forced_key_id:
                         can_change = False
                         # Drop the max_no_key_change_prob requirement but keep the other
