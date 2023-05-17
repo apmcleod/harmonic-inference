@@ -1491,7 +1491,7 @@ class HarmonicInferenceModel:
             forced_key_ids = set(
                 self.forced_key_ids[state.prev_state.change_index : state.change_index]
             ) - set([-1])
-            forced_key_id = None if len(forced_key_ids) == 0 else list(forced_key_ids)[0]
+            forced_key_id = None if len(forced_key_ids) == 0 else list(forced_key_ids)[0][0]
 
             # Branch
             for relative_key_id in prior_argsort:
