@@ -16,9 +16,9 @@ If you use this code, or refer to the paper, please cite it using the following 
 
 ## Installation
 1. Clone this repository
-2. Set up an environment using your favorite environment manager with python 3, e.g.:
+2. Set up an environment using your favorite environment manager with python 3.9.5, e.g.:
 ```
-conda create -n harmony python=3
+conda create -n harmony python==3.9.5
 conda activate harmony
 ```
 3. Install the package and dependencies with pip:
