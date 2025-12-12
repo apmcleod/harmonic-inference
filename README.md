@@ -16,9 +16,9 @@ If you use this code, or refer to the paper, please cite it using the following 
 
 ## Installation
 1. Clone this repository
-2. Set up an environment using your favorite environment manager with python 3, e.g.:
+2. Set up an environment using your favorite environment manager with python 3.9.5, e.g.:
 ```
-conda create -n harmony python=3
+conda create -n harmony python==3.9.5
 conda activate harmony
 ```
 3. Install the package and dependencies with pip:
@@ -36,7 +36,7 @@ python annotate.py -x -i input --checkpoint {checkpoints-best,checkpoints-fh-bes
 * If `input` is a directory, it directory will be searched recursively for any MusicXML files. Otherwise, only the given file will be processed.
 
 ### DCML
-Given a DCML annotation corpus (e.g., [these](https://github.com/DCMLab/dcml_corpora)), you must first [aggregate the data](#DCML-Corpus-Aggregation)), then you can use the following command:
+Given a DCML annotation corpus (e.g., [these](https://github.com/DCMLab/dcml_corpora)), you must first [aggregate the data](#DCML-Corpus-Aggregation), then you can use the following command:
 ```
 python annotate.py -i corpus_data --checkpoint {checkpoints-best,checkpoints-fh-best} --csm-version {0,1,2}
 ```
@@ -68,11 +68,36 @@ The output will go into a directory specified by `--output dir` (default `output
 3  | F:m, inv:0 | 2 | 0 | 0
 ...
 
+#### Applied Dominants
+Applied chords (e.g., `V/V` or `viio/III`) are represented in our model as key changes. For example, the following output should be interpreted as `I V/V V I` in `C major`:
+&nbsp; | label | mc | mc_onset | mn_onset
+------ | ----- | --- | ------- | --------
+0  | C:KeyMode.MAJOR | 0 | 0 | 0
+1  | C:M, inv:0 | 0 | 0 | 0
+2  | G:KeyMode.MAJOR | 1 | 0 | 0
+3  | D:M, inv:0 | 1 | 0 | 0
+4  | C:KeyMode.MAJOR | 2 | 0 | 0
+5  | G:M, inv:0 | 2 | 0 | 0
+6  | C:M, inv:0 | 3 | 0 | 0
+...
+
+Likewise, the following output should be interpreted as `i V/III III i` in `a minor`:
+&nbsp; | label | mc | mc_onset | mn_onset
+------ | ----- | --- | ------- | --------
+0  | a:KeyMode.MINOR | 0 | 0 | 0
+1  | A:m, inv:0 | 0 | 0 | 0
+2  | C:KeyMode.MAJOR | 1 | 0 | 0
+3  | G:M, inv:0 | 1 | 0 | 0
+4  | a:KeyMode.MINOR | 2 | 0 | 0
+5  | C:M, inv:0 | 2 | 0 | 0
+6  | A:m, inv:0 | 3 | 0 | 0
+...
+
 ## Writing onto a Score
 If you are annotating a score from a DCML-style corpus (e.g., [these](https://github.com/DCMLab/dcml_corpora)), the `write_to_score.py` script can be used to write the outputs of the program (both [`annotate.py`](#Usage)) and [`test.py`](#Experimentation)) directly onto the MuseScore3 files:
 
 ```
-python annotate.py --annotations corpus --scores --output output_dir
+python write_to_score.py --annotations corpus --scores --output output_dir
 ```
 * `corpus` should point to the DCML corpus directory containing the raw label tsvs and MuseScore3 score files.
 * `output_dir` should point to the directory containing the model's outputs. This directory will be searched recursively for output tsv files.
