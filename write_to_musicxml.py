@@ -1,12 +1,21 @@
 """A script that can be used to write an annotate.py or test.py output tsv to a MusicXML file."""
 import argparse
+from fractions import Fraction
 from pathlib import Path
 from typing import Union
 
-from music21 import parse
+from music21.converter import parse
+from music21.harmony import ChordSymbol
+from music21.stream import Stream
 import pandas as pd
 
 from harmonic_inference.data.piece import get_measures_df_from_music21_score
+
+
+def get_offset(
+    mc: int, mc_onset: Fraction, mn_onset: Fraction, measures_df: pd.DataFrame
+) -> Fraction:
+    # TODO
 
 
 def write_labels_to_score(
@@ -30,8 +39,15 @@ def write_labels_to_score(
     """
     labels_df = pd.read_csv(labels_tsv_path, sep="\t", index_col=0)
 
-    m21_score = parse(music_xml_path)
+    m21_score: Stream = parse(music_xml_path)
     measures_df = get_measures_df_from_music21_score(m21_score)
+
+    for label_row in labels_df:
+        chord_symbol = ChordSymbol(label_row["label"])
+        offset = get_offset(label_row["mc"], label_row["mc_onset"], label_row["mn_onset"], measures_df)
+        m21_score.insert(offset, chord_symbol)
+
+    m21_score.write("musicxml", fp=output_path)
 
 
 if __name__ == "__main__":
