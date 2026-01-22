@@ -1,21 +1,14 @@
 """A script that can be used to write an annotate.py or test.py output tsv to a MusicXML file."""
 import argparse
 from fractions import Fraction
+import logging
 from pathlib import Path
-from typing import Union
+from typing import List, Union
 
 from music21.converter import parse
 from music21.harmony import ChordSymbol
-from music21.stream import Stream
+from music21.stream import Measure, Stream
 import pandas as pd
-
-from harmonic_inference.data.piece import get_measures_df_from_music21_score
-
-
-def get_offset(
-    mc: int, mc_onset: Fraction, mn_onset: Fraction, measures_df: pd.DataFrame
-) -> Fraction:
-    # TODO
 
 
 def write_labels_to_score(
@@ -37,15 +30,35 @@ def write_labels_to_score(
     output_path : Union[Path, str]
         The file to write the output MusicXML to.
     """
-    labels_df = pd.read_csv(labels_tsv_path, sep="\t", index_col=0)
+    labels_df = pd.read_csv(
+        labels_tsv_path,
+        sep="\t",
+        index_col=0,
+        converters={"mc": int, "mc_onset": Fraction, "mn_onset": Fraction, "label": str},
+    )
 
     m21_score: Stream = parse(music_xml_path)
-    measures_df = get_measures_df_from_music21_score(m21_score)
+    measures_list: List[Measure] = list(m21_score.recurse().getElementsByClass(Measure))
 
-    for label_row in labels_df:
-        chord_symbol = ChordSymbol(label_row["label"])
-        offset = get_offset(label_row["mc"], label_row["mc_onset"], label_row["mn_onset"], measures_df)
-        m21_score.insert(offset, chord_symbol)
+    # Extract and remove all existing chord symbols
+    existing_chord_symbols = []
+    for element in m21_score.recurse().getElementsByClass(ChordSymbol):
+        element.activeSite.remove(element)
+        existing_chord_symbols.append(element)
+
+    for _, label_row in labels_df.iterrows():
+        if "Key" in label_row["label"]:
+            # Skip key changes
+            continue
+
+        try:
+            chord_symbol = ChordSymbol(label_row["label"])
+        except ValueError:
+            logging.error("Skipping unrecognized chord symbol: %s", label_row["label"])
+            continue
+
+        measure: Measure = measures_list[label_row["mc"]]
+        measure.insert(label_row["mc_onset"] * 4, chord_symbol)
 
     m21_score.write("musicxml", fp=output_path)
 
@@ -83,13 +96,13 @@ if __name__ == "__main__":
 
     ARGS = parser.parse_args()
 
-    music_xml: Path = ARGS.x.absolute()
-    labels: Path = ARGS.labels.absolute()
+    music_xml: Path = ARGS.x
+    labels: Path = ARGS.labels
     if str(ARGS.o) == "*_chords":
         output = music_xml.parent / (
-            music_xml.name.split(".")[0] + "_chords" + music_xml.name.split(".")[1]
+            music_xml.name.split(".")[0] + "_chords." + music_xml.name.split(".")[1]
         )
     else:
-        output = ARGS.o.absolute()
+        output = ARGS.o
 
     write_labels_to_score(music_xml, labels, output)
