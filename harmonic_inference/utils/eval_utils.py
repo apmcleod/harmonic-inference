@@ -963,8 +963,13 @@ def get_annotation_df(
                     est_chord_string = est_chord_string.replace("o", "") + "-5"
 
             # Change major 7th chords from M7 to maj7
-            if est_chord_string[-2:] == "M7":
-                est_chord_string = f"{est_chord_string[:-2]}maj7"
+            if "M7" in est_chord_string:
+                index = est_chord_string.index("M7")
+                est_chord_string = f"{est_chord_string[:index]}maj7{est_chord_string[index + 2 :]}"
+
+                # Special handling for maj7sus4
+                if "maj7sus4" in est_chord_string:
+                    est_chord_string = f"{est_chord_string[:-8]}sus4add+7"
 
             # Replace % with ø7 for half-diminished
             est_chord_string = est_chord_string.replace("%", "ø")
