@@ -945,11 +945,15 @@ def get_annotation_df(
 
             # Add sus chords
             if is_sus2:
-                est_chord_string = est_chord_string.replace("m", "").replace("o", "")
+                est_chord_string = est_chord_string.replace("m", "")
                 est_chord_string += "sus2"
+                if "o" in est_chord_string:
+                    est_chord_string = est_chord_string.replace("o", "") + "-5"
             elif is_sus4:
-                est_chord_string = est_chord_string.replace("m", "").replace("o", "")
+                est_chord_string = est_chord_string.replace("m", "")
                 est_chord_string += "sus4"
+                if "o" in est_chord_string:
+                    est_chord_string = est_chord_string.replace("o", "") + "-5"
 
             # Change major 7th chords from M7 to maj7
             if est_chord_string[-2:] == "M7":
