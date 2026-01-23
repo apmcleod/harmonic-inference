@@ -108,7 +108,8 @@ def load_pieces(
 
         else:
             for file_path in sorted(
-                glob(os.path.join(str(input_path), "**", "*.mxl"), recursive=True)
+                glob(os.path.join(str(input_path), "**", "*.mxl"), recursive=True) +
+                glob(os.path.join(str(input_path), "**", "*.xml"), recursive=True)
             ):
                 music_xml_path = Path(file_path)
                 label_csv_path = (

@@ -1,6 +1,7 @@
 """A script that can be used to write an annotate.py or test.py output tsv to a MusicXML file."""
 import argparse
 from fractions import Fraction
+from glob import glob
 import logging
 from pathlib import Path
 from typing import List, Union
@@ -76,14 +77,17 @@ if __name__ == "__main__":
         "-x",
         type=Path,
         required=True,
-        help="The path to the MusicXML file to write the labels to.",
+        help="The path to the MusicXML file to write the labels to, or a directory of such files.",
     )
 
     parser.add_argument(
         "--labels",
         type=Path,
         required=True,
-        help="The path to the labels tsv file to write to the given score.",
+        help=(
+            "The path to the labels tsv file to write to the given score, or a directory in which "
+            "the labels tsv files are stored, in which to search for the matching labels tsv file."
+        ),
     )
 
     parser.add_argument(
@@ -99,13 +103,29 @@ if __name__ == "__main__":
 
     ARGS = parser.parse_args()
 
-    music_xml: Path = ARGS.x
-    labels: Path = ARGS.labels
-    if str(ARGS.o) == "*_chords":
-        output = music_xml.parent / (
-            music_xml.name.split(".")[0] + "_chords." + music_xml.name.split(".")[1]
-        )
+    music_xml_arg: Path = ARGS.x
+    if music_xml_arg.is_dir():
+        all_music_xml = [
+            Path(x)
+            for x in
+            sorted(
+                glob(str(music_xml_arg / "**" / "*.mxl"), recursive=True) +
+                glob(str(music_xml_arg / "**" / "*.xml"), recursive=True)
+            )
+        ]
     else:
-        output = ARGS.o
+        all_music_xml = [music_xml_arg]
+
+    for music_xml in all_music_xml:
+        if str(ARGS.o) == "*_chords":
+            output = music_xml.parent / (
+                music_xml.name.split(".")[0] + "_chords." + music_xml.name.split(".")[1]
+            )
+        else:
+            output = ARGS.o
+
+        labels: Path = ARGS.labels
+        if labels.is_dir():
+            labels = labels / music_xml.name.split(".")[0] + ".tsv"
 
     write_labels_to_score(music_xml, labels, output)
