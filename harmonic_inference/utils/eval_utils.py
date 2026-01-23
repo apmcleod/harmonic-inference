@@ -937,8 +937,11 @@ def get_annotation_df(
         # Remove figured bass markings in favor of slash chords
         if label_type == "jazz":
             # Remove figured bass numbers
-            for char in ["6", "4", "2", "5"]:
-                est_chord_string = est_chord_string.replace(char, "")
+            est_chord_string = est_chord_string.replace("65", "7")
+            est_chord_string = est_chord_string.replace("43", "7")
+            est_chord_string = est_chord_string.replace("2", "7")
+            est_chord_string = est_chord_string.replace("64", "")
+            est_chord_string = est_chord_string.replace("6", "")
 
             # Add sus chords
             if is_sus2:
@@ -954,8 +957,6 @@ def get_annotation_df(
 
             # Replace % with ø7 for half-diminished
             est_chord_string = est_chord_string.replace("%", "ø")
-            if "ø" in est_chord_string and "7" not in est_chord_string:
-                logging.error("ø without 7 in chord string.")
 
             # Add slash chord for inversions
             if inversion != 0:
