@@ -52,9 +52,12 @@ def write_labels_to_score(
             continue
 
         try:
-            chord_symbol = ChordSymbol(label_row["label"])
+            label = label_row["label"]
+            label = label.replace("7sus2", "sus2add7")
+            label = label.replace("7sus4", "sus4add7")
+            chord_symbol = ChordSymbol(label)
         except ValueError:
-            logging.error("Skipping unrecognized chord symbol: %s", label_row["label"])
+            logging.error("Skipping unrecognized chord symbol: %s", label)
             continue
 
         measure: Measure = measures_list[label_row["mc"]]
