@@ -31,6 +31,10 @@ def write_labels_to_score(
     output_path : Union[Path, str]
         The file to write the output MusicXML to.
     """
+    logging.info("Writing labels to score for file: %s", str(music_xml_path))
+    logging.info("    Using labels from file: %s", str(labels_tsv_path))
+    logging.info("    Output being written to file: %s", str(output_path))
+
     labels_df = pd.read_csv(
         labels_tsv_path,
         sep="\t",
@@ -126,6 +130,10 @@ if __name__ == "__main__":
 
         labels: Path = ARGS.labels
         if labels.is_dir():
-            labels = labels / music_xml.name.split(".")[0] + ".tsv"
+            labels = labels / (str(music_xml.name.split(".")[0]) + ".tsv")
 
-    write_labels_to_score(music_xml, labels, output)
+        if not labels.exists():
+            logging.warning("No labels found for file %s", str(music_xml))
+            continue
+
+        write_labels_to_score(music_xml, labels, output)
