@@ -930,7 +930,10 @@ def get_annotation_df(
                     continue
 
                 if "v" in alteration or "^" in alteration:
-                    alteration = alteration[1:]
+                    if "6" in alteration and is_sus4:
+                        alteration = "add6"
+                    else:
+                        alteration = alteration[1:]
 
                 chord_pitches_string += alteration
 
