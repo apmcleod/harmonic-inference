@@ -283,7 +283,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--label-type",
         type=str,
-        choices=["abs", "rel", "dcml"],
+        choices=["abs", "rel", "dcml", "jazz"],
         default="abs",
         help="The format to use for the annotations.",
     )
