@@ -1084,7 +1084,7 @@ def get_measures_df_from_music21_score(m21_score: music21.stream.Score) -> pd.Da
     first_endings = [
         (bracket.getFirst().number, bracket.getLast().number)
         for bracket in m21_score.flat.getElementsByClass(music21.spanner.RepeatBracket)
-        if int(bracket.number) == 1
+        if bracket.number.startswith("1")
     ]
     skipped_dur = 0
 
