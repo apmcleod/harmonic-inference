@@ -59,7 +59,6 @@ def write_labels_to_score(
         try:
             label = label_row["label"]
             label = label.replace("7sus2", "sus2add7")
-            label = label.replace("7sus4", "sus4add7")
             chord_symbol = ChordSymbol(label)
         except ValueError:
             logging.error("Skipping unrecognized chord symbol: %s", label)
@@ -110,9 +109,7 @@ if __name__ == "__main__":
     music_xml_arg: Path = ARGS.x
     if music_xml_arg.is_dir():
         all_music_xml = [
-            Path(x)
-            for x in
-            sorted(
+            Path(x) for x in sorted(
                 glob(str(music_xml_arg / "**" / "*.mxl"), recursive=True) +
                 glob(str(music_xml_arg / "**" / "*.xml"), recursive=True)
             )

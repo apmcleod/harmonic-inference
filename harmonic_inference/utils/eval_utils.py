@@ -912,10 +912,12 @@ def get_annotation_df(
             for alteration in alterations:
 
                 if "+" in alteration:
+                    alteration = alteration.replace("#", "+").replace("b", "-")
                     chord_pitches_string += f"add{alteration[1:]}"
                     continue
 
                 if "-" in alteration:
+                    alteration = alteration.replace("#", "+").replace("b", "-")
                     chord_pitches_string += f"remove{alteration[1:]}"
                     continue
 
@@ -940,13 +942,20 @@ def get_annotation_df(
 
             # Add sus chords
             if is_sus2:
+                est_chord_string = est_chord_string.replace("m", "").replace("o", "")
                 est_chord_string += "sus2"
             elif is_sus4:
+                est_chord_string = est_chord_string.replace("m", "").replace("o", "")
                 est_chord_string += "sus4"
 
             # Change major 7th chords from M7 to maj7
             if est_chord_string[-2:] == "M7":
                 est_chord_string = f"{est_chord_string[:-2]}maj7"
+
+            # Replace % with ø7 for half-diminished
+            est_chord_string = est_chord_string.replace("%", "ø")
+            if "ø" in est_chord_string and "7" not in est_chord_string:
+                logging.error("ø without 7 in chord string.")
 
             # Add slash chord for inversions
             if inversion != 0:
