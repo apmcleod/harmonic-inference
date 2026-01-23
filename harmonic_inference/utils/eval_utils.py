@@ -954,6 +954,8 @@ def get_annotation_df(
                 est_chord_string += "sus2"
                 if "o" in est_chord_string:
                     est_chord_string = est_chord_string.replace("o", "") + "-5"
+                if "7" in est_chord_string:
+                    est_chord_string = est_chord_string.replace("7", "") + "add7"
             elif is_sus4:
                 est_chord_string = est_chord_string.replace("m", "")
                 est_chord_string += "sus4"
