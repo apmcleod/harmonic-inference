@@ -900,6 +900,10 @@ def get_annotation_df(
             # Remove leading and trailing parenthesis
             chord_pitches_string = chord_pitches_string[1:-1]
 
+            # Handle 2 and 4 suspensions already
+            is_sus2 = "2" in chord_pitches_string
+            is_sus4 = "4" in chord_pitches_string
+
             # Extract all alterations into list
             alterations = []
             last_digit = -1
@@ -911,6 +915,10 @@ def get_annotation_df(
             chord_pitches_string = ""
             for alteration in alterations:
 
+                # 2 and 4 suspensions were already handled above
+                if "2" in alteration or "4" in alteration:
+                    continue
+
                 if "+" in alteration:
                     alteration = alteration.replace("#", "+").replace("b", "-")
                     chord_pitches_string += f"add{alteration[1:]}"
@@ -921,13 +929,7 @@ def get_annotation_df(
                     chord_pitches_string += f"remove{alteration[1:]}"
                     continue
 
-                if "2" in alteration:
-                    is_sus2 = True
-                    continue
-
-                if "4" in alteration:
-                    is_sus4 = True
-                    continue
+                alteration = alteration.replace("#", "+").replace("b", "-")
 
                 if "v" in alteration or "^" in alteration:
                     alteration = alteration[1:]
