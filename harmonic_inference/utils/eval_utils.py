@@ -806,6 +806,7 @@ def get_annotation_df(
             - abs (default): Absolute pitches.
             - rel: Roman numeral-based chords, but still absolute keys.
             - dcml: DCML-style output strings.
+            - jazz: Jazz-style absolute chord symbols, with inversions notated as slash chords.
 
     Returns
     -------
@@ -858,7 +859,7 @@ def get_annotation_df(
         ):
             continue
 
-        est_root, est_chord_type, _ = chord_list[est_chord_label]
+        est_root, est_chord_type, inversion = chord_list[est_chord_label]
         est_tonic, est_mode = key_list[est_key_label]
 
         # Key change
@@ -892,6 +893,73 @@ def get_annotation_df(
             else ""
         )
 
+        is_sus2 = False
+        is_sus4 = False
+        # Convert chord changes also to jazz style ones
+        if label_type == "jazz" and chord_pitches_string != "":
+            # Remove leading and trailing parenthesis
+            chord_pitches_string = chord_pitches_string[1:-1]
+
+            # Extract all alterations into list
+            alterations = []
+            last_digit = -1
+            for i, char in enumerate(chord_pitches_string):
+                if char.isdigit():
+                    alterations.append(chord_pitches_string[last_digit + 1 : i + 1])
+                    last_digit = i
+
+            chord_pitches_string = ""
+            for alteration in alterations:
+
+                if "+" in alteration:
+                    chord_pitches_string += f"add{alteration[1:]}"
+                    continue
+
+                if "-" in alteration:
+                    chord_pitches_string += f"remove{alteration[1:]}"
+                    continue
+
+                if "2" in alteration:
+                    is_sus2 = True
+                    continue
+
+                if "4" in alteration:
+                    is_sus4 = True
+                    continue
+
+                if "v" in alteration or "^" in alteration:
+                    alteration = alteration[1:]
+
+                chord_pitches_string += alteration
+
+        # Remove figured bass markings in favor of slash chords
+        if label_type == "jazz":
+            # Remove figured bass numbers
+            for char in ["6", "4", "2", "5"]:
+                est_chord_string = est_chord_string.replace(char, "")
+
+            # Add sus chords
+            if is_sus2:
+                est_chord_string += "sus2"
+            elif is_sus4:
+                est_chord_string += "sus4"
+
+            # Change major 7th chords from M7 to maj7
+            if est_chord_string[-2:] == "M7":
+                est_chord_string = f"{est_chord_string[:-2]}maj7"
+
+            # Add slash chord for inversions
+            if inversion != 0:
+                bass_pitch_string = hu.get_pitch_string(
+                    hu.get_bass_note(est_chord_type, est_root, inversion, root_type),
+                    root_type,
+                )
+                est_chord_string += f"/{bass_pitch_string}"
+
+            # Change bs to flats
+            est_chord_string = est_chord_string.replace("b", "-")
+            chord_pitches_string = chord_pitches_string.replace("b", "-")
+
         # Convert absolute chord to relative key-relative
         if label_type in ["rel", "dcml"]:
             est_chord_string = hu.convert_abs_chord_label_to_rel(
@@ -903,11 +971,12 @@ def get_annotation_df(
             )
 
         # Make roots lowercase for minor, dim, and half-dim chords
-        if "o" in est_chord_string or "%" in est_chord_string or "m" in est_chord_string:
-            for char in ["A", "B", "C", "D", "E", "F", "G", "V", "I"]:
-                est_chord_string = est_chord_string.replace(char, char.lower())
-        # Remove "m" (lowercase root implies this already)
-        est_chord_string = est_chord_string.replace("m", "")
+        if label_type in ["rel", "dcml"]:
+            if "o" in est_chord_string or "%" in est_chord_string or "m" in est_chord_string:
+                for char in ["A", "B", "C", "D", "E", "F", "G", "V", "I"]:
+                    est_chord_string = est_chord_string.replace(char, char.lower())
+            # Remove "m" (lowercase root implies this already)
+            est_chord_string = est_chord_string.replace("m", "")
 
         if (
             est_chord_string != prev_est_chord_string
@@ -932,7 +1001,8 @@ def get_annotation_df(
         prev_est_chord_pitches = chord_pitches_string
         first = False
 
-    post_process_labels(labels_list, label_type, global_tonic, global_mode, tonic_type)
+    if label_type != "jazz":
+        post_process_labels(labels_list, label_type, global_tonic, global_mode, tonic_type)
 
     return pd.DataFrame(labels_list)
 
