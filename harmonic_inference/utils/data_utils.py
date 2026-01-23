@@ -108,8 +108,8 @@ def load_pieces(
 
         else:
             for file_path in sorted(
-                glob(os.path.join(str(input_path), "**", "*.mxl"), recursive=True) +
-                glob(os.path.join(str(input_path), "**", "*.xml"), recursive=True)
+                glob(os.path.join(str(input_path), "**", "*.mxl"), recursive=True)
+                + glob(os.path.join(str(input_path), "**", "*.xml"), recursive=True)
             ):
                 music_xml_path = Path(file_path)
                 label_csv_path = (
@@ -120,7 +120,7 @@ def load_pieces(
 
                 if music_xml_path.exists():
                     xmls.append(music_xml_path)
-                    csvs.append(label_csv_path) if label_csv_path.exists() else None
+                    csvs.append(label_csv_path if label_csv_path.exists() else None)
 
     else:
         files_df, measures_df, chords_df, notes_df = load_clean_corpus_dfs(input_path)

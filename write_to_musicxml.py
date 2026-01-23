@@ -110,8 +110,8 @@ if __name__ == "__main__":
     if music_xml_arg.is_dir():
         all_music_xml = [
             Path(x) for x in sorted(
-                glob(str(music_xml_arg / "**" / "*.mxl"), recursive=True) +
-                glob(str(music_xml_arg / "**" / "*.xml"), recursive=True)
+                glob(str(music_xml_arg / "**" / "*.mxl"), recursive=True)
+                + glob(str(music_xml_arg / "**" / "*.xml"), recursive=True)
             )
         ]
     else:
