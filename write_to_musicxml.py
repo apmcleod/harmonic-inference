@@ -75,137 +75,139 @@ def write_labels_to_score(
 chord_accuracies = dict()
 
 
-def estimate_label_accuracy(
-    music_xml_path: Union[Path, str],
-    labels_tsv_path: Union[Path, str],
-) -> float:
-    """
-    Estimate the accuracy of the given labels on the given MusicXML file.
+# JASON: COMMENTED OUT LABEL ACCURACY ESTIMATION (lines 78-208 + 287+288)
 
-    Parameters
-    ----------
-    music_xml_path : Union[Path, str]
-        The path the MusicXML file containing ground truth labels.
+# def estimate_label_accuracy(
+#     music_xml_path: Union[Path, str],
+#     labels_tsv_path: Union[Path, str],
+# ) -> float:
+#     """
+#     Estimate the accuracy of the given labels on the given MusicXML file.
 
-    labels_tsv_path : Union[Path, str]
-        The tsv file containing the estimated labels.
+#     Parameters
+#     ----------
+#     music_xml_path : Union[Path, str]
+#         The path the MusicXML file containing ground truth labels.
 
-    Returns
-    -------
-    float
-        The estimated accuracy of the given labels on the given MusicXML file,
-        as a number between 0 and 1.
-    """
-    def get_musicxml_chord_label_at_time(
-        mc: int, offset: Fraction, measures: List[Measure]
-    ) -> ChordSymbol:
-        """
-        Get the music21 ChordSymbol at a specific position in the score, or the most recent label,
-        if none is at that exact point in the score.
+#     labels_tsv_path : Union[Path, str]
+#         The tsv file containing the estimated labels.
 
-        Parameters
-        ----------
-        mc : int
-            The mc number to find the Measure object we are looking for.
-        offset : Fraction
-            The offset, in quarter notes, of the score position we're looking for.
-        measures : List[Measure]
-            A List of the Measures in the music xml file.
+#     Returns
+#     -------
+#     float
+#         The estimated accuracy of the given labels on the given MusicXML file,
+#         as a number between 0 and 1.
+#     """
+#     def get_musicxml_chord_label_at_time(
+#         mc: int, offset: Fraction, measures: List[Measure]
+#     ) -> ChordSymbol:
+#         """
+#         Get the music21 ChordSymbol at a specific position in the score, or the most recent label,
+#         if none is at that exact point in the score.
 
-        Returns
-        -------
-        ChordSymbol
-            The chord symbol active at the given point in the score.
-        """
-        measure = measures[mc]
-        chord_symbols: List[ChordSymbol] = list(measure.getElementsByClass(ChordSymbol))
-        for chord_symbol in reversed(chord_symbols):
-            if chord_symbol.offset <= offset:
-                return chord_symbol
+#         Parameters
+#         ----------
+#         mc : int
+#             The mc number to find the Measure object we are looking for.
+#         offset : Fraction
+#             The offset, in quarter notes, of the score position we're looking for.
+#         measures : List[Measure]
+#             A List of the Measures in the music xml file.
 
-        # Here we need to find the most recent ChordSymbol instead
-        for measure_id in range(mc - 1, -1, -1):
-            measure = measures[measure_id]
-            chord_symbols: List[ChordSymbol] = list(measure.getElementsByClass(ChordSymbol))
-            if len(chord_symbols) > 0:
-                return chord_symbols[-1]
+#         Returns
+#         -------
+#         ChordSymbol
+#             The chord symbol active at the given point in the score.
+#         """
+#         measure = measures[mc]
+#         chord_symbols: List[ChordSymbol] = list(measure.getElementsByClass(ChordSymbol))
+#         for chord_symbol in reversed(chord_symbols):
+#             if chord_symbol.offset <= offset:
+#                 return chord_symbol
 
-        logging.warning("No matching ChordSymbol found for mc=%s and offset=%s.", mc, offset)
-        return None
+#         # Here we need to find the most recent ChordSymbol instead
+#         for measure_id in range(mc - 1, -1, -1):
+#             measure = measures[measure_id]
+#             chord_symbols: List[ChordSymbol] = list(measure.getElementsByClass(ChordSymbol))
+#             if len(chord_symbols) > 0:
+#                 return chord_symbols[-1]
 
-    def get_chord_accuracy(score_label: ChordSymbol, pred_label: str) -> float:
-        """
-        Return an accuracy value for the given label given the ground truth symbol.
+#         logging.warning("No matching ChordSymbol found for mc=%s and offset=%s.", mc, offset)
+#         return None
 
-        Parameters
-        ----------
-        score_label : ChordSymbol
-            The musicXML file's label.
-        pred_label : str
-            The model's predicted label.
+#     def get_chord_accuracy(score_label: ChordSymbol, pred_label: str) -> float:
+#         """
+#         Return an accuracy value for the given label given the ground truth symbol.
 
-        Returns
-        -------
-        float
-            A measure of the accuracy of the label, between 0 (totally wrong) and 1
-            (totally correct).
-        """
-        global chord_accuracies
+#         Parameters
+#         ----------
+#         score_label : ChordSymbol
+#             The musicXML file's label.
+#         pred_label : str
+#             The model's predicted label.
 
-        if score_label.figure == pred_label:
-            return 1.0
+#         Returns
+#         -------
+#         float
+#             A measure of the accuracy of the label, between 0 (totally wrong) and 1
+#             (totally correct).
+#         """
+#         global chord_accuracies
 
-        if score_label.figure.split("/")[0] == pred_label.split("/")[0]:
-            return 0.5
+#         if score_label.figure == pred_label:
+#             return 1.0
 
-        if score_label.figure.replace("7", "") == pred_label.replace("7", ""):
-            return 0.5
+#         if score_label.figure.split("/")[0] == pred_label.split("/")[0]:
+#             return 0.5
 
-        if (
-            score_label.figure in chord_accuracies
-            and pred_label in chord_accuracies[score_label.figure]
-        ):
-            return chord_accuracies[score_label.figure][pred_label]
+#         if score_label.figure.replace("7", "") == pred_label.replace("7", ""):
+#             return 0.5
 
-        chord_acc = float(input(f"What is the accuracy of {score_label.figure} and {pred_label}? "))
+#         if (
+#             score_label.figure in chord_accuracies
+#             and pred_label in chord_accuracies[score_label.figure]
+#         ):
+#             return chord_accuracies[score_label.figure][pred_label]
 
-        if score_label.figure not in chord_accuracies:
-            chord_accuracies[score_label.figure] = {pred_label: chord_acc}
+#         chord_acc = float(input(f"What is the accuracy of {score_label.figure} and {pred_label}? "))
 
-        return chord_acc
+#         if score_label.figure not in chord_accuracies:
+#             chord_accuracies[score_label.figure] = {pred_label: chord_acc}
 
-    labels_df = pd.read_csv(
-        labels_tsv_path,
-        sep="\t",
-        index_col=0,
-        converters={"mc": int, "mc_onset": Fraction, "mn_onset": Fraction, "label": str},
-    )
+#         return chord_acc
 
-    m21_score: Stream = parse(music_xml_path)
-    measures_list: List[Measure] = list(m21_score.recurse().getElementsByClass(Measure))
+#     labels_df = pd.read_csv(
+#         labels_tsv_path,
+#         sep="\t",
+#         index_col=0,
+#         converters={"mc": int, "mc_onset": Fraction, "mn_onset": Fraction, "label": str},
+#     )
 
-    total_labels = 0
-    total_accuracy = 0
+#     m21_score: Stream = parse(music_xml_path)
+#     measures_list: List[Measure] = list(m21_score.recurse().getElementsByClass(Measure))
 
-    for _, label_row in labels_df.iterrows():
-        if "Key" in label_row["label"]:
-            # Skip key changes
-            continue
+#     total_labels = 0
+#     total_accuracy = 0
 
-        total_labels += 1
-        corresponding_score_label = get_musicxml_chord_label_at_time(
-            label_row["mc"], label_row["mc_onset"] * 4, measures_list
-        )
-        if corresponding_score_label is None:
-            continue
+#     for _, label_row in labels_df.iterrows():
+#         if "Key" in label_row["label"]:
+#             # Skip key changes
+#             continue
 
-        chord_acc = get_chord_accuracy(corresponding_score_label, label_row["label"])
-        total_accuracy += chord_acc
+#         total_labels += 1
+#         corresponding_score_label = get_musicxml_chord_label_at_time(
+#             label_row["mc"], label_row["mc_onset"] * 4, measures_list
+#         )
+#         if corresponding_score_label is None:
+#             continue
 
-    if total_labels == 0:
-        return 0.0
+#         chord_acc = get_chord_accuracy(corresponding_score_label, label_row["label"])
+#         total_accuracy += chord_acc
 
-    return total_accuracy / total_labels
+#     if total_labels == 0:
+#         return 0.0
+
+#     return total_accuracy / total_labels
 
 
 if __name__ == "__main__":
@@ -284,5 +286,5 @@ if __name__ == "__main__":
 
         if not ARGS.acc_only:
             write_labels_to_score(music_xml, labels, output)
-        accuracy = estimate_label_accuracy(music_xml, labels)
-        logging.info("Estimated accuracy for file %s: %.2f%%", str(music_xml), accuracy * 100)
+        # accuracy = estimate_label_accuracy(music_xml, labels)
+        # logging.info("Estimated accuracy for file %s: %.2f%%", str(music_xml), accuracy * 100)
