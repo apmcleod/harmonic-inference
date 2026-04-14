@@ -273,6 +273,9 @@ if __name__ == "__main__":
             output = music_xml.parent / (
                 music_xml.name.split(".")[0] + "_chords." + music_xml.name.split(".")[1]
             )
+        elif ARGS.o.is_dir():  
+        # Handle directory output - create individual filenames  
+            output = ARGS.o / (music_xml.name.split(".")[0] + "_chords." + music_xml.name.split(".")[1]) 
         else:
             output = ARGS.o
 
