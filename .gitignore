@@ -22,3 +22,4 @@ model_jsons*/**
 output*/**
 results*/**
 chord-features_data/**
+.DS_Store
