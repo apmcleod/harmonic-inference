@@ -239,7 +239,7 @@ if __name__ == "__main__":
         required=False,
         default="*_chords",
         help=(
-            "The path to write the resulting score to. If not given, this will be "
+            "The path to write the resulting score to (can be a directory). If not given, this will be"
             "the input path plus `_chords` before the file extension."
         )
     )
@@ -274,8 +274,8 @@ if __name__ == "__main__":
                 music_xml.name.split(".")[0] + "_chords." + music_xml.name.split(".")[1]
             )
         elif ARGS.o.is_dir():  
-        # Handle directory output - create individual filenames  
-            output = ARGS.o / (music_xml.name.split(".")[0] + "_chords." + music_xml.name.split(".")[1]) 
+        # handle directory - create individual filenames  
+            output = ARGS.o / (f"{music_xml.stem}_chords{music_xml.suffix}") 
         else:
             output = ARGS.o
 
